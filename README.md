@@ -48,7 +48,7 @@ Evented I/O for V8 javascript. [![Build Status](https://secure.travis-ci.org/joy
 
 To checkout the sourcecode:
 
-    git clone [node-httpp repo](https://github.com/InstantWebP2P/node-httpp.git)
+    git clone https://github.com/InstantWebP2P/node-httpp.git
     git checkout v0.8-httpp
 
 ### To build:
