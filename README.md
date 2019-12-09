@@ -10,11 +10,9 @@ It's simple to use node-httpp:
 
 To build it manually, clone the repository and checkout v0.8-httpp branch firstly, then do steps as below.
 
-discussion group:
-https://groups.google.com/d/forum/iwebpp
+[Discussion group](https://groups.google.com/d/forum/iwebpp)
 
-Wiki page:
-https://github.com/InstantWebP2P/node-httpp/wiki/An-introduction-to-node-httpp
+[Wiki page](https://github.com/InstantWebP2P/node-httpp/wiki/An-introduction-to-node-httpp)
 
 ### Features
 
@@ -37,7 +35,7 @@ https://github.com/InstantWebP2P/node-httpp/wiki/An-introduction-to-node-httpp
 
 ### third-party source
 
-* UDT4 - http://udt.sourceforge.net/
+* [UDT4](http://udt.sourceforge.net)
 
 
 ### Support us
@@ -50,7 +48,7 @@ Evented I/O for V8 javascript. [![Build Status](https://secure.travis-ci.org/joy
 
 To checkout the sourcecode:
 
-    git clone https://github.com/InstantWebP2P/node-httpp.git
+    git clone [node-httpp repo](https://github.com/InstantWebP2P/node-httpp.git)
     git checkout v0.8-httpp
 
 ### To build:
