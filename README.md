@@ -42,7 +42,7 @@ https://github.com/InstantWebP2P/node-httpp/wiki/An-introduction-to-node-httpp
 
 ### Support us
 
-* 远程工作云办公联盟 QQ 群号: 463651269
+* Welcome contributing on document, codes, tests and issues
 
 
 Evented I/O for V8 javascript. [![Build Status](https://secure.travis-ci.org/joyent/node.png)](http://travis-ci.org/joyent/node)
