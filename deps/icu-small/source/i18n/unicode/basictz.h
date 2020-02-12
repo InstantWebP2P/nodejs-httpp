@@ -1,3 +1,5 @@
+// © 2016 and later: Unicode, Inc. and others.
+// License & terms of use: http://www.unicode.org/copyright.html
 /*
 *******************************************************************************
 * Copyright (C) 2007-2013, International Business Machines Corporation and
@@ -13,6 +15,8 @@
  */
 
 #include "unicode/utypes.h"
+
+#if U_SHOW_CPLUSPLUS_API
 
 #if !UCONFIG_NO_FORMATTING
 
@@ -38,6 +42,14 @@ public:
      * @stable ICU 3.8
      */
     virtual ~BasicTimeZone();
+
+    /**
+     * Clones this object polymorphically.
+     * The caller owns the result and should delete it when done.
+     * @return clone, or nullptr if an error occurred
+     * @stable ICU 3.8
+     */
+    virtual BasicTimeZone* clone() const = 0;
 
     /**
      * Gets the first time zone transition after the base time.
@@ -208,6 +220,8 @@ protected:
 U_NAMESPACE_END
 
 #endif /* #if !UCONFIG_NO_FORMATTING */
+
+#endif /* U_SHOW_CPLUSPLUS_API */
 
 #endif // BASICTZ_H
 

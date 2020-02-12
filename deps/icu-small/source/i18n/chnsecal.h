@@ -1,3 +1,5 @@
+// © 2016 and later: Unicode, Inc. and others.
+// License & terms of use: http://www.unicode.org/copyright.html
 /*
  *****************************************************************************
  * Copyright (C) 2007-2013, International Business Machines Corporation
@@ -142,7 +144,7 @@ class U_I18N_API ChineseCalendar : public Calendar {
   virtual ~ChineseCalendar();
 
   // clone
-  virtual Calendar* clone() const;
+  virtual ChineseCalendar* clone() const;
 
  private:
 

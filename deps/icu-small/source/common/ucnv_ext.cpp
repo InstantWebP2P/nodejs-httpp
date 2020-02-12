@@ -1,3 +1,5 @@
+// © 2016 and later: Unicode, Inc. and others.
+// License & terms of use: http://www.unicode.org/copyright.html
 /*
 ******************************************************************************
 *
@@ -6,7 +8,7 @@
 *
 ******************************************************************************
 *   file name:  ucnv_ext.cpp
-*   encoding:   US-ASCII
+*   encoding:   UTF-8
 *   tab size:   8 (not used)
 *   indentation:4
 *
@@ -21,6 +23,7 @@
 #if !UCONFIG_NO_CONVERSION && !UCONFIG_NO_LEGACY_CONVERSION
 
 #include "unicode/uset.h"
+#include "unicode/ustring.h"
 #include "ucnv_bld.h"
 #include "ucnv_cnv.h"
 #include "ucnv_ext.h"
@@ -883,7 +886,7 @@ ucnv_extContinueMatchFromU(UConverter *cnv,
         } else {
             /* the match did not use all of preFromU[] - keep the rest for replay */
             int32_t length=cnv->preFromULength-match;
-            uprv_memmove(cnv->preFromU, cnv->preFromU+match, length*U_SIZEOF_UCHAR);
+            u_memmove(cnv->preFromU, cnv->preFromU+match, length);
             cnv->preFromULength=(int8_t)-length;
         }
 

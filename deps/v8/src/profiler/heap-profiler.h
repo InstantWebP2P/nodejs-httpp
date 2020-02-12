@@ -5,9 +5,14 @@
 #ifndef V8_PROFILER_HEAP_PROFILER_H_
 #define V8_PROFILER_HEAP_PROFILER_H_
 
-#include "src/base/smart-pointers.h"
-#include "src/isolate.h"
-#include "src/list.h"
+#include <memory>
+#include <vector>
+
+#include "include/v8-profiler.h"
+#include "src/base/platform/mutex.h"
+#include "src/common/globals.h"
+#include "src/debug/debug-interface.h"
+#include "src/heap/heap.h"
 
 namespace v8 {
 namespace internal {
@@ -19,20 +24,19 @@ class HeapSnapshot;
 class SamplingHeapProfiler;
 class StringsStorage;
 
-class HeapProfiler {
+class HeapProfiler : public HeapObjectAllocationTracker {
  public:
   explicit HeapProfiler(Heap* heap);
-  ~HeapProfiler();
-
-  size_t GetMemorySizeUsedByProfiler();
+  ~HeapProfiler() override;
 
   HeapSnapshot* TakeSnapshot(
       v8::ActivityControl* control,
       v8::HeapProfiler::ObjectNameResolver* resolver);
 
-  bool StartSamplingHeapProfiler(uint64_t sample_interval, int stack_depth);
+  bool StartSamplingHeapProfiler(uint64_t sample_interval, int stack_depth,
+                                 v8::HeapProfiler::SamplingFlags);
   void StopSamplingHeapProfiler();
-  bool is_sampling_allocations() { return !sampling_heap_profiler_.is_empty(); }
+  bool is_sampling_allocations() { return !!sampling_heap_profiler_; }
   AllocationProfile* GetAllocationProfile();
 
   void StartHeapObjectsTracking(bool track_allocations);
@@ -48,44 +52,53 @@ class HeapProfiler {
   int GetSnapshotsCount();
   HeapSnapshot* GetSnapshot(int index);
   SnapshotObjectId GetSnapshotObjectId(Handle<Object> obj);
+  SnapshotObjectId GetSnapshotObjectId(NativeObject obj);
   void DeleteAllSnapshots();
   void RemoveSnapshot(HeapSnapshot* snapshot);
 
   void ObjectMoveEvent(Address from, Address to, int size);
 
-  void AllocationEvent(Address addr, int size);
+  void AllocationEvent(Address addr, int size) override;
 
-  void UpdateObjectSizeEvent(Address addr, int size);
+  void UpdateObjectSizeEvent(Address addr, int size) override;
 
-  void DefineWrapperClass(
-      uint16_t class_id, v8::HeapProfiler::WrapperInfoCallback callback);
-
-  v8::RetainedObjectInfo* ExecuteWrapperClassCallback(uint16_t class_id,
-                                                      Object** wrapper);
-  void SetRetainedObjectInfo(UniqueId id, RetainedObjectInfo* info);
+  void AddBuildEmbedderGraphCallback(
+      v8::HeapProfiler::BuildEmbedderGraphCallback callback, void* data);
+  void RemoveBuildEmbedderGraphCallback(
+      v8::HeapProfiler::BuildEmbedderGraphCallback callback, void* data);
+  void BuildEmbedderGraph(Isolate* isolate, v8::EmbedderGraph* graph);
+  bool HasBuildEmbedderGraphCallback() {
+    return !build_embedder_graph_callbacks_.empty();
+  }
 
   bool is_tracking_object_moves() const { return is_tracking_object_moves_; }
-  bool is_tracking_allocations() const {
-    return !allocation_tracker_.is_empty();
-  }
 
   Handle<HeapObject> FindHeapObjectById(SnapshotObjectId id);
   void ClearHeapObjectMap();
 
-  Isolate* isolate() const { return heap()->isolate(); }
+  Isolate* isolate() const;
+
+  void QueryObjects(Handle<Context> context,
+                    debug::QueryObjectPredicate* predicate,
+                    v8::PersistentValueVector<v8::Object>* objects);
 
  private:
+  void MaybeClearStringsStorage();
+
   Heap* heap() const;
 
   // Mapping from HeapObject addresses to objects' uids.
-  base::SmartPointer<HeapObjectsMap> ids_;
-  List<HeapSnapshot*> snapshots_;
-  base::SmartPointer<StringsStorage> names_;
-  List<v8::HeapProfiler::WrapperInfoCallback> wrapper_callbacks_;
-  base::SmartPointer<AllocationTracker> allocation_tracker_;
+  std::unique_ptr<HeapObjectsMap> ids_;
+  std::vector<std::unique_ptr<HeapSnapshot>> snapshots_;
+  std::unique_ptr<StringsStorage> names_;
+  std::unique_ptr<AllocationTracker> allocation_tracker_;
   bool is_tracking_object_moves_;
   base::Mutex profiler_mutex_;
-  base::SmartPointer<SamplingHeapProfiler> sampling_heap_profiler_;
+  std::unique_ptr<SamplingHeapProfiler> sampling_heap_profiler_;
+  std::vector<std::pair<v8::HeapProfiler::BuildEmbedderGraphCallback, void*>>
+      build_embedder_graph_callbacks_;
+
+  DISALLOW_COPY_AND_ASSIGN(HeapProfiler);
 };
 
 }  // namespace internal

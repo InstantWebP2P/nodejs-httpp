@@ -1,7 +1,7 @@
-.TH "NPM\-UPDATE" "1" "June 2016" "" ""
+.TH "NPM\-UPDATE" "1" "January 2020" "" ""
 .SH "NAME"
 \fBnpm-update\fR \- Update a package
-.SH SYNOPSIS
+.SS Synopsis
 .P
 .RS 2
 .nf
@@ -10,7 +10,7 @@ npm update [\-g] [<pkg>\.\.\.]
 aliases: up, upgrade
 .fi
 .RE
-.SH DESCRIPTION
+.SS Description
 .P
 This command will update all the packages listed to the latest version
 (specified by the \fBtag\fP config), respecting semver\.
@@ -28,7 +28,11 @@ or local) will be updated\.
 As of \fBnpm@2\.6\.1\fP, the \fBnpm update\fP will only inspect top\-level packages\.
 Prior versions of \fBnpm\fP would also recursively inspect all dependencies\.
 To get the old behavior, use \fBnpm \-\-depth 9999 update\fP\|\.
-.SH EXAMPLES
+.P
+As of \fBnpm@5\.0\.0\fP, the \fBnpm update\fP will change \fBpackage\.json\fP to save the 
+new version as the minimum required dependency\. To get the old behavior, 
+use \fBnpm update \-\-no\-save\fP\|\.
+.SS Example
 .P
 IMPORTANT VERSION NOTE: these examples assume \fBnpm@2\.6\.1\fP or later\.  For
 older versions of \fBnpm\fP, you must specify \fB\-\-depth 0\fP to get the behavior
@@ -112,34 +116,6 @@ If the dependence were on \fB^0\.4\.0\fP:
 .P
 Then \fBnpm update\fP will install \fBdep1@0\.4\.1\fP, because that is the highest\-sorting
 version that satisfies \fB^0\.4\.0\fP (\fB>= 0\.4\.0 <0\.5\.0\fP)
-.SS Recording Updates with \fB\-\-save\fP
-.P
-When you want to update a package and save the new version as
-the minimum required dependency in \fBpackage\.json\fP, you can use
-\fBnpm update \-S\fP or \fBnpm update \-\-save\fP\|\.  For example if
-\fBpackage\.json\fP contains:
-.P
-.RS 2
-.nf
-"dependencies": {
-  "dep1": "^1\.1\.1"
-}
-.fi
-.RE
-.P
-Then \fBnpm update \-\-save\fP will install \fBdep1@1\.2\.2\fP (i\.e\., \fBlatest\fP),
-and \fBpackage\.json\fP will be modified:
-.P
-.RS 2
-.nf
-"dependencies": {
-  "dep1": "^1\.2\.2"
-}
-.fi
-.RE
-.P
-Note that \fBnpm\fP will only write an updated version to \fBpackage\.json\fP
-if it installs a new package\.
 .SS Updating Globally\-Installed Packages
 .P
 \fBnpm update \-g\fP will apply the \fBupdate\fP action to each globally installed
@@ -148,7 +124,7 @@ package that is \fBoutdated\fP \-\- that is, has a version that is different fro
 .P
 NOTE: If a package has been upgraded to a version newer than \fBlatest\fP, it will
 be \fIdowngraded\fR\|\.
-.SH SEE ALSO
+.SS See Also
 .RS 0
 .IP \(bu 2
 npm help install
@@ -157,11 +133,10 @@ npm help outdated
 .IP \(bu 2
 npm help shrinkwrap
 .IP \(bu 2
-npm help 7 registry
+npm help registry
 .IP \(bu 2
-npm help 5 folders
+npm help folders
 .IP \(bu 2
 npm help ls
 
 .RE
-

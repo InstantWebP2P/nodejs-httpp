@@ -1,17 +1,15 @@
 var fs = require('graceful-fs')
 var path = require('path')
 
-var mkdirp = require('mkdirp')
 var mr = require('npm-registry-mock')
-var rimraf = require('rimraf')
 var test = require('tap').test
 
 var npm = require('../../')
 var common = require('../common-tap.js')
 
 // config
-var pkg = path.resolve(__dirname, 'outdated')
-var cache = path.resolve(pkg, 'cache')
+var pkg = common.pkg
+var cache = common.cache
 var originalLog
 
 var json = {
@@ -26,9 +24,7 @@ var json = {
 }
 
 test('setup', function (t) {
-  cleanup()
   originalLog = console.log
-  mkdirp.sync(cache)
   fs.writeFileSync(
     path.join(pkg, 'package.json'),
     JSON.stringify(json, null, 2)
@@ -91,7 +87,7 @@ test('it should not throw', function (t) {
   mr({ port: common.port }, function (er, s) {
     npm.load(
       {
-        cache: 'cache',
+        cache: cache,
         loglevel: 'silent',
         parseable: true,
         registry: common.registry
@@ -103,7 +99,9 @@ test('it should not throw', function (t) {
             output.push.apply(output, arguments)
           }
           npm.outdated(function (er, d) {
-            t.ifError(er, 'outdated success')
+            t.ifError(err, 'outdated completed without error')
+            t.equals(process.exitCode, 1, 'exitCode set to 1')
+            process.exitCode = 0
             output = output.map(function (x) { return x.replace(/\r/g, '') })
             console.log = originalLog
 
@@ -120,11 +118,6 @@ test('it should not throw', function (t) {
 })
 
 test('cleanup', function (t) {
-  cleanup()
   console.log = originalLog
   t.end()
 })
-
-function cleanup () {
-  rimraf.sync(pkg)
-}

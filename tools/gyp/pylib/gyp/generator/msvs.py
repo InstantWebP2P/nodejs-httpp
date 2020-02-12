@@ -2,6 +2,8 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+from __future__ import print_function
+
 import copy
 import ntpath
 import os
@@ -46,6 +48,8 @@ VALID_MSVS_GUID_CHARS = re.compile(r'^[A-F0-9\-]+$')
 
 
 generator_default_variables = {
+    'DRIVER_PREFIX': '',
+    'DRIVER_SUFFIX': '.sys',
     'EXECUTABLE_PREFIX': '',
     'EXECUTABLE_SUFFIX': '.exe',
     'STATIC_LIB_PREFIX': '',
@@ -91,6 +95,7 @@ generator_additional_non_configuration_keys = [
     'msvs_target_platform_minversion',
 ]
 
+generator_filelist_paths = None
 
 # List of precompiled header related keys.
 precomp_keys = [
@@ -256,6 +261,8 @@ def _ToolSetOrAppend(tools, tool_name, setting, value, only_if_unset=False):
   if not tools.get(tool_name):
     tools[tool_name] = dict()
   tool = tools[tool_name]
+  if 'CompileAsWinRT' == setting:
+    return
   if tool.get(setting):
     if only_if_unset: return
     if type(tool[setting]) == list and type(value) == list:
@@ -267,6 +274,10 @@ def _ToolSetOrAppend(tools, tool_name, setting, value, only_if_unset=False):
               value, setting, tool_name, str(tool[setting])))
   else:
     tool[setting] = value
+
+
+def _ConfigTargetVersion(config_data):
+  return config_data.get('msvs_target_version', 'Windows7')
 
 
 def _ConfigPlatform(config_data):
@@ -283,6 +294,31 @@ def _ConfigBaseName(config_name, platform_name):
 def _ConfigFullName(config_name, config_data):
   platform_name = _ConfigPlatform(config_data)
   return '%s|%s' % (_ConfigBaseName(config_name, platform_name), platform_name)
+
+
+def _ConfigWindowsTargetPlatformVersion(config_data, version):
+  config_ver = config_data.get('msvs_windows_sdk_version')
+  vers = [config_ver] if config_ver else version.compatible_sdks
+  for ver in vers:
+    for key in [
+      r'HKLM\Software\Microsoft\Microsoft SDKs\Windows\%s',
+      r'HKLM\Software\Wow6432Node\Microsoft\Microsoft SDKs\Windows\%s']:
+      sdk_dir = MSVSVersion._RegistryGetValue(key % ver, 'InstallationFolder')
+      if not sdk_dir:
+        continue
+      version = MSVSVersion._RegistryGetValue(key % ver, 'ProductVersion') or ''
+      # Find a matching entry in sdk_dir\include.
+      expected_sdk_dir=r'%s\include' % sdk_dir
+      names = sorted([x for x in (os.listdir(expected_sdk_dir)
+                                  if os.path.isdir(expected_sdk_dir)
+                                  else []
+                                  )
+                      if x.startswith(version)], reverse=True)
+      if names:
+        return names[0]
+      else:
+        print('Warning: No include files found for detected '
+              'Windows SDK version %s' % (version), file=sys.stdout)
 
 
 def _BuildCommandLineForRuleRaw(spec, cmd, cygwin_shell, has_input_path,
@@ -433,7 +469,7 @@ def _AddCustomBuildToolForMSVS(p, spec, primary_input,
        'CommandLine': cmd,
       })
   # Add to the properties of primary input for each config.
-  for config_name, c_data in spec['configurations'].iteritems():
+  for config_name, c_data in spec['configurations'].items():
     p.AddFileConfig(_FixPath(primary_input),
                     _ConfigFullName(config_name, c_data), tools=[tool])
 
@@ -739,8 +775,8 @@ def _EscapeVCProjCommandLineArgListItem(s):
     # the VCProj but cause the same problem on the final command-line. Moving
     # the item to the end of the list does works, but that's only possible if
     # there's only one such item. Let's just warn the user.
-    print >> sys.stderr, ('Warning: MSVS may misinterpret the odd number of ' +
-                          'quotes in ' + s)
+    print('Warning: MSVS may misinterpret the odd number of '
+          'quotes in ' + s, file=sys.stderr)
   return s
 
 
@@ -901,6 +937,8 @@ def _GetMsbuildToolsetOfProject(proj_path, spec, version):
   toolset = default_config.get('msbuild_toolset')
   if not toolset and version.DefaultToolset():
     toolset = version.DefaultToolset()
+  if spec['type'] == 'windows_driver':
+    toolset = 'WindowsKernelModeDriver10.0'
   return toolset
 
 
@@ -953,7 +991,7 @@ def _ValidateSourcesForMSVSProject(spec, version):
     basenames.setdefault(basename, []).append(source)
 
   error = ''
-  for basename, files in basenames.iteritems():
+  for basename, files in basenames.items():
     if len(files) > 1:
       error += '  %s: %s\n' % (basename, ' '.join(files))
 
@@ -985,7 +1023,7 @@ def _GenerateMSVSProject(project, options, version, generator_flags):
   relative_path_of_gyp_file = gyp.common.RelativePath(gyp_path, project_dir)
 
   config_type = _GetMSVSConfigurationType(spec, project.build_file)
-  for config_name, config in spec['configurations'].iteritems():
+  for config_name, config in spec['configurations'].items():
     _AddConfigurationToMSVSProject(p, spec, config_type, config_name, config)
 
   # MSVC08 and prior version cannot handle duplicate basenames in the same
@@ -1084,6 +1122,7 @@ def _GetMSVSConfigurationType(spec, build_file):
         'shared_library': '2',  # .dll
         'loadable_module': '2',  # .dll
         'static_library': '4',  # .lib
+        'windows_driver': '5',  # .sys
         'none': '10',  # Utility type
         }[spec['type']]
   except KeyError:
@@ -1268,6 +1307,7 @@ def _GetOutputFilePathAndTool(spec, msbuild):
       'executable': ('VCLinkerTool', 'Link', '$(OutDir)', '.exe'),
       'shared_library': ('VCLinkerTool', 'Link', '$(OutDir)', '.dll'),
       'loadable_module': ('VCLinkerTool', 'Link', '$(OutDir)', '.dll'),
+      'windows_driver': ('VCLinkerTool', 'Link', '$(OutDir)', '.sys'),
       'static_library': ('VCLibrarianTool', 'Lib', '$(OutDir)lib\\', '.lib'),
   }
   output_file_props = output_file_map.get(spec['type'])
@@ -1330,7 +1370,8 @@ def _GetDisabledWarnings(config):
 
 def _GetModuleDefinition(spec):
   def_file = ''
-  if spec['type'] in ['shared_library', 'loadable_module', 'executable']:
+  if spec['type'] in ['shared_library', 'loadable_module', 'executable',
+                      'windows_driver']:
     def_files = [s for s in spec.get('sources', []) if s.endswith('.def')]
     if len(def_files) == 1:
       def_file = _FixPath(def_files[0])
@@ -1351,10 +1392,10 @@ def _ConvertToolsToExpectedForm(tools):
     A list of Tool objects.
   """
   tool_list = []
-  for tool, settings in tools.iteritems():
+  for tool, settings in tools.items():
     # Collapse settings with lists.
     settings_fixed = {}
-    for setting, value in settings.iteritems():
+    for setting, value in settings.items():
       if type(value) == list:
         if ((tool == 'VCLinkerTool' and
              setting == 'AdditionalDependencies') or
@@ -1529,7 +1570,7 @@ def _IdlFilesHandledNonNatively(spec, sources):
 def _GetPrecompileRelatedFiles(spec):
   # Gather a list of precompiled header related sources.
   precompiled_related = []
-  for _, config in spec['configurations'].iteritems():
+  for _, config in spec['configurations'].items():
     for k in precomp_keys:
       f = config.get(k)
       if f:
@@ -1540,7 +1581,7 @@ def _GetPrecompileRelatedFiles(spec):
 def _ExcludeFilesFromBeingBuilt(p, spec, excluded_sources, excluded_idl,
                                 list_excluded):
   exclusions = _GetExcludedFilesFromBuild(spec, excluded_sources, excluded_idl)
-  for file_name, excluded_configs in exclusions.iteritems():
+  for file_name, excluded_configs in exclusions.items():
     if (not list_excluded and
             len(excluded_configs) == len(spec['configurations'])):
       # If we're not listing excluded files, then they won't appear in the
@@ -1557,7 +1598,7 @@ def _GetExcludedFilesFromBuild(spec, excluded_sources, excluded_idl):
   # Exclude excluded sources from being built.
   for f in excluded_sources:
     excluded_configs = []
-    for config_name, config in spec['configurations'].iteritems():
+    for config_name, config in spec['configurations'].items():
       precomped = [_FixPath(config.get(i, '')) for i in precomp_keys]
       # Don't do this for ones that are precompiled header related.
       if f not in precomped:
@@ -1567,7 +1608,7 @@ def _GetExcludedFilesFromBuild(spec, excluded_sources, excluded_idl):
   # Exclude them now.
   for f in excluded_idl:
     excluded_configs = []
-    for config_name, config in spec['configurations'].iteritems():
+    for config_name, config in spec['configurations'].items():
       excluded_configs.append((config_name, config))
     exclusions[f] = excluded_configs
   return exclusions
@@ -1576,7 +1617,7 @@ def _GetExcludedFilesFromBuild(spec, excluded_sources, excluded_idl):
 def _AddToolFilesToMSVS(p, spec):
   # Add in tool files (rules).
   tool_files = OrderedSet()
-  for _, config in spec['configurations'].iteritems():
+  for _, config in spec['configurations'].items():
     for f in config.get('msvs_tool_files', []):
       tool_files.add(f)
   for f in tool_files:
@@ -1589,7 +1630,7 @@ def _HandlePreCompiledHeaders(p, sources, spec):
   # kind (i.e. C vs. C++) as the precompiled header source stub needs
   # to have use of precompiled headers disabled.
   extensions_excluded_from_precompile = []
-  for config_name, config in spec['configurations'].iteritems():
+  for config_name, config in spec['configurations'].items():
     source = config.get('msvs_precompiled_source')
     if source:
       source = _FixPath(source)
@@ -1610,7 +1651,7 @@ def _HandlePreCompiledHeaders(p, sources, spec):
       else:
         basename, extension = os.path.splitext(source)
         if extension in extensions_excluded_from_precompile:
-          for config_name, config in spec['configurations'].iteritems():
+          for config_name, config in spec['configurations'].items():
             tool = MSVSProject.Tool('VCCLCompilerTool',
                                     {'UsePrecompiledHeader': '0',
                                      'ForcedIncludeFiles': '$(NOINHERIT)'})
@@ -1661,7 +1702,7 @@ def _WriteMSVSUserFile(project_path, version, spec):
     return  # Nothing to add
   # Write out the user file.
   user_file = _CreateMSVSUserFile(project_path, version, spec)
-  for config_name, c_data in spec['configurations'].iteritems():
+  for config_name, c_data in spec['configurations'].items():
     user_file.AddDebugSettings(_ConfigFullName(config_name, c_data),
                                action, environment, working_directory)
   user_file.WriteIfChanged()
@@ -1686,14 +1727,17 @@ def _GetCopies(spec):
         src_bare = src[:-1]
         base_dir = posixpath.split(src_bare)[0]
         outer_dir = posixpath.split(src_bare)[1]
-        cmd = 'cd "%s" && xcopy /e /f /y "%s" "%s\\%s\\"' % (
-            _FixPath(base_dir), outer_dir, _FixPath(dst), outer_dir)
+        fixed_dst = _FixPath(dst)
+        full_dst = '"%s\\%s\\"' % (fixed_dst, outer_dir)
+        cmd = 'mkdir %s 2>nul & cd "%s" && xcopy /e /f /y "%s" %s' % (
+            full_dst, _FixPath(base_dir), outer_dir, full_dst)
         copies.append(([src], ['dummy_copies', dst], cmd,
-                       'Copying %s to %s' % (src, dst)))
+                       'Copying %s to %s' % (src, fixed_dst)))
       else:
+        fix_dst = _FixPath(cpy['destination'])
         cmd = 'mkdir "%s" 2>nul & set ERRORLEVEL=0 & copy /Y "%s" "%s"' % (
-            _FixPath(cpy['destination']), _FixPath(src), _FixPath(dst))
-        copies.append(([src], [dst], cmd, 'Copying %s to %s' % (src, dst)))
+            fix_dst, _FixPath(src), _FixPath(dst))
+        copies.append(([src], [dst], cmd, 'Copying %s to %s' % (src, fix_dst)))
   return copies
 
 
@@ -1712,7 +1756,7 @@ def _GetPathDict(root, path):
 def _DictsToFolders(base_path, bucket, flat):
   # Convert to folders recursively.
   children = []
-  for folder, contents in bucket.iteritems():
+  for folder, contents in bucket.items():
     if type(contents) == dict:
       folder_children = _DictsToFolders(os.path.join(base_path, folder),
                                         contents, flat)
@@ -1734,8 +1778,8 @@ def _CollapseSingles(parent, node):
   # such projects up one level.
   if (type(node) == dict and
       len(node) == 1 and
-      node.keys()[0] == parent + '.vcproj'):
-    return node[node.keys()[0]]
+      list(node)[0] == parent + '.vcproj'):
+    return node[list(node)[0]]
   if type(node) != dict:
     return node
   for child in node:
@@ -1754,8 +1798,8 @@ def _GatherSolutionFolders(sln_projects, project_objects, flat):
   # Walk down from the top until we hit a folder that has more than one entry.
   # In practice, this strips the top-level "src/" dir from the hierarchy in
   # the solution.
-  while len(root) == 1 and type(root[root.keys()[0]]) == dict:
-    root = root[root.keys()[0]]
+  while len(root) == 1 and type(root[list(root)[0]]) == dict:
+    root = root[list(root)[0]]
   # Collapse singles.
   root = _CollapseSingles('', root)
   # Merge buckets until everything is a root entry.
@@ -1784,7 +1828,7 @@ def _GetPlatformOverridesOfProject(spec):
   # Prepare a dict indicating which project configurations are used for which
   # solution configurations for this target.
   config_platform_overrides = {}
-  for config_name, c in spec['configurations'].iteritems():
+  for config_name, c in spec['configurations'].items():
     config_fullname = _ConfigFullName(config_name, c)
     platform = c.get('msvs_target_platform', _ConfigPlatform(c))
     fixed_config_fullname = '%s|%s' % (
@@ -1923,7 +1967,7 @@ def PerformBuild(data, configurations, params):
   msvs_version = params['msvs_version']
   devenv = os.path.join(msvs_version.path, 'Common7', 'IDE', 'devenv.com')
 
-  for build_file, build_file_dict in data.iteritems():
+  for build_file, build_file_dict in data.items():
     (build_file_root, build_file_ext) = os.path.splitext(build_file)
     if build_file_ext != '.gyp':
       continue
@@ -1933,9 +1977,22 @@ def PerformBuild(data, configurations, params):
 
   for config in configurations:
     arguments = [devenv, sln_path, '/Build', config]
-    print 'Building [%s]: %s' % (config, arguments)
+    print('Building [%s]: %s' % (config, arguments))
     rtn = subprocess.check_call(arguments)
 
+
+def CalculateGeneratorInputInfo(params):
+  if params.get('flavor') == 'ninja':
+    toplevel = params['options'].toplevel_dir
+    qualified_out_dir = os.path.normpath(os.path.join(
+        toplevel, ninja_generator.ComputeOutputDir(params),
+        'gypfiles-msvs-ninja'))
+
+    global generator_filelist_paths
+    generator_filelist_paths = {
+        'toplevel': toplevel,
+        'qualified_out_dir': qualified_out_dir,
+    }
 
 def GenerateOutput(target_list, target_dicts, data, params):
   """Generate .sln and .vcproj files.
@@ -1972,7 +2029,7 @@ def GenerateOutput(target_list, target_dicts, data, params):
   configs = set()
   for qualified_target in target_list:
     spec = target_dicts[qualified_target]
-    for config_name, config in spec['configurations'].iteritems():
+    for config_name, config in spec['configurations'].items():
       configs.add(_ConfigFullName(config_name, config))
   configs = list(configs)
 
@@ -2015,11 +2072,12 @@ def GenerateOutput(target_list, target_dicts, data, params):
     if generator_flags.get('msvs_error_on_missing_sources', False):
       raise GypError(error_message)
     else:
-      print >> sys.stdout, "Warning: " + error_message
+      print("Warning: " + error_message, file=sys.stdout)
 
 
 def _GenerateMSBuildFiltersFile(filters_path, source_files,
-                                rule_dependencies, extension_to_rule_name):
+                                rule_dependencies, extension_to_rule_name,
+                                platforms):
   """Generate the filters file.
 
   This file is used by Visual Studio to organize the presentation of source
@@ -2033,7 +2091,8 @@ def _GenerateMSBuildFiltersFile(filters_path, source_files,
   filter_group = []
   source_group = []
   _AppendFiltersForMSBuild('', source_files, rule_dependencies,
-                           extension_to_rule_name, filter_group, source_group)
+                           extension_to_rule_name, platforms,
+                           filter_group, source_group)
   if filter_group:
     content = ['Project',
                {'ToolsVersion': '4.0',
@@ -2049,7 +2108,7 @@ def _GenerateMSBuildFiltersFile(filters_path, source_files,
 
 
 def _AppendFiltersForMSBuild(parent_filter_name, sources, rule_dependencies,
-                             extension_to_rule_name,
+                             extension_to_rule_name, platforms,
                              filter_group, source_group):
   """Creates the list of filters and sources to be added in the filter file.
 
@@ -2075,11 +2134,12 @@ def _AppendFiltersForMSBuild(parent_filter_name, sources, rule_dependencies,
       # Recurse and add its dependents.
       _AppendFiltersForMSBuild(filter_name, source.contents,
                                rule_dependencies, extension_to_rule_name,
-                               filter_group, source_group)
+                               platforms, filter_group, source_group)
     else:
       # It's a source.  Create a source entry.
       _, element = _MapFileToMsBuildSourceType(source, rule_dependencies,
-                                               extension_to_rule_name)
+                                               extension_to_rule_name,
+                                               platforms)
       source_entry = [element, {'Include': source}]
       # Specify the filter it is part of, if any.
       if parent_filter_name:
@@ -2088,7 +2148,7 @@ def _AppendFiltersForMSBuild(parent_filter_name, sources, rule_dependencies,
 
 
 def _MapFileToMsBuildSourceType(source, rule_dependencies,
-                                extension_to_rule_name):
+                                extension_to_rule_name, platforms):
   """Returns the group and element type of the source file.
 
   Arguments:
@@ -2099,6 +2159,7 @@ def _MapFileToMsBuildSourceType(source, rule_dependencies,
       A pair of (group this file should be part of, the label of element)
   """
   _, ext = os.path.splitext(source)
+  ext = ext.lower()
   if ext in extension_to_rule_name:
     group = 'rule'
     element = extension_to_rule_name[ext]
@@ -2111,9 +2172,12 @@ def _MapFileToMsBuildSourceType(source, rule_dependencies,
   elif ext == '.rc':
     group = 'resource'
     element = 'ResourceCompile'
-  elif ext == '.asm':
+  elif ext in ['.s', '.asm']:
     group = 'masm'
     element = 'MASM'
+    for platform in platforms:
+      if platform.lower() in ['arm', 'arm64']:
+        element = 'MARMASM'
   elif ext == '.idl':
     group = 'midl'
     element = 'Midl'
@@ -2612,7 +2676,7 @@ def _GetConfigurationCondition(name, settings):
 
 def _GetMSBuildProjectConfigurations(configurations):
   group = ['ItemGroup', {'Label': 'ProjectConfigurations'}]
-  for (name, settings) in sorted(configurations.iteritems()):
+  for (name, settings) in sorted(configurations.items()):
     configuration, platform = _GetConfigurationAndPlatform(name, settings)
     designation = '%s|%s' % (configuration, platform)
     group.append(
@@ -2622,7 +2686,7 @@ def _GetMSBuildProjectConfigurations(configurations):
   return [group]
 
 
-def _GetMSBuildGlobalProperties(spec, guid, gyp_file_name):
+def _GetMSBuildGlobalProperties(spec, version, guid, gyp_file_name):
   namespace = os.path.splitext(gyp_file_name)[0]
   properties = [
       ['PropertyGroup', {'Label': 'Globals'},
@@ -2637,6 +2701,18 @@ def _GetMSBuildGlobalProperties(spec, guid, gyp_file_name):
      os.environ.get('PROCESSOR_ARCHITEW6432') == 'AMD64':
     properties[0].append(['PreferredToolArchitecture', 'x64'])
 
+  if spec.get('msvs_target_platform_version'):
+    target_platform_version = spec.get('msvs_target_platform_version')
+    properties[0].append(['WindowsTargetPlatformVersion',
+                          target_platform_version])
+    if spec.get('msvs_target_platform_minversion'):
+      target_platform_minversion = spec.get('msvs_target_platform_minversion')
+      properties[0].append(['WindowsTargetPlatformMinVersion',
+                            target_platform_minversion])
+    else:
+      properties[0].append(['WindowsTargetPlatformMinVersion',
+                            target_platform_version])
+
   if spec.get('msvs_enable_winrt'):
     properties[0].append(['DefaultLanguage', 'en-US'])
     properties[0].append(['AppContainerApplication', 'true'])
@@ -2645,33 +2721,45 @@ def _GetMSBuildGlobalProperties(spec, guid, gyp_file_name):
       properties[0].append(['ApplicationTypeRevision', app_type_revision])
     else:
       properties[0].append(['ApplicationTypeRevision', '8.1'])
-
-    if spec.get('msvs_target_platform_version'):
-      target_platform_version = spec.get('msvs_target_platform_version')
-      properties[0].append(['WindowsTargetPlatformVersion',
-                            target_platform_version])
-      if spec.get('msvs_target_platform_minversion'):
-        target_platform_minversion = spec.get('msvs_target_platform_minversion')
-        properties[0].append(['WindowsTargetPlatformMinVersion',
-                              target_platform_minversion])
-      else:
-        properties[0].append(['WindowsTargetPlatformMinVersion',
-                              target_platform_version])
     if spec.get('msvs_enable_winphone'):
       properties[0].append(['ApplicationType', 'Windows Phone'])
     else:
       properties[0].append(['ApplicationType', 'Windows Store'])
 
+  platform_name = None
+  msvs_windows_sdk_version = None
+  for configuration in spec['configurations'].values():
+    platform_name = platform_name or _ConfigPlatform(configuration)
+    msvs_windows_sdk_version = (msvs_windows_sdk_version or
+                  _ConfigWindowsTargetPlatformVersion(configuration, version))
+    if platform_name and msvs_windows_sdk_version:
+      break
+  if msvs_windows_sdk_version:
+    properties[0].append(['WindowsTargetPlatformVersion',
+                          str(msvs_windows_sdk_version)])
+  elif version.compatible_sdks:
+    raise GypError('%s requires any SDK of %s version, but none were found' %
+                   (version.description, version.compatible_sdks))
+
+  if platform_name == 'ARM':
+    properties[0].append(['WindowsSDKDesktopARMSupport', 'true'])
+
   return properties
+
 
 def _GetMSBuildConfigurationDetails(spec, build_file):
   properties = {}
-  for name, settings in spec['configurations'].iteritems():
+  for name, settings in spec['configurations'].items():
     msbuild_attributes = _GetMSBuildAttributes(spec, settings, build_file)
     condition = _GetConfigurationCondition(name, settings)
     character_set = msbuild_attributes.get('CharacterSet')
+    config_type = msbuild_attributes.get('ConfigurationType')
     _AddConditionalProperty(properties, condition, 'ConfigurationType',
-                            msbuild_attributes['ConfigurationType'])
+                            config_type)
+    if config_type == 'Driver':
+      _AddConditionalProperty(properties, condition, 'DriverType', 'WDM')
+      _AddConditionalProperty(properties, condition, 'TargetVersion',
+                              _ConfigTargetVersion(settings))
     if character_set:
       if 'msvs_enable_winrt' not in spec :
         _AddConditionalProperty(properties, condition, 'CharacterSet',
@@ -2695,9 +2783,9 @@ def _GetMSBuildPropertySheets(configurations):
   user_props = r'$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props'
   additional_props = {}
   props_specified = False
-  for name, settings in sorted(configurations.iteritems()):
+  for name, settings in sorted(configurations.items()):
     configuration = _GetConfigurationCondition(name, settings)
-    if settings.has_key('msbuild_props'):
+    if 'msbuild_props' in settings:
       additional_props[configuration] = _FixPaths(settings['msbuild_props'])
       props_specified = True
     else:
@@ -2717,7 +2805,7 @@ def _GetMSBuildPropertySheets(configurations):
     ]
   else:
     sheets = []
-    for condition, props in additional_props.iteritems():
+    for condition, props in additional_props.items():
       import_group = [
         'ImportGroup',
         {'Label': 'PropertySheets',
@@ -2750,7 +2838,7 @@ def _ConvertMSVSBuildAttributes(spec, config, build_file):
     elif a == 'ConfigurationType':
       msbuild_attributes[a] = _ConvertMSVSConfigurationType(msvs_attributes[a])
     else:
-      print 'Warning: Do not know how to convert MSVS attribute ' + a
+      print('Warning: Do not know how to convert MSVS attribute ' + a)
   return msbuild_attributes
 
 
@@ -2770,6 +2858,7 @@ def _ConvertMSVSConfigurationType(config_type):
         '1': 'Application',
         '2': 'DynamicLibrary',
         '4': 'StaticLibrary',
+        '5': 'Driver',
         '10': 'Utility'
     }[config_type]
   return config_type
@@ -2798,6 +2887,9 @@ def _GetMSBuildAttributes(spec, config, build_file):
     product_name = spec.get('product_name', '$(ProjectName)')
     target_name = prefix + product_name
     msbuild_attributes['TargetName'] = target_name
+  if 'TargetExt' not in msbuild_attributes and 'product_extension' in spec:
+    ext = spec.get('product_extension')
+    msbuild_attributes['TargetExt'] = '.' + ext
 
   if spec.get('msvs_external_builder'):
     external_out_dir = spec.get('msvs_external_builder_out_dir', '.')
@@ -2809,6 +2901,7 @@ def _GetMSBuildAttributes(spec, config, build_file):
       'executable': 'Link',
       'shared_library': 'Link',
       'loadable_module': 'Link',
+      'windows_driver': 'Link',
       'static_library': 'Lib',
   }
   msbuild_tool = msbuild_tool_map.get(spec['type'])
@@ -2841,7 +2934,7 @@ def _GetMSBuildConfigurationGlobalProperties(spec, configurations, build_file):
       new_paths = '$(ExecutablePath);' + ';'.join(new_paths)
 
   properties = {}
-  for (name, configuration) in sorted(configurations.iteritems()):
+  for (name, configuration) in sorted(configurations.items()):
     condition = _GetConfigurationCondition(name, configuration)
     attributes = _GetMSBuildAttributes(spec, configuration, build_file)
     msbuild_settings = configuration['finalized_msbuild_settings']
@@ -2851,6 +2944,9 @@ def _GetMSBuildConfigurationGlobalProperties(spec, configurations, build_file):
                             attributes['OutputDirectory'])
     _AddConditionalProperty(properties, condition, 'TargetName',
                             attributes['TargetName'])
+    if 'TargetExt' in attributes:
+      _AddConditionalProperty(properties, condition, 'TargetExt',
+                              attributes['TargetExt'])
 
     if attributes.get('TargetPath'):
       _AddConditionalProperty(properties, condition, 'TargetPath',
@@ -2863,7 +2959,7 @@ def _GetMSBuildConfigurationGlobalProperties(spec, configurations, build_file):
       _AddConditionalProperty(properties, condition, 'ExecutablePath',
                               new_paths)
     tool_settings = msbuild_settings.get('', {})
-    for name, value in sorted(tool_settings.iteritems()):
+    for name, value in sorted(tool_settings.items()):
       formatted_value = _GetValueFormattedForMSBuild('', name, value)
       _AddConditionalProperty(properties, condition, name, formatted_value)
   return _GetMSBuildPropertyGroup(spec, None, properties)
@@ -2932,7 +3028,7 @@ def _GetMSBuildPropertyGroup(spec, label, properties):
   # NOTE: reverse(topsort(DAG)) = topsort(reverse_edges(DAG))
   for name in reversed(properties_ordered):
     values = properties[name]
-    for value, conditions in sorted(values.iteritems()):
+    for value, conditions in sorted(values.items()):
       if len(conditions) == num_configurations:
         # If the value is the same all configurations,
         # just add one unconditional entry.
@@ -2945,18 +3041,18 @@ def _GetMSBuildPropertyGroup(spec, label, properties):
 
 def _GetMSBuildToolSettingsSections(spec, configurations):
   groups = []
-  for (name, configuration) in sorted(configurations.iteritems()):
+  for (name, configuration) in sorted(configurations.items()):
     msbuild_settings = configuration['finalized_msbuild_settings']
     group = ['ItemDefinitionGroup',
              {'Condition': _GetConfigurationCondition(name, configuration)}
             ]
-    for tool_name, tool_settings in sorted(msbuild_settings.iteritems()):
+    for tool_name, tool_settings in sorted(msbuild_settings.items()):
       # Skip the tool named '' which is a holder of global settings handled
       # by _GetMSBuildConfigurationGlobalProperties.
       if tool_name:
         if tool_settings:
           tool = [tool_name]
-          for name, value in sorted(tool_settings.iteritems()):
+          for name, value in sorted(tool_settings.items()):
             formatted_value = _GetValueFormattedForMSBuild(tool_name, name,
                                                            value)
             tool.append([name, formatted_value])
@@ -2989,8 +3085,8 @@ def _FinalizeMSBuildSettings(spec, configuration):
     for ignored_setting in ignored_settings:
       value = configuration.get(ignored_setting)
       if value:
-        print ('Warning: The automatic conversion to MSBuild does not handle '
-               '%s.  Ignoring setting of %s' % (ignored_setting, str(value)))
+        print('Warning: The automatic conversion to MSBuild does not handle '
+              '%s.  Ignoring setting of %s' % (ignored_setting, str(value)))
 
   defines = [_EscapeCppDefineForMSBuild(d) for d in defines]
   disabled_warnings = _GetDisabledWarnings(configuration)
@@ -3156,7 +3252,7 @@ def _AddSources2(spec, sources, exclusions, grouped_sources,
                            {'Condition': condition},
                            'true'])
         # Add precompile if needed
-        for config_name, configuration in spec['configurations'].iteritems():
+        for config_name, configuration in spec['configurations'].items():
           precompiled_source = configuration.get('msvs_precompiled_source', '')
           if precompiled_source != '':
             precompiled_source = _FixPath(precompiled_source)
@@ -3185,7 +3281,8 @@ def _AddSources2(spec, sources, exclusions, grouped_sources,
                 detail.append(['ForcedIncludeFiles', ''])
 
         group, element = _MapFileToMsBuildSourceType(source, rule_dependencies,
-                                                     extension_to_rule_name)
+                                                     extension_to_rule_name,
+                                                     _GetUniquePlatforms(spec))
         grouped_sources[group].append([element, {'Include': source}] + detail)
 
 
@@ -3202,7 +3299,10 @@ def _GetMSBuildProjectReferences(project):
           ['Project', guid],
           ['ReferenceOutputAssembly', 'false']
           ]
-      for config in dependency.spec.get('configurations', {}).itervalues():
+      for config in dependency.spec.get('configurations', {}).values():
+        if config.get('msvs_use_library_dependency_inputs', 0):
+          project_ref.append(['UseLibraryDependencyInputs', 'true'])
+          break
         # If it's disabled in any config, turn it off in the reference.
         if config.get('msvs_2010_disable_uldi_when_referenced', 0):
           project_ref.append(['UseLibraryDependencyInputs', 'false'])
@@ -3265,10 +3365,10 @@ def _GenerateMSBuildProject(project, options, version, generator_flags):
 
   _GenerateMSBuildFiltersFile(project.path + '.filters', sources,
                               rule_dependencies,
-                              extension_to_rule_name)
+                              extension_to_rule_name, _GetUniquePlatforms(spec))
   missing_sources = _VerifySourcesExist(sources, project_dir)
 
-  for configuration in configurations.itervalues():
+  for configuration in configurations.values():
     _FinalizeMSBuildSettings(spec, configuration)
 
   # Add attributes to root element
@@ -3285,6 +3385,12 @@ def _GenerateMSBuildProject(project, options, version, generator_flags):
   import_masm_targets_section = [
       ['Import',
         {'Project': r'$(VCTargetsPath)\BuildCustomizations\masm.targets'}]]
+  import_marmasm_props_section = [
+      ['Import',
+        {'Project': r'$(VCTargetsPath)\BuildCustomizations\marmasm.props'}]]
+  import_marmasm_targets_section = [
+      ['Import',
+        {'Project': r'$(VCTargetsPath)\BuildCustomizations\marmasm.targets'}]]
   macro_section = [['PropertyGroup', {'Label': 'UserMacros'}]]
 
   content = [
@@ -3295,7 +3401,8 @@ def _GenerateMSBuildProject(project, options, version, generator_flags):
       }]
 
   content += _GetMSBuildProjectConfigurations(configurations)
-  content += _GetMSBuildGlobalProperties(spec, project.guid, project_file_name)
+  content += _GetMSBuildGlobalProperties(spec, version, project.guid,
+                                         project_file_name)
   content += import_default_section
   content += _GetMSBuildConfigurationDetails(spec, project.build_file)
   if spec.get('msvs_enable_winphone'):
@@ -3304,6 +3411,7 @@ def _GenerateMSBuildProject(project, options, version, generator_flags):
    content += _GetMSBuildLocalProperties(project.msbuild_toolset)
   content += import_cpp_props_section
   content += import_masm_props_section
+  content += import_marmasm_props_section
   content += _GetMSBuildExtensions(props_files_of_rules)
   content += _GetMSBuildPropertySheets(configurations)
   content += macro_section
@@ -3316,6 +3424,7 @@ def _GenerateMSBuildProject(project, options, version, generator_flags):
   content += _GetMSBuildProjectReferences(project)
   content += import_cpp_targets_section
   content += import_masm_targets_section
+  content += import_marmasm_targets_section
   content += _GetMSBuildExtensionTargets(targets_files_of_rules)
 
   if spec.get('msvs_external_builder'):
@@ -3393,7 +3502,7 @@ def _GenerateActionsForMSBuild(spec, actions_to_add):
   """
   sources_handled_by_action = OrderedSet()
   actions_spec = []
-  for primary_input, actions in actions_to_add.iteritems():
+  for primary_input, actions in actions_to_add.items():
     inputs = OrderedSet()
     outputs = OrderedSet()
     descriptions = []

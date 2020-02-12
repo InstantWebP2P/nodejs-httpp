@@ -8,7 +8,7 @@ var path = require('path')
 var nopt = require('nopt')
 var ini = require('ini')
 var Umask = configDefs.Umask
-var mkdirp = require('mkdirp')
+var mkdirp = require('gentle-fs').mkdir
 var umask = require('../utils/umask')
 var isWindows = require('../utils/is-windows.js')
 
@@ -21,18 +21,18 @@ exports.defs = configDefs
 
 Object.defineProperty(exports, 'defaults', { get: function () {
   return configDefs.defaults
-}, enumerable: true })
+},
+enumerable: true })
 
 Object.defineProperty(exports, 'types', { get: function () {
   return configDefs.types
-}, enumerable: true })
+},
+enumerable: true })
 
 exports.validate = validate
 
-var myUid = process.env.SUDO_UID !== undefined
-          ? process.env.SUDO_UID : (process.getuid && process.getuid())
-var myGid = process.env.SUDO_GID !== undefined
-          ? process.env.SUDO_GID : (process.getgid && process.getgid())
+var myUid = process.getuid && process.getuid()
+var myGid = process.getgid && process.getgid()
 
 var loading = false
 var loadCbs = []
@@ -153,17 +153,10 @@ function load_ (builtin, rc, cli, cb) {
     // annoying humans and their expectations!
     if (conf.get('prefix')) {
       var etc = path.resolve(conf.get('prefix'), 'etc')
-      mkdirp(etc, function () {
-        defaults.globalconfig = path.resolve(etc, 'npmrc')
-        defaults.globalignorefile = path.resolve(etc, 'npmignore')
-        afterUserContinuation()
-      })
-    } else {
-      afterUserContinuation()
+      defaults.globalconfig = path.resolve(etc, 'npmrc')
+      defaults.globalignorefile = path.resolve(etc, 'npmignore')
     }
-  }
 
-  function afterUserContinuation () {
     conf.addFile(conf.get('globalconfig'), 'global')
 
     // move the builtin into the conf stack now.
@@ -208,7 +201,7 @@ inherits(Conf, CC)
 function Conf (base) {
   if (!(this instanceof Conf)) return new Conf(base)
 
-  CC.apply(this)
+  CC.call(this)
 
   if (base) {
     if (base instanceof Conf) {
@@ -223,9 +216,7 @@ function Conf (base) {
 
 Conf.prototype.loadPrefix = require('./load-prefix.js')
 Conf.prototype.loadCAFile = require('./load-cafile.js')
-Conf.prototype.loadUid = require('./load-uid.js')
 Conf.prototype.setUser = require('./set-user.js')
-Conf.prototype.findPrefix = require('./find-prefix.js')
 Conf.prototype.getCredentialsByURI = require('./get-credentials-by-uri.js')
 Conf.prototype.setCredentialsByURI = require('./set-credentials-by-uri.js')
 Conf.prototype.clearCredentialsByURI = require('./clear-credentials-by-uri.js')
@@ -233,11 +224,8 @@ Conf.prototype.clearCredentialsByURI = require('./clear-credentials-by-uri.js')
 Conf.prototype.loadExtras = function (cb) {
   this.setUser(function (er) {
     if (er) return cb(er)
-    this.loadUid(function (er) {
-      if (er) return cb(er)
-      // Without prefix, nothing will ever work
-      mkdirp(this.prefix, cb)
-    }.bind(this))
+    // Without prefix, nothing will ever work
+    mkdirp(this.prefix, cb)
   }.bind(this))
 }
 
@@ -275,7 +263,7 @@ Conf.prototype.save = function (where, cb) {
       if (cb) return cb(er)
       else return this.emit('error', er)
     }
-    this._saving --
+    this._saving--
     if (this._saving === 0) {
       if (cb) cb()
       this.emit('save')
@@ -284,7 +272,7 @@ Conf.prototype.save = function (where, cb) {
 
   then = then.bind(this)
   done = done.bind(this)
-  this._saving ++
+  this._saving++
 
   var mode = where === 'user' ? '0600' : '0666'
   if (!data.trim()) {
@@ -293,15 +281,21 @@ Conf.prototype.save = function (where, cb) {
       done(null)
     })
   } else {
-    mkdirp(path.dirname(target.path), function (er) {
+    // we don't have to use inferOwner here, because gentle-fs will
+    // mkdir with the correctly inferred ownership.  Just preserve it.
+    const dir = path.dirname(target.path)
+    mkdirp(dir, function (er) {
       if (er) return then(er)
-      fs.writeFile(target.path, data, 'utf8', function (er) {
+      fs.stat(dir, (er, st) => {
         if (er) return then(er)
-        if (where === 'user' && myUid && myGid) {
-          fs.chown(target.path, +myUid, +myGid, then)
-        } else {
-          then()
-        }
+        fs.writeFile(target.path, data, 'utf8', function (er) {
+          if (er) return then(er)
+          if (myUid === 0 && (myUid !== st.uid || myGid !== st.gid)) {
+            fs.chown(target.path, st.uid, st.gid, then)
+          } else {
+            then()
+          }
+        })
       })
     })
   }
@@ -332,7 +326,10 @@ Conf.prototype.parse = function (content, file) {
 Conf.prototype.add = function (data, marker) {
   try {
     Object.keys(data).forEach(function (k) {
-      data[k] = parseField(data[k], k)
+      const newKey = envReplace(k)
+      const newField = parseField(data[k], newKey)
+      delete data[k]
+      data[newKey] = newField
     })
   } catch (e) {
     this.emit('error', e)
@@ -352,8 +349,8 @@ Conf.prototype.addEnv = function (env) {
       // leave first char untouched, even if
       // it is a '_' - convert all other to '-'
       var p = k.toLowerCase()
-               .replace(/^npm_config_/, '')
-               .replace(/(?!^)_/g, '-')
+        .replace(/^npm_config_/, '')
+        .replace(/(?!^)_/g, '-')
       conf[p] = env[k]
     })
   return CC.prototype.addEnv.call(this, '', conf, 'env')

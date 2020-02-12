@@ -1,10 +1,12 @@
+// © 2016 and later: Unicode, Inc. and others.
+// License & terms of use: http://www.unicode.org/copyright.html
 /*
 **********************************************************************
 *   Copyright (C) 2004-2016, International Business Machines
 *   Corporation and others.  All Rights Reserved.
 **********************************************************************
 *   file name:  uregex.h
-*   encoding:   US-ASCII
+*   encoding:   UTF-8
 *   indentation:4
 *
 *   created on: 2004mar09
@@ -165,6 +167,7 @@ uregex_openUText(UText          *pattern,
                  UParseError    *pe,
                  UErrorCode     *status);
 
+#if !UCONFIG_NO_CONVERSION
 /**
   *  Open (compile) an ICU regular expression.  The resulting regular expression
   *   handle can then be used to perform various matching operations.
@@ -188,7 +191,6 @@ uregex_openUText(UText          *pattern,
   *
   * @stable ICU 3.0
   */
-#if !UCONFIG_NO_CONVERSION
 U_STABLE URegularExpression * U_EXPORT2
 uregex_openC( const char           *pattern,
                     uint32_t        flags,

@@ -5,8 +5,11 @@
 #ifndef V8_SNAPSHOT_SNAPSHOT_SOURCE_SINK_H_
 #define V8_SNAPSHOT_SNAPSHOT_SOURCE_SINK_H_
 
+#include <utility>
+
 #include "src/base/logging.h"
-#include "src/utils.h"
+#include "src/snapshot/serializer-common.h"
+#include "src/utils/utils.h"
 
 namespace v8 {
 namespace internal {
@@ -25,9 +28,9 @@ class SnapshotByteSource final {
         position_(0) {}
 
   explicit SnapshotByteSource(Vector<const byte> payload)
-      : data_(payload.start()), length_(payload.length()), position_(0) {}
+      : data_(payload.begin()), length_(payload.length()), position_(0) {}
 
-  ~SnapshotByteSource() {}
+  ~SnapshotByteSource() = default;
 
   bool HasMore() { return position_ < length_; }
 
@@ -38,7 +41,10 @@ class SnapshotByteSource final {
 
   void Advance(int by) { position_ += by; }
 
-  void CopyRaw(byte* to, int number_of_bytes);
+  void CopyRaw(void* to, int number_of_bytes) {
+    memcpy(to, data_ + position_, number_of_bytes);
+    position_ += number_of_bytes;
+  }
 
   inline int GetInt() {
     // This way of decoding variable-length encoded integers does not
@@ -57,10 +63,34 @@ class SnapshotByteSource final {
     return answer;
   }
 
+  int GetIntSlow() {
+    // Unlike GetInt, this reads only up to the end of the blob, even if less
+    // than 4 bytes are remaining.
+    // TODO(jgruber): Remove once the use in MakeFromScriptsSource is gone.
+    DCHECK(position_ < length_);
+    uint32_t answer = data_[position_];
+    if (position_ + 1 < length_) answer |= data_[position_ + 1] << 8;
+    if (position_ + 2 < length_) answer |= data_[position_ + 2] << 16;
+    if (position_ + 3 < length_) answer |= data_[position_ + 3] << 24;
+    int bytes = (answer & 3) + 1;
+    Advance(bytes);
+    uint32_t mask = 0xffffffffu;
+    mask >>= 32 - (bytes << 3);
+    answer &= mask;
+    answer >>= 2;
+    return answer;
+  }
+
   // Returns length.
   int GetBlob(const byte** data);
 
   int position() { return position_; }
+  void set_position(int position) { position_ = position; }
+
+  std::pair<uint32_t, uint32_t> GetChecksum() const {
+    Checksum checksum(Vector<const byte>(data_, length_));
+    return {checksum.a(), checksum.b()};
+  }
 
  private:
   const byte* data_;
@@ -78,12 +108,12 @@ class SnapshotByteSource final {
  */
 class SnapshotByteSink {
  public:
-  SnapshotByteSink() {}
+  SnapshotByteSink() = default;
   explicit SnapshotByteSink(int initial_size) : data_(initial_size) {}
 
-  ~SnapshotByteSink() {}
+  ~SnapshotByteSink() = default;
 
-  void Put(byte b, const char* description) { data_.Add(b); }
+  void Put(byte b, const char* description) { data_.push_back(b); }
 
   void PutSection(int b, const char* description) {
     DCHECK_LE(b, kMaxUInt8);
@@ -92,12 +122,14 @@ class SnapshotByteSink {
 
   void PutInt(uintptr_t integer, const char* description);
   void PutRaw(const byte* data, int number_of_bytes, const char* description);
-  int Position() { return data_.length(); }
 
-  const List<byte>& data() const { return data_; }
+  void Append(const SnapshotByteSink& other);
+  int Position() const { return static_cast<int>(data_.size()); }
+
+  const std::vector<byte>* data() const { return &data_; }
 
  private:
-  List<byte> data_;
+  std::vector<byte> data_;
 };
 
 }  // namespace internal

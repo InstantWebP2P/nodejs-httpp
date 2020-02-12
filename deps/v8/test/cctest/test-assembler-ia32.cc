@@ -27,23 +27,23 @@
 
 #include <stdlib.h>
 
-#include "src/v8.h"
+#include "src/init/v8.h"
 
 #include "src/base/platform/platform.h"
 #include "src/base/utils/random-number-generator.h"
-#include "src/disassembler.h"
-#include "src/factory.h"
-#include "src/macro-assembler.h"
-#include "src/ostreams.h"
+#include "src/codegen/assembler-inl.h"
+#include "src/codegen/macro-assembler.h"
+#include "src/diagnostics/disassembler.h"
+#include "src/heap/factory.h"
+#include "src/utils/ostreams.h"
 #include "test/cctest/cctest.h"
 
-using namespace v8::internal;
+namespace v8 {
+namespace internal {
 
-
-typedef int (*F0)();
-typedef int (*F1)(int x);
-typedef int (*F2)(int x, int y);
-
+using F0 = int (*)();
+using F1 = int (*)(int x);
+using F2 = int (*)(int x, int y);
 
 #define __ assm.
 
@@ -53,18 +53,18 @@ TEST(AssemblerIa320) {
   HandleScope scope(isolate);
 
   v8::internal::byte buffer[256];
-  Assembler assm(isolate, buffer, sizeof buffer);
+  Assembler assm(AssemblerOptions{},
+                 ExternalAssemblerBuffer(buffer, sizeof buffer));
 
   __ mov(eax, Operand(esp, 4));
   __ add(eax, Operand(esp, 8));
   __ ret(0);
 
   CodeDesc desc;
-  assm.GetCode(&desc);
-  Handle<Code> code = isolate->factory()->NewCode(
-      desc, Code::ComputeFlags(Code::STUB), Handle<Code>());
+  assm.GetCode(isolate, &desc);
+  Handle<Code> code = Factory::CodeBuilder(isolate, desc, Code::STUB).Build();
 #ifdef OBJECT_PRINT
-  OFStream os(stdout);
+  StdoutStream os;
   code->Print(os);
 #endif
   F2 f = FUNCTION_CAST<F2>(code->entry());
@@ -80,7 +80,8 @@ TEST(AssemblerIa321) {
   HandleScope scope(isolate);
 
   v8::internal::byte buffer[256];
-  Assembler assm(isolate, buffer, sizeof buffer);
+  Assembler assm(AssemblerOptions{},
+                 ExternalAssemblerBuffer(buffer, sizeof buffer));
   Label L, C;
 
   __ mov(edx, Operand(esp, 4));
@@ -97,11 +98,10 @@ TEST(AssemblerIa321) {
   __ ret(0);
 
   CodeDesc desc;
-  assm.GetCode(&desc);
-  Handle<Code> code = isolate->factory()->NewCode(
-      desc, Code::ComputeFlags(Code::STUB), Handle<Code>());
+  assm.GetCode(isolate, &desc);
+  Handle<Code> code = Factory::CodeBuilder(isolate, desc, Code::STUB).Build();
 #ifdef OBJECT_PRINT
-  OFStream os(stdout);
+  StdoutStream os;
   code->Print(os);
 #endif
   F1 f = FUNCTION_CAST<F1>(code->entry());
@@ -117,7 +117,8 @@ TEST(AssemblerIa322) {
   HandleScope scope(isolate);
 
   v8::internal::byte buffer[256];
-  Assembler assm(isolate, buffer, sizeof buffer);
+  Assembler assm(AssemblerOptions{},
+                 ExternalAssemblerBuffer(buffer, sizeof buffer));
   Label L, C;
 
   __ mov(edx, Operand(esp, 4));
@@ -135,14 +136,13 @@ TEST(AssemblerIa322) {
 
   // some relocated stuff here, not executed
   __ mov(eax, isolate->factory()->true_value());
-  __ jmp(NULL, RelocInfo::RUNTIME_ENTRY);
+  __ jmp(kNullAddress, RelocInfo::RUNTIME_ENTRY);
 
   CodeDesc desc;
-  assm.GetCode(&desc);
-  Handle<Code> code = isolate->factory()->NewCode(
-      desc, Code::ComputeFlags(Code::STUB), Handle<Code>());
+  assm.GetCode(isolate, &desc);
+  Handle<Code> code = Factory::CodeBuilder(isolate, desc, Code::STUB).Build();
 #ifdef OBJECT_PRINT
-  OFStream os(stdout);
+  StdoutStream os;
   code->Print(os);
 #endif
   F1 f = FUNCTION_CAST<F1>(code->entry());
@@ -151,8 +151,7 @@ TEST(AssemblerIa322) {
   CHECK_EQ(3628800, res);
 }
 
-
-typedef int (*F3)(float x);
+using F3 = int (*)(float x);
 
 TEST(AssemblerIa323) {
   CcTest::InitializeVM();
@@ -161,17 +160,17 @@ TEST(AssemblerIa323) {
   HandleScope scope(isolate);
 
   v8::internal::byte buffer[256];
-  Assembler assm(isolate, buffer, sizeof buffer);
+  Assembler assm(AssemblerOptions{},
+                 ExternalAssemblerBuffer(buffer, sizeof buffer));
 
   __ cvttss2si(eax, Operand(esp, 4));
   __ ret(0);
 
   CodeDesc desc;
-  assm.GetCode(&desc);
-  Handle<Code> code = isolate->factory()->NewCode(
-      desc, Code::ComputeFlags(Code::STUB), Handle<Code>());
+  assm.GetCode(isolate, &desc);
+  Handle<Code> code = Factory::CodeBuilder(isolate, desc, Code::STUB).Build();
 #ifdef OBJECT_PRINT
-  OFStream os(stdout);
+  StdoutStream os;
   code->Print(os);
 #endif
   F3 f = FUNCTION_CAST<F3>(code->entry());
@@ -180,8 +179,7 @@ TEST(AssemblerIa323) {
   CHECK_EQ(-3, res);
 }
 
-
-typedef int (*F4)(double x);
+using F4 = int (*)(double x);
 
 TEST(AssemblerIa324) {
   CcTest::InitializeVM();
@@ -190,17 +188,17 @@ TEST(AssemblerIa324) {
   HandleScope scope(isolate);
 
   v8::internal::byte buffer[256];
-  Assembler assm(isolate, buffer, sizeof buffer);
+  Assembler assm(AssemblerOptions{},
+                 ExternalAssemblerBuffer(buffer, sizeof buffer));
 
   __ cvttsd2si(eax, Operand(esp, 4));
   __ ret(0);
 
   CodeDesc desc;
-  assm.GetCode(&desc);
-  Handle<Code> code = isolate->factory()->NewCode(
-      desc, Code::ComputeFlags(Code::STUB), Handle<Code>());
+  assm.GetCode(isolate, &desc);
+  Handle<Code> code = Factory::CodeBuilder(isolate, desc, Code::STUB).Build();
 #ifdef OBJECT_PRINT
-  OFStream os(stdout);
+  StdoutStream os;
   code->Print(os);
 #endif
   F4 f = FUNCTION_CAST<F4>(code->entry());
@@ -217,22 +215,21 @@ TEST(AssemblerIa325) {
   HandleScope scope(isolate);
 
   v8::internal::byte buffer[256];
-  Assembler assm(isolate, buffer, sizeof buffer);
+  Assembler assm(AssemblerOptions{},
+                 ExternalAssemblerBuffer(buffer, sizeof buffer));
 
-  __ mov(eax, Operand(reinterpret_cast<intptr_t>(&baz), RelocInfo::NONE32));
+  __ mov(eax, Operand(reinterpret_cast<intptr_t>(&baz), RelocInfo::NONE));
   __ ret(0);
 
   CodeDesc desc;
-  assm.GetCode(&desc);
-  Handle<Code> code = isolate->factory()->NewCode(
-      desc, Code::ComputeFlags(Code::STUB), Handle<Code>());
+  assm.GetCode(isolate, &desc);
+  Handle<Code> code = Factory::CodeBuilder(isolate, desc, Code::STUB).Build();
   F0 f = FUNCTION_CAST<F0>(code->entry());
   int res = f();
   CHECK_EQ(42, res);
 }
 
-
-typedef double (*F5)(double x, double y);
+using F5 = double (*)(double x, double y);
 
 TEST(AssemblerIa326) {
   CcTest::InitializeVM();
@@ -240,10 +237,11 @@ TEST(AssemblerIa326) {
   Isolate* isolate = reinterpret_cast<Isolate*>(CcTest::isolate());
   HandleScope scope(isolate);
   v8::internal::byte buffer[256];
-  Assembler assm(isolate, buffer, sizeof buffer);
+  Assembler assm(AssemblerOptions{},
+                 ExternalAssemblerBuffer(buffer, sizeof buffer));
 
-  __ movsd(xmm0, Operand(esp, 1 * kPointerSize));
-  __ movsd(xmm1, Operand(esp, 3 * kPointerSize));
+  __ movsd(xmm0, Operand(esp, 1 * kSystemPointerSize));
+  __ movsd(xmm1, Operand(esp, 3 * kSystemPointerSize));
   __ addsd(xmm0, xmm1);
   __ mulsd(xmm0, xmm1);
   __ subsd(xmm0, xmm1);
@@ -256,11 +254,10 @@ TEST(AssemblerIa326) {
   __ ret(0);
 
   CodeDesc desc;
-  assm.GetCode(&desc);
-  Handle<Code> code = isolate->factory()->NewCode(
-      desc, Code::ComputeFlags(Code::STUB), Handle<Code>());
+  assm.GetCode(isolate, &desc);
+  Handle<Code> code = Factory::CodeBuilder(isolate, desc, Code::STUB).Build();
 #ifdef OBJECT_PRINT
-  OFStream os(stdout);
+  StdoutStream os;
   code->Print(os);
 #endif
   F5 f = FUNCTION_CAST<F5>(code->entry());
@@ -269,8 +266,7 @@ TEST(AssemblerIa326) {
   CHECK(2.29 < res && res < 2.31);
 }
 
-
-typedef double (*F6)(int x);
+using F6 = double (*)(int x);
 
 TEST(AssemblerIa328) {
   CcTest::InitializeVM();
@@ -278,7 +274,8 @@ TEST(AssemblerIa328) {
   Isolate* isolate = reinterpret_cast<Isolate*>(CcTest::isolate());
   HandleScope scope(isolate);
   v8::internal::byte buffer[256];
-  Assembler assm(isolate, buffer, sizeof buffer);
+  Assembler assm(AssemblerOptions{},
+                 ExternalAssemblerBuffer(buffer, sizeof buffer));
   __ mov(eax, Operand(esp, 4));
   __ cvtsi2sd(xmm0, eax);
   // Copy xmm0 to st(0) using eight bytes of stack.
@@ -288,11 +285,10 @@ TEST(AssemblerIa328) {
   __ add(esp, Immediate(8));
   __ ret(0);
   CodeDesc desc;
-  assm.GetCode(&desc);
-  Handle<Code> code = isolate->factory()->NewCode(
-      desc, Code::ComputeFlags(Code::STUB), Handle<Code>());
+  assm.GetCode(isolate, &desc);
+  Handle<Code> code = Factory::CodeBuilder(isolate, desc, Code::STUB).Build();
 #ifdef OBJECT_PRINT
-  OFStream os(stdout);
+  StdoutStream os;
   code->Print(os);
 #endif
   F6 f = FUNCTION_CAST<F6>(code->entry());
@@ -302,69 +298,12 @@ TEST(AssemblerIa328) {
   CHECK(11.99 < res && res < 12.001);
 }
 
-
-typedef int (*F7)(double x, double y);
-
-TEST(AssemblerIa329) {
-  CcTest::InitializeVM();
-  Isolate* isolate = reinterpret_cast<Isolate*>(CcTest::isolate());
-  HandleScope scope(isolate);
-  v8::internal::byte buffer[256];
-  MacroAssembler assm(isolate, buffer, sizeof(buffer),
-                      v8::internal::CodeObjectRequired::kYes);
-  enum { kEqual = 0, kGreater = 1, kLess = 2, kNaN = 3, kUndefined = 4 };
-  Label equal_l, less_l, greater_l, nan_l;
-  __ fld_d(Operand(esp, 3 * kPointerSize));
-  __ fld_d(Operand(esp, 1 * kPointerSize));
-  __ FCmp();
-  __ j(parity_even, &nan_l);
-  __ j(equal, &equal_l);
-  __ j(below, &less_l);
-  __ j(above, &greater_l);
-
-  __ mov(eax, kUndefined);
-  __ ret(0);
-
-  __ bind(&equal_l);
-  __ mov(eax, kEqual);
-  __ ret(0);
-
-  __ bind(&greater_l);
-  __ mov(eax, kGreater);
-  __ ret(0);
-
-  __ bind(&less_l);
-  __ mov(eax, kLess);
-  __ ret(0);
-
-  __ bind(&nan_l);
-  __ mov(eax, kNaN);
-  __ ret(0);
-
-
-  CodeDesc desc;
-  assm.GetCode(&desc);
-  Handle<Code> code = isolate->factory()->NewCode(
-      desc, Code::ComputeFlags(Code::STUB), Handle<Code>());
-#ifdef OBJECT_PRINT
-  OFStream os(stdout);
-  code->Print(os);
-#endif
-
-  F7 f = FUNCTION_CAST<F7>(code->entry());
-  CHECK_EQ(kLess, f(1.1, 2.2));
-  CHECK_EQ(kEqual, f(2.2, 2.2));
-  CHECK_EQ(kGreater, f(3.3, 2.2));
-  CHECK_EQ(kNaN, f(std::numeric_limits<double>::quiet_NaN(), 1.1));
-}
-
-
 TEST(AssemblerIa3210) {
   // Test chaining of label usages within instructions (issue 1644).
   CcTest::InitializeVM();
   Isolate* isolate = reinterpret_cast<Isolate*>(CcTest::isolate());
   HandleScope scope(isolate);
-  Assembler assm(isolate, NULL, 0);
+  Assembler assm(AssemblerOptions{});
 
   Label target;
   __ j(equal, &target);
@@ -379,7 +318,8 @@ TEST(AssemblerMultiByteNop) {
   Isolate* isolate = reinterpret_cast<Isolate*>(CcTest::isolate());
   HandleScope scope(isolate);
   v8::internal::byte buffer[1024];
-  Assembler assm(isolate, buffer, sizeof(buffer));
+  Assembler assm(AssemblerOptions{},
+                 ExternalAssemblerBuffer(buffer, sizeof(buffer)));
   __ push(ebx);
   __ push(ecx);
   __ push(edx);
@@ -427,9 +367,8 @@ TEST(AssemblerMultiByteNop) {
   __ ret(0);
 
   CodeDesc desc;
-  assm.GetCode(&desc);
-  Handle<Code> code = isolate->factory()->NewCode(
-      desc, Code::ComputeFlags(Code::STUB), Handle<Code>());
+  assm.GetCode(isolate, &desc);
+  Handle<Code> code = Factory::CodeBuilder(isolate, desc, Code::STUB).Build();
   CHECK(code->IsCode());
 
   F0 f = FUNCTION_CAST<F0>(code->entry());
@@ -451,7 +390,8 @@ void DoSSE2(const v8::FunctionCallbackInfo<v8::Value>& args) {
   CHECK_EQ(ELEMENT_COUNT, vec->Length());
 
   v8::internal::byte buffer[256];
-  Assembler assm(isolate, buffer, sizeof buffer);
+  Assembler assm(AssemblerOptions{},
+                 ExternalAssemblerBuffer(buffer, sizeof buffer));
 
   // Remove return address from the stack for fix stack frame alignment.
   __ pop(ecx);
@@ -476,10 +416,9 @@ void DoSSE2(const v8::FunctionCallbackInfo<v8::Value>& args) {
   __ ret(0);
 
   CodeDesc desc;
-  assm.GetCode(&desc);
+  assm.GetCode(isolate, &desc);
 
-  Handle<Code> code = isolate->factory()->NewCode(
-      desc, Code::ComputeFlags(Code::STUB), Handle<Code>());
+  Handle<Code> code = Factory::CodeBuilder(isolate, desc, Code::STUB).Build();
 
   F0 f = FUNCTION_CAST<F0>(code->entry());
   int res = f();
@@ -498,7 +437,7 @@ TEST(StackAlignmentForSSE2) {
   global_template->Set(v8_str("do_sse2"),
                        v8::FunctionTemplate::New(isolate, DoSSE2));
 
-  LocalContext env(NULL, global_template);
+  LocalContext env(nullptr, global_template);
   CompileRun(
       "function foo(vec) {"
       "  return do_sse2(vec);"
@@ -533,8 +472,8 @@ TEST(AssemblerIa32Extractps) {
   Isolate* isolate = reinterpret_cast<Isolate*>(CcTest::isolate());
   HandleScope scope(isolate);
   v8::internal::byte buffer[256];
-  MacroAssembler assm(isolate, buffer, sizeof(buffer),
-                      v8::internal::CodeObjectRequired::kYes);
+  MacroAssembler assm(isolate, v8::internal::CodeObjectRequired::kYes,
+                      ExternalAssemblerBuffer(buffer, sizeof(buffer)));
   { CpuFeatureScope fscope41(&assm, SSE4_1);
     __ movsd(xmm1, Operand(esp, 4));
     __ extractps(eax, xmm1, 0x1);
@@ -542,11 +481,10 @@ TEST(AssemblerIa32Extractps) {
   }
 
   CodeDesc desc;
-  assm.GetCode(&desc);
-  Handle<Code> code = isolate->factory()->NewCode(
-      desc, Code::ComputeFlags(Code::STUB), Handle<Code>());
+  assm.GetCode(isolate, &desc);
+  Handle<Code> code = Factory::CodeBuilder(isolate, desc, Code::STUB).Build();
 #ifdef OBJECT_PRINT
-  OFStream os(stdout);
+  StdoutStream os;
   code->Print(os);
 #endif
 
@@ -557,19 +495,18 @@ TEST(AssemblerIa32Extractps) {
   CHECK_EQ(static_cast<int>(0x87654321), f(uint64_to_double(value2)));
 }
 
-
-typedef int (*F8)(float x, float y);
+using F8 = int (*)(float x, float y);
 TEST(AssemblerIa32SSE) {
   CcTest::InitializeVM();
 
   Isolate* isolate = reinterpret_cast<Isolate*>(CcTest::isolate());
   HandleScope scope(isolate);
   v8::internal::byte buffer[256];
-  MacroAssembler assm(isolate, buffer, sizeof(buffer),
-                      v8::internal::CodeObjectRequired::kYes);
+  MacroAssembler assm(isolate, v8::internal::CodeObjectRequired::kYes,
+                      ExternalAssemblerBuffer(buffer, sizeof(buffer)));
   {
-    __ movss(xmm0, Operand(esp, kPointerSize));
-    __ movss(xmm1, Operand(esp, 2 * kPointerSize));
+    __ movss(xmm0, Operand(esp, kSystemPointerSize));
+    __ movss(xmm1, Operand(esp, 2 * kSystemPointerSize));
     __ shufps(xmm0, xmm0, 0x0);
     __ shufps(xmm1, xmm1, 0x0);
     __ movaps(xmm2, xmm1);
@@ -582,11 +519,10 @@ TEST(AssemblerIa32SSE) {
   }
 
   CodeDesc desc;
-  assm.GetCode(&desc);
-  Handle<Code> code = isolate->factory()->NewCode(
-      desc, Code::ComputeFlags(Code::STUB), Handle<Code>());
+  assm.GetCode(isolate, &desc);
+  Handle<Code> code = Factory::CodeBuilder(isolate, desc, Code::STUB).Build();
 #ifdef OBJECT_PRINT
-  OFStream os(stdout);
+  StdoutStream os;
   code->Print(os);
 #endif
 
@@ -594,8 +530,39 @@ TEST(AssemblerIa32SSE) {
   CHECK_EQ(2, f(1.0, 2.0));
 }
 
+TEST(AssemblerIa32SSE3) {
+  CcTest::InitializeVM();
+  if (!CpuFeatures::IsSupported(SSE3)) return;
 
-typedef int (*F9)(double x, double y, double z);
+  Isolate* isolate = reinterpret_cast<Isolate*>(CcTest::isolate());
+  HandleScope scope(isolate);
+  v8::internal::byte buffer[256];
+  MacroAssembler assm(isolate, v8::internal::CodeObjectRequired::kYes,
+                      ExternalAssemblerBuffer(buffer, sizeof(buffer)));
+  {
+    CpuFeatureScope fscope(&assm, SSE3);
+    __ movss(xmm0, Operand(esp, kSystemPointerSize));
+    __ movss(xmm1, Operand(esp, 2 * kSystemPointerSize));
+    __ shufps(xmm0, xmm0, 0x0);
+    __ shufps(xmm1, xmm1, 0x0);
+    __ haddps(xmm1, xmm0);
+    __ cvttss2si(eax, xmm1);
+    __ ret(0);
+  }
+
+  CodeDesc desc;
+  assm.GetCode(isolate, &desc);
+  Handle<Code> code = Factory::CodeBuilder(isolate, desc, Code::STUB).Build();
+#ifdef OBJECT_PRINT
+  StdoutStream os;
+  code->Print(os);
+#endif
+
+  F8 f = FUNCTION_CAST<F8>(code->entry());
+  CHECK_EQ(4, f(1.0, 2.0));
+}
+
+using F9 = int (*)(double x, double y, double z);
 TEST(AssemblerX64FMA_sd) {
   CcTest::InitializeVM();
   if (!CpuFeatures::IsSupported(FMA3)) return;
@@ -603,21 +570,21 @@ TEST(AssemblerX64FMA_sd) {
   Isolate* isolate = reinterpret_cast<Isolate*>(CcTest::isolate());
   HandleScope scope(isolate);
   v8::internal::byte buffer[1024];
-  MacroAssembler assm(isolate, buffer, sizeof(buffer),
-                      v8::internal::CodeObjectRequired::kYes);
+  MacroAssembler assm(isolate, v8::internal::CodeObjectRequired::kYes,
+                      ExternalAssemblerBuffer(buffer, sizeof(buffer)));
   {
     CpuFeatureScope fscope(&assm, FMA3);
     Label exit;
-    __ movsd(xmm0, Operand(esp, 1 * kPointerSize));
-    __ movsd(xmm1, Operand(esp, 3 * kPointerSize));
-    __ movsd(xmm2, Operand(esp, 5 * kPointerSize));
+    __ movsd(xmm0, Operand(esp, 1 * kSystemPointerSize));
+    __ movsd(xmm1, Operand(esp, 3 * kSystemPointerSize));
+    __ movsd(xmm2, Operand(esp, 5 * kSystemPointerSize));
     // argument in xmm0, xmm1 and xmm2
     // xmm0 * xmm1 + xmm2
     __ movaps(xmm3, xmm0);
     __ mulsd(xmm3, xmm1);
     __ addsd(xmm3, xmm2);  // Expected result in xmm3
 
-    __ sub(esp, Immediate(kDoubleSize));  // For memory operand
+    __ AllocateStackSpace(kDoubleSize);  // For memory operand
     // vfmadd132sd
     __ mov(eax, Immediate(1));  // Test number
     __ movaps(xmm4, xmm0);
@@ -811,11 +778,10 @@ TEST(AssemblerX64FMA_sd) {
   }
 
   CodeDesc desc;
-  assm.GetCode(&desc);
-  Handle<Code> code = isolate->factory()->NewCode(
-      desc, Code::ComputeFlags(Code::STUB), Handle<Code>());
+  assm.GetCode(isolate, &desc);
+  Handle<Code> code = Factory::CodeBuilder(isolate, desc, Code::STUB).Build();
 #ifdef OBJECT_PRINT
-  OFStream os(stdout);
+  StdoutStream os;
   code->Print(os);
 #endif
 
@@ -823,8 +789,7 @@ TEST(AssemblerX64FMA_sd) {
   CHECK_EQ(0, f(0.000092662107262076, -2.460774966188315, -1.0958787393627414));
 }
 
-
-typedef int (*F10)(float x, float y, float z);
+using F10 = int (*)(float x, float y, float z);
 TEST(AssemblerX64FMA_ss) {
   CcTest::InitializeVM();
   if (!CpuFeatures::IsSupported(FMA3)) return;
@@ -832,21 +797,21 @@ TEST(AssemblerX64FMA_ss) {
   Isolate* isolate = reinterpret_cast<Isolate*>(CcTest::isolate());
   HandleScope scope(isolate);
   v8::internal::byte buffer[1024];
-  MacroAssembler assm(isolate, buffer, sizeof(buffer),
-                      v8::internal::CodeObjectRequired::kYes);
+  MacroAssembler assm(isolate, v8::internal::CodeObjectRequired::kYes,
+                      ExternalAssemblerBuffer(buffer, sizeof(buffer)));
   {
     CpuFeatureScope fscope(&assm, FMA3);
     Label exit;
-    __ movss(xmm0, Operand(esp, 1 * kPointerSize));
-    __ movss(xmm1, Operand(esp, 2 * kPointerSize));
-    __ movss(xmm2, Operand(esp, 3 * kPointerSize));
+    __ movss(xmm0, Operand(esp, 1 * kSystemPointerSize));
+    __ movss(xmm1, Operand(esp, 2 * kSystemPointerSize));
+    __ movss(xmm2, Operand(esp, 3 * kSystemPointerSize));
     // arguments in xmm0, xmm1 and xmm2
     // xmm0 * xmm1 + xmm2
     __ movaps(xmm3, xmm0);
     __ mulss(xmm3, xmm1);
     __ addss(xmm3, xmm2);  // Expected result in xmm3
 
-    __ sub(esp, Immediate(kDoubleSize));  // For memory operand
+    __ AllocateStackSpace(kDoubleSize);  // For memory operand
     // vfmadd132ss
     __ mov(eax, Immediate(1));  // Test number
     __ movaps(xmm4, xmm0);
@@ -1040,11 +1005,10 @@ TEST(AssemblerX64FMA_ss) {
   }
 
   CodeDesc desc;
-  assm.GetCode(&desc);
-  Handle<Code> code = isolate->factory()->NewCode(
-      desc, Code::ComputeFlags(Code::STUB), Handle<Code>());
+  assm.GetCode(isolate, &desc);
+  Handle<Code> code = Factory::CodeBuilder(isolate, desc, Code::STUB).Build();
 #ifdef OBJECT_PRINT
-  OFStream os(stdout);
+  StdoutStream os;
   code->Print(os);
 #endif
 
@@ -1060,8 +1024,8 @@ TEST(AssemblerIa32BMI1) {
   Isolate* isolate = reinterpret_cast<Isolate*>(CcTest::isolate());
   HandleScope scope(isolate);
   v8::internal::byte buffer[1024];
-  MacroAssembler assm(isolate, buffer, sizeof(buffer),
-                      v8::internal::CodeObjectRequired::kYes);
+  MacroAssembler assm(isolate, v8::internal::CodeObjectRequired::kYes,
+                      ExternalAssemblerBuffer(buffer, sizeof(buffer)));
   {
     CpuFeatureScope fscope(&assm, BMI1);
     Label exit;
@@ -1110,12 +1074,12 @@ TEST(AssemblerIa32BMI1) {
     // blsmsk
     __ inc(eax);
     __ blsmsk(ebx, ecx);
-    __ cmp(ebx, Immediate(0x0000000fu));  // expected result
+    __ cmp(ebx, Immediate(0x0000000Fu));  // expected result
     __ j(not_equal, &exit);
 
     __ inc(eax);
     __ blsmsk(ebx, Operand(esp, 0));
-    __ cmp(ebx, Immediate(0x0000000fu));  // expected result
+    __ cmp(ebx, Immediate(0x0000000Fu));  // expected result
     __ j(not_equal, &exit);
 
     // blsr
@@ -1148,11 +1112,10 @@ TEST(AssemblerIa32BMI1) {
   }
 
   CodeDesc desc;
-  assm.GetCode(&desc);
-  Handle<Code> code = isolate->factory()->NewCode(
-      desc, Code::ComputeFlags(Code::STUB), Handle<Code>());
+  assm.GetCode(isolate, &desc);
+  Handle<Code> code = Factory::CodeBuilder(isolate, desc, Code::STUB).Build();
 #ifdef OBJECT_PRINT
-  OFStream os(stdout);
+  StdoutStream os;
   code->Print(os);
 #endif
 
@@ -1168,8 +1131,8 @@ TEST(AssemblerIa32LZCNT) {
   Isolate* isolate = reinterpret_cast<Isolate*>(CcTest::isolate());
   HandleScope scope(isolate);
   v8::internal::byte buffer[256];
-  MacroAssembler assm(isolate, buffer, sizeof(buffer),
-                      v8::internal::CodeObjectRequired::kYes);
+  MacroAssembler assm(isolate, v8::internal::CodeObjectRequired::kYes,
+                      ExternalAssemblerBuffer(buffer, sizeof(buffer)));
   {
     CpuFeatureScope fscope(&assm, LZCNT);
     Label exit;
@@ -1196,11 +1159,10 @@ TEST(AssemblerIa32LZCNT) {
   }
 
   CodeDesc desc;
-  assm.GetCode(&desc);
-  Handle<Code> code = isolate->factory()->NewCode(
-      desc, Code::ComputeFlags(Code::STUB), Handle<Code>());
+  assm.GetCode(isolate, &desc);
+  Handle<Code> code = Factory::CodeBuilder(isolate, desc, Code::STUB).Build();
 #ifdef OBJECT_PRINT
-  OFStream os(stdout);
+  StdoutStream os;
   code->Print(os);
 #endif
 
@@ -1216,8 +1178,8 @@ TEST(AssemblerIa32POPCNT) {
   Isolate* isolate = reinterpret_cast<Isolate*>(CcTest::isolate());
   HandleScope scope(isolate);
   v8::internal::byte buffer[256];
-  MacroAssembler assm(isolate, buffer, sizeof(buffer),
-                      v8::internal::CodeObjectRequired::kYes);
+  MacroAssembler assm(isolate, v8::internal::CodeObjectRequired::kYes,
+                      ExternalAssemblerBuffer(buffer, sizeof(buffer)));
   {
     CpuFeatureScope fscope(&assm, POPCNT);
     Label exit;
@@ -1244,11 +1206,10 @@ TEST(AssemblerIa32POPCNT) {
   }
 
   CodeDesc desc;
-  assm.GetCode(&desc);
-  Handle<Code> code = isolate->factory()->NewCode(
-      desc, Code::ComputeFlags(Code::STUB), Handle<Code>());
+  assm.GetCode(isolate, &desc);
+  Handle<Code> code = Factory::CodeBuilder(isolate, desc, Code::STUB).Build();
 #ifdef OBJECT_PRINT
-  OFStream os(stdout);
+  StdoutStream os;
   code->Print(os);
 #endif
 
@@ -1264,8 +1225,8 @@ TEST(AssemblerIa32BMI2) {
   Isolate* isolate = reinterpret_cast<Isolate*>(CcTest::isolate());
   HandleScope scope(isolate);
   v8::internal::byte buffer[2048];
-  MacroAssembler assm(isolate, buffer, sizeof(buffer),
-                      v8::internal::CodeObjectRequired::kYes);
+  MacroAssembler assm(isolate, v8::internal::CodeObjectRequired::kYes,
+                      ExternalAssemblerBuffer(buffer, sizeof(buffer)));
   {
     CpuFeatureScope fscope(&assm, BMI2);
     Label exit;
@@ -1306,7 +1267,7 @@ TEST(AssemblerIa32BMI2) {
     __ j(not_equal, &exit);
 
     // pdep
-    __ mov(edx, Immediate(0xfffffff0u));
+    __ mov(edx, Immediate(0xFFFFFFF0u));
 
     __ inc(eax);
     __ pdep(ebx, edx, ecx);
@@ -1319,16 +1280,16 @@ TEST(AssemblerIa32BMI2) {
     __ j(not_equal, &exit);
 
     // pext
-    __ mov(edx, Immediate(0xfffffff0u));
+    __ mov(edx, Immediate(0xFFFFFFF0u));
 
     __ inc(eax);
     __ pext(ebx, edx, ecx);
-    __ cmp(ebx, Immediate(0x0000fffeu));  // expected result
+    __ cmp(ebx, Immediate(0x0000FFFEu));  // expected result
     __ j(not_equal, &exit);
 
     __ inc(eax);
     __ pext(ebx, edx, Operand(esp, 0));
-    __ cmp(ebx, Immediate(0x0000fffeu));  // expected result
+    __ cmp(ebx, Immediate(0x0000FFFEu));  // expected result
     __ j(not_equal, &exit);
 
     // sarx
@@ -1390,11 +1351,10 @@ TEST(AssemblerIa32BMI2) {
   }
 
   CodeDesc desc;
-  assm.GetCode(&desc);
-  Handle<Code> code = isolate->factory()->NewCode(
-      desc, Code::ComputeFlags(Code::STUB), Handle<Code>());
+  assm.GetCode(isolate, &desc);
+  Handle<Code> code = Factory::CodeBuilder(isolate, desc, Code::STUB).Build();
 #ifdef OBJECT_PRINT
-  OFStream os(stdout);
+  StdoutStream os;
   code->Print(os);
 #endif
 
@@ -1408,7 +1368,7 @@ TEST(AssemblerIa32JumpTables1) {
   CcTest::InitializeVM();
   Isolate* isolate = reinterpret_cast<Isolate*>(CcTest::isolate());
   HandleScope scope(isolate);
-  Assembler assm(isolate, nullptr, 0);
+  Assembler assm(AssemblerOptions{});
 
   const int kNumCases = 512;
   int values[kNumCases];
@@ -1417,7 +1377,7 @@ TEST(AssemblerIa32JumpTables1) {
 
   Label done, table;
   __ mov(eax, Operand(esp, 4));
-  __ jmp(Operand::JumpTable(eax, times_4, &table));
+  __ jmp(Operand::JumpTable(eax, times_system_pointer_size, &table));
   __ ud2();
   __ bind(&table);
   for (int i = 0; i < kNumCases; ++i) {
@@ -1434,11 +1394,10 @@ TEST(AssemblerIa32JumpTables1) {
   __ ret(0);
 
   CodeDesc desc;
-  assm.GetCode(&desc);
-  Handle<Code> code = isolate->factory()->NewCode(
-      desc, Code::ComputeFlags(Code::STUB), Handle<Code>());
+  assm.GetCode(isolate, &desc);
+  Handle<Code> code = Factory::CodeBuilder(isolate, desc, Code::STUB).Build();
 #ifdef OBJECT_PRINT
-  OFStream os(stdout);
+  StdoutStream os;
   code->Print(os);
 #endif
   F1 f = FUNCTION_CAST<F1>(code->entry());
@@ -1455,7 +1414,7 @@ TEST(AssemblerIa32JumpTables2) {
   CcTest::InitializeVM();
   Isolate* isolate = reinterpret_cast<Isolate*>(CcTest::isolate());
   HandleScope scope(isolate);
-  Assembler assm(isolate, nullptr, 0);
+  Assembler assm(AssemblerOptions{});
 
   const int kNumCases = 512;
   int values[kNumCases];
@@ -1464,7 +1423,7 @@ TEST(AssemblerIa32JumpTables2) {
 
   Label done, table;
   __ mov(eax, Operand(esp, 4));
-  __ jmp(Operand::JumpTable(eax, times_4, &table));
+  __ jmp(Operand::JumpTable(eax, times_system_pointer_size, &table));
   __ ud2();
 
   for (int i = 0; i < kNumCases; ++i) {
@@ -1482,11 +1441,10 @@ TEST(AssemblerIa32JumpTables2) {
   __ ret(0);
 
   CodeDesc desc;
-  assm.GetCode(&desc);
-  Handle<Code> code = isolate->factory()->NewCode(
-      desc, Code::ComputeFlags(Code::STUB), Handle<Code>());
+  assm.GetCode(isolate, &desc);
+  Handle<Code> code = Factory::CodeBuilder(isolate, desc, Code::STUB).Build();
 #ifdef OBJECT_PRINT
-  OFStream os(stdout);
+  StdoutStream os;
   code->Print(os);
 #endif
   F1 f = FUNCTION_CAST<F1>(code->entry());
@@ -1497,4 +1455,47 @@ TEST(AssemblerIa32JumpTables2) {
   }
 }
 
+TEST(Regress621926) {
+  // Bug description:
+  // The opcodes for cmpw r/m16, r16 and cmpw r16, r/m16 were swapped.
+  // This was causing non-commutative comparisons to produce the wrong result.
+  CcTest::InitializeVM();
+  Isolate* isolate = reinterpret_cast<Isolate*>(CcTest::isolate());
+  HandleScope scope(isolate);
+  Assembler assm(AssemblerOptions{});
+
+  uint16_t a = 42;
+
+  Label fail;
+  __ push(ebx);
+  __ mov(ebx, Immediate(reinterpret_cast<intptr_t>(&a)));
+  __ mov(eax, Immediate(41));
+  __ cmpw(eax, Operand(ebx, 0));
+  __ j(above_equal, &fail);
+  __ cmpw(Operand(ebx, 0), eax);
+  __ j(below_equal, &fail);
+  __ mov(eax, 1);
+  __ pop(ebx);
+  __ ret(0);
+  __ bind(&fail);
+  __ mov(eax, 0);
+  __ pop(ebx);
+  __ ret(0);
+
+  CodeDesc desc;
+  assm.GetCode(isolate, &desc);
+  Handle<Code> code = Factory::CodeBuilder(isolate, desc, Code::STUB).Build();
+
+#ifdef OBJECT_PRINT
+  StdoutStream os;
+  code->Print(os);
+#endif
+
+  F0 f = FUNCTION_CAST<F0>(code->entry());
+  CHECK_EQ(1, f());
+}
+
 #undef __
+
+}  // namespace internal
+}  // namespace v8

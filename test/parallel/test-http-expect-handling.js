@@ -9,15 +9,15 @@ const tests = [417, 417];
 let testsComplete = 0;
 let testIdx = 0;
 
-const s = http.createServer(function(req, res) {
+const s = http.createServer((req, res) => {
   throw new Error('this should never be executed');
 });
 
-s.listen(common.PORT, nextTest);
+s.listen(0, nextTest);
 
 function nextTest() {
   const options = {
-    port: common.PORT,
+    port: s.address().port,
     headers: { 'Expect': 'meoww' }
   };
 
@@ -34,13 +34,13 @@ function nextTest() {
     }));
   }
 
-  http.get(options, function(response) {
-    console.log('client: expected status: ' + test);
-    console.log('client: statusCode: ' + response.statusCode);
-    assert.equal(response.statusCode, test);
-    assert.equal(response.statusMessage, 'Expectation Failed');
+  http.get(options, (response) => {
+    console.log(`client: expected status: ${test}`);
+    console.log(`client: statusCode: ${response.statusCode}`);
+    assert.strictEqual(response.statusCode, test);
+    assert.strictEqual(response.statusMessage, 'Expectation Failed');
 
-    response.on('end', function() {
+    response.on('end', () => {
       testsComplete++;
       testIdx++;
       nextTest();
@@ -50,6 +50,6 @@ function nextTest() {
 }
 
 
-process.on('exit', function() {
-  assert.equal(2, testsComplete);
+process.on('exit', () => {
+  assert.strictEqual(testsComplete, 2);
 });

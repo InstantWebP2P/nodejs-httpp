@@ -1,60 +1,60 @@
+// Copyright Joyent, Inc. and other Node contributors.
+//
+// Permission is hereby granted, free of charge, to any person obtaining a
+// copy of this software and associated documentation files (the
+// "Software"), to deal in the Software without restriction, including
+// without limitation the rights to use, copy, modify, merge, publish,
+// distribute, sublicense, and/or sell copies of the Software, and to permit
+// persons to whom the Software is furnished to do so, subject to the
+// following conditions:
+//
+// The above copyright notice and this permission notice shall be included
+// in all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+// MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN
+// NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+// DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
+// OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
+// USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+#include "base_object-inl.h"
+#include "memory_tracker-inl.h"
 #include "node_crypto_bio.h"
 #include "openssl/bio.h"
-#include "util.h"
 #include "util-inl.h"
-#include <limits.h>
-#include <string.h>
+#include <climits>
+#include <cstring>
 
 namespace node {
+namespace crypto {
 
-const BIO_METHOD NodeBIO::method = {
-  BIO_TYPE_MEM,
-  "node.js SSL buffer",
-  NodeBIO::Write,
-  NodeBIO::Read,
-  NodeBIO::Puts,
-  NodeBIO::Gets,
-  NodeBIO::Ctrl,
-  NodeBIO::New,
-  NodeBIO::Free,
-  nullptr
-};
-
-
-BIO* NodeBIO::New() {
-  // The const_cast doesn't violate const correctness.  OpenSSL's usage of
-  // BIO_METHOD is effectively const but BIO_new() takes a non-const argument.
-  return BIO_new(const_cast<BIO_METHOD*>(&method));
+BIOPointer NodeBIO::New(Environment* env) {
+  BIOPointer bio(BIO_new(GetMethod()));
+  if (bio && env != nullptr)
+    NodeBIO::FromBIO(bio.get())->env_ = env;
+  return bio;
 }
 
 
-BIO* NodeBIO::NewFixed(const char* data, size_t len) {
-  BIO* bio = New();
+BIOPointer NodeBIO::NewFixed(const char* data, size_t len, Environment* env) {
+  BIOPointer bio = New(env);
 
-  if (bio == nullptr ||
+  if (!bio ||
       len > INT_MAX ||
-      BIO_write(bio, data, len) != static_cast<int>(len) ||
-      BIO_set_mem_eof_return(bio, 0) != 1) {
-    BIO_free(bio);
-    return nullptr;
+      BIO_write(bio.get(), data, len) != static_cast<int>(len) ||
+      BIO_set_mem_eof_return(bio.get(), 0) != 1) {
+    return BIOPointer();
   }
 
   return bio;
 }
 
 
-void NodeBIO::AssignEnvironment(Environment* env) {
-  env_ = env;
-}
-
-
 int NodeBIO::New(BIO* bio) {
-  bio->ptr = new NodeBIO();
-
-  // XXX Why am I doing it?!
-  bio->shutdown = 1;
-  bio->init = 1;
-  bio->num = -1;
+  BIO_set_data(bio, new NodeBIO());
+  BIO_set_init(bio, 1);
 
   return 1;
 }
@@ -64,10 +64,10 @@ int NodeBIO::Free(BIO* bio) {
   if (bio == nullptr)
     return 0;
 
-  if (bio->shutdown) {
-    if (bio->init && bio->ptr != nullptr) {
+  if (BIO_get_shutdown(bio)) {
+    if (BIO_get_init(bio) && BIO_get_data(bio) != nullptr) {
       delete FromBIO(bio);
-      bio->ptr = nullptr;
+      BIO_set_data(bio, nullptr);
     }
   }
 
@@ -76,13 +76,13 @@ int NodeBIO::Free(BIO* bio) {
 
 
 int NodeBIO::Read(BIO* bio, char* out, int len) {
-  int bytes;
   BIO_clear_retry_flags(bio);
 
-  bytes = FromBIO(bio)->Read(out, len);
+  NodeBIO* nbio = FromBIO(bio);
+  int bytes = nbio->Read(out, len);
 
   if (bytes == 0) {
-    bytes = bio->num;
+    bytes = nbio->eof_return();
     if (bytes != 0) {
       BIO_set_retry_read(bio);
     }
@@ -140,7 +140,7 @@ int NodeBIO::Puts(BIO* bio, const char* str) {
 
 
 int NodeBIO::Gets(BIO* bio, char* out, int size) {
-  NodeBIO* nbio =  FromBIO(bio);
+  NodeBIO* nbio = FromBIO(bio);
 
   if (nbio->Length() == 0)
     return 0;
@@ -164,9 +164,10 @@ int NodeBIO::Gets(BIO* bio, char* out, int size) {
 }
 
 
-long NodeBIO::Ctrl(BIO* bio, int cmd, long num, void* ptr) {
+long NodeBIO::Ctrl(BIO* bio, int cmd, long num,  // NOLINT(runtime/int)
+                   void* ptr) {
   NodeBIO* nbio;
-  long ret;
+  long ret;  // NOLINT(runtime/int)
 
   nbio = FromBIO(bio);
   ret = 1;
@@ -179,7 +180,7 @@ long NodeBIO::Ctrl(BIO* bio, int cmd, long num, void* ptr) {
       ret = nbio->Length() == 0;
       break;
     case BIO_C_SET_BUF_MEM_EOF_RETURN:
-      bio->num = num;
+      nbio->set_eof_return(num);
       break;
     case BIO_CTRL_INFO:
       ret = nbio->Length();
@@ -188,17 +189,16 @@ long NodeBIO::Ctrl(BIO* bio, int cmd, long num, void* ptr) {
       break;
     case BIO_C_SET_BUF_MEM:
       CHECK(0 && "Can't use SET_BUF_MEM_PTR with NodeBIO");
-      ABORT();
       break;
     case BIO_C_GET_BUF_MEM_PTR:
       CHECK(0 && "Can't use GET_BUF_MEM_PTR with NodeBIO");
       ret = 0;
       break;
     case BIO_CTRL_GET_CLOSE:
-      ret = bio->shutdown;
+      ret = BIO_get_shutdown(bio);
       break;
     case BIO_CTRL_SET_CLOSE:
-      bio->shutdown = num;
+      BIO_set_shutdown(bio, num);
       break;
     case BIO_CTRL_WPENDING:
       ret = 0;
@@ -217,6 +217,26 @@ long NodeBIO::Ctrl(BIO* bio, int cmd, long num, void* ptr) {
       break;
   }
   return ret;
+}
+
+
+const BIO_METHOD* NodeBIO::GetMethod() {
+  // This is called from InitCryptoOnce() to avoid race conditions during
+  // initialization.
+  static BIO_METHOD* method = nullptr;
+
+  if (method == nullptr) {
+    method = BIO_meth_new(BIO_TYPE_MEM, "node.js SSL buffer");
+    BIO_meth_set_write(method, Write);
+    BIO_meth_set_read(method, Read);
+    BIO_meth_set_puts(method, Puts);
+    BIO_meth_set_gets(method, Gets);
+    BIO_meth_set_ctrl(method, Ctrl);
+    BIO_meth_set_create(method, New);
+    BIO_meth_set_destroy(method, Free);
+  }
+
+  return method;
 }
 
 
@@ -382,9 +402,7 @@ char* NodeBIO::PeekWritable(size_t* size) {
   TryAllocateForWrite(*size);
 
   size_t available = write_head_->len_ - write_head_->write_pos_;
-  if (*size != 0 && available > *size)
-    available = *size;
-  else
+  if (*size == 0 || available <= *size)
     *size = available;
 
   return write_head_->data_ + write_head_->write_pos_;
@@ -467,4 +485,12 @@ NodeBIO::~NodeBIO() {
   write_head_ = nullptr;
 }
 
+
+NodeBIO* NodeBIO::FromBIO(BIO* bio) {
+  CHECK_NOT_NULL(BIO_get_data(bio));
+  return static_cast<NodeBIO*>(BIO_get_data(bio));
+}
+
+
+}  // namespace crypto
 }  // namespace node

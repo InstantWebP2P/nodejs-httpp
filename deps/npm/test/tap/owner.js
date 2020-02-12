@@ -2,10 +2,18 @@ var mr = require('npm-registry-mock')
 var test = require('tap').test
 
 var common = require('../common-tap.js')
+var basedir = common.pkg
+var cachedir = common.cache
 
 var server
 
-var EXEC_OPTS = {}
+var EXEC_OPTS = {
+  cwd: basedir,
+  stdio: [0, 'pipe', 2],
+  env: common.newEnv().extend({
+    npm_config_cache: cachedir
+  })
+}
 
 var jashkenas = {
   name: 'jashkenas',
@@ -63,28 +71,16 @@ function mocks (server) {
 }
 
 test('setup', function (t) {
-  common.npm(
-    [
-      '--loglevel', 'silent',
-      'cache', 'clean'
-    ],
-    EXEC_OPTS,
-    function (err, code) {
-      t.ifError(err, 'npm cache clean ran without error')
-      t.notOk(code, 'npm cache clean exited cleanly')
-
-      mr({ port: common.port, plugin: mocks }, function (er, s) {
-        server = s
-        t.end()
-      })
-    }
-  )
+  mr({ port: common.port, plugin: mocks }, function (er, s) {
+    server = s
+    t.end()
+  })
 })
 
 test('npm owner add', function (t) {
   common.npm(
     [
-      '--loglevel', 'silent',
+      '--loglevel', 'warn',
       '--registry', common.registry,
       'owner', 'add', 'othiym23', 'underscore'
     ],

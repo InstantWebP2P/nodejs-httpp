@@ -1,12 +1,12 @@
 'use strict';
 require('../common');
-var assert = require('assert');
+const assert = require('assert');
 
-var buffer = Buffer.from([1, 2, 3, 4, 5]);
-var arr;
-var b;
+const buffer = Buffer.from([1, 2, 3, 4, 5]);
+let arr;
+let b;
 
-// buffers should be iterable
+// Buffers should be iterable
 
 arr = [];
 
@@ -16,7 +16,7 @@ for (b of buffer)
 assert.deepStrictEqual(arr, [1, 2, 3, 4, 5]);
 
 
-// buffer iterators should be iterable
+// Buffer iterators should be iterable
 
 arr = [];
 

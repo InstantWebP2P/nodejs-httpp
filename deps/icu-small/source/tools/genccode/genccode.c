@@ -1,10 +1,12 @@
+// © 2016 and later: Unicode, Inc. and others.
+// License & terms of use: http://www.unicode.org/copyright.html
 /*
  *******************************************************************************
  *   Copyright (C) 1999-2016, International Business Machines
  *   Corporation and others.  All Rights Reserved.
  *******************************************************************************
  *   file name:  gennames.c
- *   encoding:   US-ASCII
+ *   encoding:   UTF-8
  *   tab size:   8 (not used)
  *   indentation:4
  *
@@ -61,6 +63,7 @@ enum {
   kOptHelpH = 0,
   kOptHelpQuestionMark,
   kOptDestDir,
+  kOptQuiet,
   kOptName,
   kOptEntryPoint,
 #ifdef CAN_GENERATE_OBJECTS
@@ -75,6 +78,7 @@ static UOption options[]={
 /*0*/UOPTION_HELP_H,
      UOPTION_HELP_QUESTION_MARK,
      UOPTION_DESTDIR,
+     UOPTION_QUIET,
      UOPTION_DEF("name", 'n', UOPT_REQUIRES_ARG),
      UOPTION_DEF("entrypoint", 'e', UOPT_REQUIRES_ARG),
 #ifdef CAN_GENERATE_OBJECTS
@@ -114,6 +118,7 @@ main(int argc, char* argv[]) {
             "options:\n"
             "\t-h or -? or --help  this usage text\n"
             "\t-d or --destdir     destination directory, followed by the path\n"
+            "\t-q or --quiet       do not display warnings and progress\n"
             "\t-n or --name        symbol prefix, followed by the prefix\n"
             "\t-e or --entrypoint  entry point name, followed by the name (_dat will be appended)\n"
             "\t-r or --revision    Specify a version\n"
@@ -157,6 +162,9 @@ main(int argc, char* argv[]) {
             writeCode = CALL_WRITECCODE;
             /* TODO: remove writeCode=&writeCCode; */
         }
+        if (options[kOptQuiet].doesOccur) {
+            verbose = FALSE;
+        }
         while(--argc) {
             filename=getLongPathname(argv[argc]);
             if (verbose) {
@@ -168,13 +176,15 @@ main(int argc, char* argv[]) {
                 writeCCode(filename, options[kOptDestDir].value,
                            options[kOptName].doesOccur ? options[kOptName].value : NULL,
                            options[kOptFilename].doesOccur ? options[kOptFilename].value : NULL,
-                           NULL);
+                           NULL,
+                           0);
                 break;
             case CALL_WRITEASSEMBLY:
                 writeAssemblyCode(filename, options[kOptDestDir].value,
                                   options[kOptEntryPoint].doesOccur ? options[kOptEntryPoint].value : NULL,
                                   options[kOptFilename].doesOccur ? options[kOptFilename].value : NULL,
-                                  NULL);
+                                  NULL,
+                                  0);
                 break;
 #ifdef CAN_GENERATE_OBJECTS
             case CALL_WRITEOBJECT:
@@ -182,7 +192,8 @@ main(int argc, char* argv[]) {
                                 options[kOptEntryPoint].doesOccur ? options[kOptEntryPoint].value : NULL,
                                 options[kOptMatchArch].doesOccur ? options[kOptMatchArch].value : NULL,
                                 options[kOptFilename].doesOccur ? options[kOptFilename].value : NULL,
-                                NULL);
+                                NULL,
+                                0);
                 break;
 #endif
             default:

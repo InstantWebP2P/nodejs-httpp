@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// Flags: --allow-natives-syntax --use-osr --turbo-osr
+// Flags: --allow-natives-syntax --use-osr
 
 function f() {
   var sum = 0;
@@ -19,7 +19,7 @@ function f() {
   return sum;
 }
 
-
+%PrepareFunctionForOptimization(f);
 assertEquals(15000, f());
 assertEquals(15000, f());
 assertEquals(15000, f());

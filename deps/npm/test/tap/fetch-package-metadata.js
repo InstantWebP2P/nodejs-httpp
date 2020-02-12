@@ -1,33 +1,18 @@
 'use strict'
-var path = require('path')
-var mkdirp = require('mkdirp')
-
 var mr = require('npm-registry-mock')
-var osenv = require('osenv')
-var rimraf = require('rimraf')
+var npa = require('npm-package-arg')
 var test = require('tap').test
 
 var common = require('../common-tap.js')
 var npm = require('../../lib/npm.js')
 
-var pkg = path.resolve(__dirname, path.basename(__filename, '.js'))
-
-function setup (cb) {
-  cleanup()
-  mkdirp.sync(pkg)
-}
-
-function cleanup () {
-  process.chdir(osenv.tmpdir())
-  rimraf.sync(pkg)
-}
+var pkg = common.pkg
 
 test('setup', function (t) {
-  setup()
   process.chdir(pkg)
 
   var opts = {
-    cache: path.resolve(pkg, 'cache'),
+    cache: common.cache,
     registry: common.registry,
     // important to make sure devDependencies don't get stripped
     dev: true
@@ -36,18 +21,11 @@ test('setup', function (t) {
 })
 
 test('fetch-package-metadata provides resolved metadata', function (t) {
-  t.plan(5)
+  t.plan(4)
 
   var fetchPackageMetadata = require('../../lib/fetch-package-metadata')
 
-  var testPackage = {
-    raw: 'test-package@>=0.0.0',
-    scope: null,
-    name: 'test-package',
-    rawSpec: '>=0.0.0',
-    spec: '>=0.0.0',
-    type: 'range'
-  }
+  var testPackage = npa('test-package@>=0.0.0')
 
   mr({ port: common.port }, thenFetchMetadata)
 
@@ -62,15 +40,9 @@ test('fetch-package-metadata provides resolved metadata', function (t) {
   function thenVerifyMetadata (err, pkg) {
     t.ifError(err, 'fetched metadata')
 
-    t.equals(pkg._resolved, 'http://localhost:1337/test-package/-/test-package-0.0.0.tgz', '_resolved')
-    t.equals(pkg._shasum, 'b0d32b6c45c259c578ba2003762b205131bdfbd1', '_shasum')
-    t.equals(pkg._from, 'test-package@>=0.0.0', '_from')
+    t.equals(pkg._resolved, 'http://localhost:' + common.port + '/test-package/-/test-package-0.0.0.tgz', '_resolved')
+    t.equals(pkg._integrity, 'sha1-sNMrbEXCWcV4uiADdisgUTG9+9E=', '_integrity')
     server.close()
     t.end()
   }
-})
-
-test('cleanup', function (t) {
-  cleanup()
-  t.end()
 })

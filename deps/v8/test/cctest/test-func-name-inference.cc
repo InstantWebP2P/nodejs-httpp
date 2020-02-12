@@ -25,55 +25,53 @@
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+#include <memory>
 
-#include "src/v8.h"
+#include "src/init/v8.h"
 
-#include "src/api.h"
+#include "src/api/api-inl.h"
 #include "src/debug/debug.h"
-#include "src/string-search.h"
+#include "src/objects/objects-inl.h"
+#include "src/strings/string-search.h"
 #include "test/cctest/cctest.h"
 
 
-using ::v8::base::SmartArrayPointer;
 using ::v8::internal::CStrVector;
 using ::v8::internal::Factory;
 using ::v8::internal::Handle;
 using ::v8::internal::Heap;
-using ::v8::internal::Isolate;
 using ::v8::internal::JSFunction;
-using ::v8::internal::Object;
 using ::v8::internal::Runtime;
-using ::v8::internal::Script;
 using ::v8::internal::SharedFunctionInfo;
-using ::v8::internal::String;
 using ::v8::internal::Vector;
 
 
 static void CheckFunctionName(v8::Local<v8::Script> script,
                               const char* func_pos_src,
                               const char* ref_inferred_name) {
-  Isolate* isolate = CcTest::i_isolate();
+  i::Isolate* isolate = CcTest::i_isolate();
 
   // Get script source.
-  Handle<Object> obj = v8::Utils::OpenHandle(*script);
+  Handle<i::Object> obj = v8::Utils::OpenHandle(*script);
   Handle<SharedFunctionInfo> shared_function;
   if (obj->IsSharedFunctionInfo()) {
     shared_function =
-        Handle<SharedFunctionInfo>(SharedFunctionInfo::cast(*obj));
+        Handle<SharedFunctionInfo>(SharedFunctionInfo::cast(*obj), isolate);
   } else {
     shared_function =
-        Handle<SharedFunctionInfo>(JSFunction::cast(*obj)->shared());
+        Handle<SharedFunctionInfo>(JSFunction::cast(*obj).shared(), isolate);
   }
-  Handle<Script> i_script(Script::cast(shared_function->script()));
-  CHECK(i_script->source()->IsString());
-  Handle<String> script_src(String::cast(i_script->source()));
+  Handle<i::Script> i_script(i::Script::cast(shared_function->script()),
+                             isolate);
+  CHECK(i_script->source().IsString());
+  Handle<i::String> script_src(i::String::cast(i_script->source()), isolate);
 
   // Find the position of a given func source substring in the source.
   int func_pos;
   {
     i::DisallowHeapAllocation no_gc;
     Vector<const uint8_t> func_pos_str = i::OneByteVector(func_pos_src);
-    String::FlatContent script_content = script_src->GetFlatContent();
+    i::String::FlatContent script_content = script_src->GetFlatContent(no_gc);
     func_pos = SearchString(isolate, script_content.ToOneByteVector(),
                             func_pos_str, 0);
   }
@@ -85,8 +83,8 @@ static void CheckFunctionName(v8::Local<v8::Script> script,
           isolate->debug()->FindSharedFunctionInfoInScript(i_script, func_pos));
 
   // Verify inferred function name.
-  SmartArrayPointer<char> inferred_name =
-      shared_func_info->inferred_name()->ToCString();
+  std::unique_ptr<char[]> inferred_name =
+      shared_func_info->inferred_name().ToCString();
   i::PrintF("expected: %s, found: %s\n", ref_inferred_name,
             inferred_name.get());
   CHECK_EQ(0, strcmp(ref_inferred_name, inferred_name.get()));
@@ -141,6 +139,19 @@ TEST(LocalVar) {
   CheckFunctionName(script, "return 2", "fun2");
 }
 
+TEST(ObjectProperty) {
+  CcTest::InitializeVM();
+  v8::HandleScope scope(CcTest::isolate());
+
+  v8::Local<v8::Script> script =
+      Compile(CcTest::isolate(),
+              "var obj = {\n"
+              "  fun1: function() { return 1; },\n"
+              "  fun2: class { constructor() { return 2; } }\n"
+              "}");
+  CheckFunctionName(script, "return 1", "obj.fun1");
+  CheckFunctionName(script, "return 2", "obj.fun2");
+}
 
 TEST(InConstructor) {
   CcTest::InitializeVM();
@@ -287,7 +298,8 @@ TEST(MultipleFuncsConditional) {
   v8::HandleScope scope(CcTest::isolate());
 
   v8::Local<v8::Script> script = Compile(CcTest::isolate(),
-                                         "fun1 = 0 ?\n"
+                                         "var x = 0;\n"
+                                         "fun1 = x ?\n"
                                          "    function() { return 1; } :\n"
                                          "    function() { return 2; }");
   CheckFunctionName(script, "return 1", "fun1");
@@ -301,9 +313,10 @@ TEST(MultipleFuncsInLiteral) {
 
   v8::Local<v8::Script> script =
       Compile(CcTest::isolate(),
+              "var x = 0;\n"
               "function MyClass() {}\n"
               "MyClass.prototype = {\n"
-              "  method1: 0 ? function() { return 1; } :\n"
+              "  method1: x ? function() { return 1; } :\n"
               "               function() { return 2; } }");
   CheckFunctionName(script, "return 1", "MyClass.method1");
   CheckFunctionName(script, "return 2", "MyClass.method1");
@@ -440,8 +453,8 @@ TEST(FactoryHashmapVariable) {
               "  return obj;\n"
               "}");
   // Can't infer function names statically.
-  CheckFunctionName(script, "return 1", "obj.(anonymous function)");
-  CheckFunctionName(script, "return 2", "obj.(anonymous function)");
+  CheckFunctionName(script, "return 1", "obj.<computed>");
+  CheckFunctionName(script, "return 2", "obj.<computed>");
 }
 
 
@@ -457,7 +470,7 @@ TEST(FactoryHashmapConditional) {
       "  return obj;\n"
       "}");
   // Can't infer the function name statically.
-  CheckFunctionName(script, "return 1", "obj.(anonymous function)");
+  CheckFunctionName(script, "return 1", "obj.<computed>");
 }
 
 
@@ -538,4 +551,32 @@ TEST(ReturnAnonymousFunction) {
                                          "})()");
   script->Run(CcTest::isolate()->GetCurrentContext()).ToLocalChecked();
   CheckFunctionName(script, "return 2012", "");
+}
+
+TEST(IgnoreExtendsClause) {
+  CcTest::InitializeVM();
+  v8::HandleScope scope(CcTest::isolate());
+
+  v8::Local<v8::Script> script =
+      Compile(CcTest::isolate(),
+              "(function() {\n"
+              "  var foo = {};\n"
+              "  foo.C = class {}\n"
+              "  class D extends foo.C {}\n"
+              "  foo.bar = function() { return 1; };\n"
+              "})()");
+  script->Run(CcTest::isolate()->GetCurrentContext()).ToLocalChecked();
+  CheckFunctionName(script, "return 1", "foo.bar");
+}
+
+TEST(ParameterAndArrow) {
+  CcTest::InitializeVM();
+  v8::HandleScope scope(CcTest::isolate());
+
+  v8::Local<v8::Script> script = Compile(CcTest::isolate(),
+                                         "(function(param) {\n"
+                                         "  (() => { return 2017 })();\n"
+                                         "})()");
+  script->Run(CcTest::isolate()->GetCurrentContext()).ToLocalChecked();
+  CheckFunctionName(script, "return 2017", "");
 }

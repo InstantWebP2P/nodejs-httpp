@@ -9,6 +9,8 @@
 These functions are executed via gyp-win-tool when using the ninja generator.
 """
 
+from __future__ import print_function
+
 import os
 import re
 import shutil
@@ -116,17 +118,25 @@ class WinTool(object):
     env = self._GetEnv(arch)
     if use_separate_mspdbsrv == 'True':
       self._UseSeparateMspdbsrv(env, args)
-    link = subprocess.Popen([args[0].replace('/', '\\')] + list(args[1:]),
-                            shell=True,
-                            env=env,
-                            stdout=subprocess.PIPE,
-                            stderr=subprocess.STDOUT)
+    if sys.platform == 'win32':
+      args = list(args)  # *args is a tuple by default, which is read-only.
+      args[0] = args[0].replace('/', '\\')
+    # https://docs.python.org/2/library/subprocess.html:
+    # "On Unix with shell=True [...] if args is a sequence, the first item
+    # specifies the command string, and any additional items will be treated as
+    # additional arguments to the shell itself.  That is to say, Popen does the
+    # equivalent of:
+    #   Popen(['/bin/sh', '-c', args[0], args[1], ...])"
+    # For that reason, since going through the shell doesn't seem necessary on
+    # non-Windows don't do that there.
+    link = subprocess.Popen(args, shell=sys.platform == 'win32', env=env,
+                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     out, _ = link.communicate()
     for line in out.splitlines():
       if (not line.startswith('   Creating library ') and
           not line.startswith('Generating code') and
           not line.startswith('Finished generating code')):
-        print line
+        print(line)
     return link.returncode
 
   def ExecLinkWithManifests(self, arch, embed_manifest, out, ldcmd, resname,
@@ -215,7 +225,7 @@ class WinTool(object):
     out, _ = popen.communicate()
     for line in out.splitlines():
       if line and 'manifest authoring warning 81010002' not in line:
-        print line
+        print(line)
     return popen.returncode
 
   def ExecManifestToRc(self, arch, *args):
@@ -255,7 +265,7 @@ class WinTool(object):
                      for x in lines if x.startswith(prefixes))
     for line in lines:
       if not line.startswith(prefixes) and line not in processing:
-        print line
+        print(line)
     return popen.returncode
 
   def ExecAsmWrapper(self, arch, *args):
@@ -269,7 +279,7 @@ class WinTool(object):
           not line.startswith('Microsoft (R) Macro Assembler') and
           not line.startswith(' Assembling: ') and
           line):
-        print line
+        print(line)
     return popen.returncode
 
   def ExecRcWrapper(self, arch, *args):
@@ -283,7 +293,7 @@ class WinTool(object):
       if (not line.startswith('Microsoft (R) Windows (R) Resource Compiler') and
           not line.startswith('Copyright (C) Microsoft Corporation') and
           line):
-        print line
+        print(line)
     return popen.returncode
 
   def ExecActionWrapper(self, arch, rspfile, *dir):
@@ -292,7 +302,7 @@ class WinTool(object):
     env = self._GetEnv(arch)
     # TODO(scottmg): This is a temporary hack to get some specific variables
     # through to actions that are set after gyp-time. http://crbug.com/333738.
-    for k, v in os.environ.iteritems():
+    for k, v in os.environ.items():
       if k not in env:
         env[k] = v
     args = open(rspfile).read()

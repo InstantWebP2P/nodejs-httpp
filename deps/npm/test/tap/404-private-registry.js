@@ -1,8 +1,7 @@
-require('../common-tap')
 var test = require('tap').test
 var path = require('path')
 var common = require('../common-tap.js')
-var mr = require('npm-registry-mock')
+var mr = common.fakeRegistry.compat
 var server
 
 var packageName = path.basename(__filename, '.js')
@@ -16,8 +15,11 @@ test('setup', function (t) {
 })
 
 test('package names not mangled on error with non-root registry', function (t) {
+  server.get('/' + packageName).reply(404, {})
   common.npm(
     [
+      '--registry=' + common.registry,
+      '--cache=' + common.cache,
       'cache',
       'add',
       packageName + '@*'
@@ -27,14 +29,9 @@ test('package names not mangled on error with non-root registry', function (t) {
       t.ifError(er, 'correctly handled 404')
       t.equal(code, 1, 'exited with error')
       t.match(stderr, packageName, 'should have package name in error')
+      server.done()
+      server.close()
       t.end()
     }
   )
-})
-
-test('cleanup', function (t) {
-  t.pass('cleaned up')
-  server.done()
-  server.close()
-  t.end()
 })

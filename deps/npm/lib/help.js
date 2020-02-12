@@ -10,11 +10,13 @@ var path = require('path')
 var spawn = require('./utils/spawn')
 var npm = require('./npm.js')
 var log = require('npmlog')
-var opener = require('opener')
+var openUrl = require('./utils/open-url')
 var glob = require('glob')
+var didYouMean = require('./utils/did-you-mean')
 var cmdList = require('./config/cmd-list').cmdList
 var shorthands = require('./config/cmd-list').shorthands
 var commands = cmdList.concat(Object.keys(shorthands))
+var output = require('./utils/output.js')
 
 function help (args, cb) {
   var argv = npm.config.get('argv').cooked
@@ -37,13 +39,13 @@ function help (args, cb) {
     return npmUsage(valid, cb)
   }
 
-  // npm <cmd> -h: show command usage
+  // npm <command> -h: show command usage
   if (npm.config.get('usage') &&
       npm.commands[section] &&
       npm.commands[section].usage) {
     npm.config.set('loglevel', 'silent')
     log.level = 'silent'
-    console.log(npm.commands[section].usage)
+    output(npm.commands[section].usage)
     return cb()
   }
 
@@ -61,7 +63,7 @@ function help (args, cb) {
 
   // legacy
   if (section === 'global') section = 'folders'
-  else if (section === 'json') section = 'package.json'
+  else if (section.match(/.*json/)) section = section.replace('.json', '-json')
 
   // find either /section.n or /npm-section.n
   // The glob is used in the glob.  The regexp is used much
@@ -95,8 +97,8 @@ function pickMan (mans, pref_) {
     var an = a.match(nre)[1]
     var bn = b.match(nre)[1]
     return an === bn ? (a > b ? -1 : 1)
-         : pref[an] < pref[bn] ? -1
-         : 1
+      : pref[an] < pref[bn] ? -1
+        : 1
   })
   return mans[0]
 }
@@ -125,7 +127,7 @@ function viewMan (man, cb) {
       break
 
     case 'browser':
-      opener(htmlMan(man), { command: npm.config.get('browser') }, cb)
+      openUrl(htmlMan(man), 'help available at the following URL', cb)
       break
 
     default:
@@ -138,40 +140,37 @@ function viewMan (man, cb) {
 
 function htmlMan (man) {
   var sect = +man.match(/([0-9]+)$/)[1]
-  var f = path.basename(man).replace(/([0-9]+)$/, 'html')
+  var f = path.basename(man).replace(/[.]([0-9]+)$/, '')
   switch (sect) {
     case 1:
-      sect = 'cli'
-      break
-    case 3:
-      sect = 'api'
+      sect = 'cli-commands'
       break
     case 5:
-      sect = 'files'
+      sect = 'configuring-npm'
       break
     case 7:
-      sect = 'misc'
+      sect = 'using-npm'
       break
     default:
       throw new Error('invalid man section: ' + sect)
   }
-  return path.resolve(__dirname, '..', 'html', 'doc', sect, f)
+  return path.resolve(__dirname, '..', 'docs', 'public', sect, f, 'index.html')
 }
 
 function npmUsage (valid, cb) {
   npm.config.set('loglevel', 'silent')
   log.level = 'silent'
-  console.log([
+  output([
     '\nUsage: npm <command>',
     '',
     'where <command> is one of:',
     npm.config.get('long') ? usages()
-        : '    ' + wrap(commands),
+      : '    ' + wrap(commands),
     '',
-    'npm <cmd> -h     quick help on <cmd>',
-    'npm -l           display full usage info',
-    'npm help <term>  search for help on <term>',
-    'npm help npm     involved overview',
+    'npm <command> -h  quick help on <command>',
+    'npm -l            display full usage info',
+    'npm help <term>   search for help on <term>',
+    'npm help npm      involved overview',
     '',
     'Specify configs in the ini-formatted file:',
     '    ' + npm.config.get('userconfig'),
@@ -180,11 +179,16 @@ function npmUsage (valid, cb) {
     '',
     'npm@' + npm.version + ' ' + path.dirname(__dirname)
   ].join('\n'))
+
+  if (npm.argv.length > 1) {
+    output(didYouMean(npm.argv[1], commands))
+  }
+
   cb(valid)
 }
 
 function usages () {
-  // return a string of <cmd>: <usage>
+  // return a string of <command>: <usage>
   var maxLen = 0
   return Object.keys(npm.commands).filter(function (c) {
     return c === npm.deref(c)

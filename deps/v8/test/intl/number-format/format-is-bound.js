@@ -28,6 +28,8 @@
 // Create default NumberFormat.
 var nf = new Intl.NumberFormat();
 
+var beforeCount = Object.getOwnPropertyNames(nf).length;
+
 // Array we want to iterate, actual numbers are not important.
 var numberArray = [1, 2, 3];
 
@@ -37,3 +39,12 @@ numberArray.forEach(nf.format);
 
 // Formatting a number should work in a direct call.
 nf.format(12345);
+
+// Reading the format doesn't add any additional property keys
+assertEquals(beforeCount, Object.getOwnPropertyNames(nf).length);
+
+// format should be bound properly even if created from a non-instance
+var legacy = Intl.NumberFormat.call(Object.create(Intl.NumberFormat));
+var boundFormat = legacy.format;
+assertEquals(nf.format(12345), legacy.format(12345));
+assertEquals(nf.format(54321), boundFormat(54321));

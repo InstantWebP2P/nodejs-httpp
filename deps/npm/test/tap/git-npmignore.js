@@ -1,6 +1,6 @@
+/* eslint-disable camelcase */
 var child_process = require('child_process')
 var readdir = require('graceful-fs').readdirSync
-var path = require('path')
 var resolve = require('path').resolve
 
 var rimraf = require('rimraf')
@@ -40,7 +40,8 @@ var fixture = new Tacks(Dir({
   })
 }))
 
-var testdir = resolve(__dirname, path.basename(__filename, '.js'))
+var testdir = common.pkg
+var cachedir = common.cache
 var dep = resolve(testdir, 'deps', 'gitch')
 var packname = 'gitch-1.0.0.tgz'
 var packed = resolve(testdir, packname)
@@ -48,11 +49,15 @@ var modules = resolve(testdir, 'node_modules')
 var installed = resolve(modules, 'gitch')
 var expected = [
   'a.js',
-  'package.json',
-  '.npmignore'
+  'package.json'
 ].sort()
 
-var NPM_OPTS = { cwd: testdir }
+var NPM_OPTS = {
+  cwd: testdir,
+  env: common.newEnv().extend({
+    npm_config_cache: cachedir
+  })
+}
 
 function exec (todo, opts, cb) {
   console.log('    # EXEC:', todo)
@@ -134,13 +139,13 @@ function setup (cb) {
   common.npm(
     [
       '--loglevel', 'error',
-      'cache', 'clean'
+      'cache', 'clean', '--force'
     ],
     NPM_OPTS,
     function (er, code, _, stderr) {
       if (er) return cb(er)
-      if (code) return cb(new Error('npm cache nonzero exit: ' + code))
       if (stderr) return cb(new Error('npm cache clean error: ' + stderr))
+      if (code) return cb(new Error('npm cache nonzero exit: ' + code))
 
       which('git', function found (er, gitPath) {
         if (er) return cb(er)

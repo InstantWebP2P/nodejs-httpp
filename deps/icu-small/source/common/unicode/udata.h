@@ -1,3 +1,5 @@
+// © 2016 and later: Unicode, Inc. and others.
+// License & terms of use: http://www.unicode.org/copyright.html
 /*
 ******************************************************************************
 *
@@ -6,7 +8,7 @@
 *
 ******************************************************************************
 *   file name:  udata.h
-*   encoding:   US-ASCII
+*   encoding:   UTF-8
 *   tab size:   8 (not used)
 *   indentation:4
 *
@@ -262,25 +264,6 @@ udata_openChoice(const char *path, const char *type, const char *name,
 U_STABLE void U_EXPORT2
 udata_close(UDataMemory *pData);
 
-#if U_SHOW_CPLUSPLUS_API
-
-U_NAMESPACE_BEGIN
-
-/**
- * \class LocalUDataMemoryPointer
- * "Smart pointer" class, closes a UDataMemory via udata_close().
- * For most methods see the LocalPointerBase base class.
- *
- * @see LocalPointerBase
- * @see LocalPointer
- * @stable ICU 4.4
- */
-U_DEFINE_LOCAL_OPEN_POINTER(LocalUDataMemoryPointer, UDataMemory, udata_close);
-
-U_NAMESPACE_END
-
-#endif
-
 /**
  * Get the pointer to the actual data inside the data memory.
  * The data is read-only.
@@ -408,8 +391,13 @@ typedef enum UDataFileAccess {
     UDATA_PACKAGES_FIRST,
     /** ICU does not access the file system for data loading. @stable ICU 3.4 */
     UDATA_NO_FILES,
-    /** Number of real UDataFileAccess values. @stable ICU 3.4 */
+#ifndef U_HIDE_DEPRECATED_API
+    /**
+     * Number of real UDataFileAccess values.
+     * @deprecated ICU 58 The numeric value may change over time, see ICU ticket #12420.
+     */
     UDATA_FILE_ACCESS_COUNT
+#endif  // U_HIDE_DEPRECATED_API
 } UDataFileAccess;
 
 /**
@@ -426,5 +414,24 @@ U_STABLE void U_EXPORT2
 udata_setFileAccess(UDataFileAccess access, UErrorCode *status);
 
 U_CDECL_END
+
+#if U_SHOW_CPLUSPLUS_API
+
+U_NAMESPACE_BEGIN
+
+/**
+ * \class LocalUDataMemoryPointer
+ * "Smart pointer" class, closes a UDataMemory via udata_close().
+ * For most methods see the LocalPointerBase base class.
+ *
+ * @see LocalPointerBase
+ * @see LocalPointer
+ * @stable ICU 4.4
+ */
+U_DEFINE_LOCAL_OPEN_POINTER(LocalUDataMemoryPointer, UDataMemory, udata_close);
+
+U_NAMESPACE_END
+
+#endif  // U_SHOW_CPLUSPLUS_API
 
 #endif

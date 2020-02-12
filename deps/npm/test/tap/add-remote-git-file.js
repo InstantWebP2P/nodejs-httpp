@@ -1,17 +1,19 @@
+'use strict'
+
 var fs = require('fs')
 var resolve = require('path').resolve
 var url = require('url')
 
-var osenv = require('osenv')
 var mkdirp = require('mkdirp')
-var rimraf = require('rimraf')
 var test = require('tap').test
 
 var npm = require('../../lib/npm.js')
+var fetchPackageMetadata = require('../../lib/fetch-package-metadata.js')
 var common = require('../common-tap.js')
 
-var pkg = resolve(__dirname, 'add-remote-git-file')
-var repo = resolve(__dirname, 'add-remote-git-file-repo')
+var pkg = resolve(common.pkg, 'package')
+var repo = resolve(common.pkg, 'repo')
+mkdirp.sync(pkg)
 
 var git
 var cloneURL = 'git+file://' + resolve(pkg, 'child.git')
@@ -22,7 +24,6 @@ var pjChild = JSON.stringify({
 }, null, 2) + '\n'
 
 test('setup', function (t) {
-  bootstrap()
   setup(function (er, r) {
     t.ifError(er, 'git started up successfully')
 
@@ -32,15 +33,14 @@ test('setup', function (t) {
 
 test('cache from repo', function (t) {
   process.chdir(pkg)
-  var addRemoteGit = require('../../lib/cache/add-remote-git.js')
-  addRemoteGit(cloneURL, function (er, data) {
-    t.ifError(er, 'cached via git')
+  fetchPackageMetadata(cloneURL, process.cwd(), {}, (err, manifest) => {
+    if (err) t.fail(err.message)
     t.equal(
-      url.parse(data._resolved).protocol,
+      url.parse(manifest._resolved).protocol,
       'git+file:',
       'npm didn\'t go crazy adding git+git+git+git'
     )
-
+    t.equal(manifest._requested.type, 'git', 'cached git')
     t.end()
   })
 })
@@ -68,16 +68,6 @@ test('save install', function (t) {
   })
 })
 
-test('clean', function (t) {
-  cleanup()
-  t.end()
-})
-
-function bootstrap () {
-  cleanup()
-  mkdirp.sync(pkg)
-}
-
 function setup (cb) {
   mkdirp.sync(repo)
   fs.writeFileSync(resolve(repo, 'package.json'), pjChild)
@@ -92,10 +82,4 @@ function setup (cb) {
       )]
     }, cb)
   })
-}
-
-function cleanup () {
-  process.chdir(osenv.tmpdir())
-  rimraf.sync(repo)
-  rimraf.sync(pkg)
 }

@@ -7,9 +7,11 @@ prefix known_issues
 [true] # This section applies to all platforms
 
 [$system==win32]
-test-stdout-buffer-flush-on-exit: SKIP
 
 [$system==linux]
+# https://github.com/nodejs/node/pull/23743
+# https://github.com/nodejs/node/issues/3020
+test-vm-timeout-escape-promise: PASS,FLAKY
 
 [$system==macos]
 
@@ -18,3 +20,5 @@ test-stdout-buffer-flush-on-exit: SKIP
 [$system==freebsd]
 
 [$system==aix]
+
+[$arch==arm]

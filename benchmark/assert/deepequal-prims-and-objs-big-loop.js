@@ -1,34 +1,38 @@
-/* eslint no-deepEqual: 0 */
 'use strict';
-var common = require('../common.js');
-var assert = require('assert');
+const common = require('../common.js');
+const assert = require('assert');
 
 const primValues = {
-  'null': null,
-  'undefined': undefined,
   'string': 'a',
   'number': 1,
-  'boolean': true,
   'object': { 0: 'a' },
   'array': [1, 2, 3],
-  'new-array': new Array([1, 2, 3])
 };
 
-var bench = common.createBenchmark(main, {
-  prim: Object.keys(primValues),
-  n: [1e5]
+const bench = common.createBenchmark(main, {
+  primitive: Object.keys(primValues),
+  n: [2e4],
+  strict: [0, 1],
+  method: [ 'deepEqual', 'notDeepEqual' ],
 });
 
-function main(conf) {
-  var prim = primValues[conf.prim];
-  var n = +conf.n;
-  var x;
+function main({ n, primitive, method, strict }) {
+  if (!method)
+    method = 'deepEqual';
+  const prim = primValues[primitive];
+  const actual = prim;
+  const expected = prim;
+  const expectedWrong = 'b';
+
+  if (strict) {
+    method = method.replace('eep', 'eepStrict');
+  }
+  const fn = assert[method];
+  const value2 = method.includes('not') ? expectedWrong : expected;
 
   bench.start();
-
-  for (x = 0; x < n; x++) {
-    assert.deepEqual(new Array([prim]), new Array([prim]));
+  for (let i = 0; i < n; ++i) {
+    fn([actual], [value2]);
   }
-
   bench.end(n);
 }

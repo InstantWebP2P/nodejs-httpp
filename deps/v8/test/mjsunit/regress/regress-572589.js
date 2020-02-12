@@ -3,10 +3,10 @@
 // found in the LICENSE file.
 //
 // Flags: --allow-natives-syntax --no-lazy
-// Flags: --harmony-destructuring-bind
 
 "use strict";
 eval();
 var f = ({x}) => { };
+%PrepareFunctionForOptimization(f);
 %OptimizeFunctionOnNextCall(f);
 assertThrows(f);

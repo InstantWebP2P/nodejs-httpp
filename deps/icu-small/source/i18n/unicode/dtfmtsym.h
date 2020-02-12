@@ -1,3 +1,5 @@
+// © 2016 and later: Unicode, Inc. and others.
+// License & terms of use: http://www.unicode.org/copyright.html
 /*
 ********************************************************************************
 *   Copyright (C) 1997-2016, International Business Machines
@@ -20,9 +22,12 @@
 
 #include "unicode/utypes.h"
 
+#if U_SHOW_CPLUSPLUS_API
+
 #if !UCONFIG_NO_FORMATTING
 
 #include "unicode/calendar.h"
+#include "unicode/strenum.h"
 #include "unicode/uobject.h"
 #include "unicode/locid.h"
 #include "unicode/udat.h"
@@ -270,9 +275,15 @@ public:
      * @stable ICU 3.6
      */
     enum DtContextType {
-         FORMAT,
-         STANDALONE,
-         DT_CONTEXT_COUNT
+        FORMAT,
+        STANDALONE,
+#ifndef U_HIDE_DEPRECATED_API
+        /**
+         * One more than the highest normal DtContextType value.
+         * @deprecated ICU 58 The numeric value may change over time, see ICU ticket #12420.
+         */
+        DT_CONTEXT_COUNT
+#endif  // U_HIDE_DEPRECATED_API
     };
 
     /**
@@ -280,17 +291,21 @@ public:
      * @stable ICU 3.6
      */
     enum DtWidthType {
-         ABBREVIATED,
-         WIDE,
-         NARROW,
-         /**
-          * Short width is currently only supported for weekday names.
-          * @stable ICU 51
-          */
-         SHORT,
-         /**
-          */
-         DT_WIDTH_COUNT = 4
+        ABBREVIATED,
+        WIDE,
+        NARROW,
+        /**
+         * Short width is currently only supported for weekday names.
+         * @stable ICU 51
+         */
+        SHORT,
+#ifndef U_HIDE_DEPRECATED_API
+        /**
+         * One more than the highest normal DtWidthType value.
+         * @deprecated ICU 58 The numeric value may change over time, see ICU ticket #12420.
+         */
+        DT_WIDTH_COUNT = 4
+#endif  // U_HIDE_DEPRECATED_API
     };
 
     /**
@@ -414,13 +429,13 @@ public:
      * doesn't specify any time separator, and always recognized when parsing.
      * @internal
      */
-    static const UChar DEFAULT_TIME_SEPARATOR = 0x003a;  // ':'
+    static const char16_t DEFAULT_TIME_SEPARATOR = 0x003a;  // ':'
 
     /**
      * This alternate time separator is always recognized when parsing.
      * @internal
      */
-    static const UChar ALTERNATE_TIME_SEPARATOR = 0x002e;  // '.'
+    static const char16_t ALTERNATE_TIME_SEPARATOR = 0x002e;  // '.'
 
     /**
      * Gets the time separator string. For example: ":".
@@ -554,7 +569,7 @@ public:
      * @return    the non-localized date-time pattern characters
      * @stable ICU 2.0
      */
-    static const UChar * U_EXPORT2 getPatternUChars(void);
+    static const char16_t * U_EXPORT2 getPatternUChars(void);
 
     /**
      * Gets localized date-time pattern characters. For example: 'u', 't', etc.
@@ -965,7 +980,7 @@ private:
      * Returns the date format field index of the pattern character c,
      * or UDAT_FIELD_COUNT if c is not a pattern character.
      */
-    static UDateFormatField U_EXPORT2 getPatternCharIndex(UChar c);
+    static UDateFormatField U_EXPORT2 getPatternCharIndex(char16_t c);
 
     /**
      * Returns TRUE if f (with its pattern character repeated count times) is a numeric field.
@@ -975,7 +990,7 @@ private:
     /**
      * Returns TRUE if c (repeated count times) is the pattern character for a numeric field.
      */
-    static UBool U_EXPORT2 isNumericPatternChar(UChar c, int32_t count);
+    static UBool U_EXPORT2 isNumericPatternChar(char16_t c, int32_t count);
 public:
 #ifndef U_HIDE_INTERNAL_API
     /**
@@ -997,6 +1012,8 @@ public:
 U_NAMESPACE_END
 
 #endif /* #if !UCONFIG_NO_FORMATTING */
+
+#endif /* U_SHOW_CPLUSPLUS_API */
 
 #endif // _DTFMTSYM
 //eof

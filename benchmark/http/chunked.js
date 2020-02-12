@@ -8,33 +8,33 @@
 // Verify that our assumptions are valid.
 'use strict';
 
-var common = require('../common.js');
+const common = require('../common.js');
 
-var bench = common.createBenchmark(main, {
-  num: [1, 4, 8, 16],
-  size: [1, 64, 256],
+const bench = common.createBenchmark(main, {
+  n: [1, 4, 8, 16],
+  len: [1, 64, 256],
   c: [100]
 });
 
-function main(conf) {
+function main({ len, n, c }) {
   const http = require('http');
-  var chunk = Buffer.alloc(conf.size, '8');
+  const chunk = Buffer.alloc(len, '8');
 
-  var args = ['-d', '10s', '-t', 8, '-c', conf.c];
-
-  var server = http.createServer(function(req, res) {
+  const server = http.createServer((req, res) => {
     function send(left) {
       if (left === 0) return res.end();
       res.write(chunk);
-      setTimeout(function() {
+      setTimeout(() => {
         send(left - 1);
       }, 0);
     }
-    send(conf.num);
+    send(n);
   });
 
-  server.listen(common.PORT, function() {
-    bench.http('/', args, function() {
+  server.listen(common.PORT, () => {
+    bench.http({
+      connections: c
+    }, () => {
       server.close();
     });
   });

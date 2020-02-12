@@ -1,51 +1,50 @@
+// Flags: --tls-min-v1.0
 'use strict';
 
 const common = require('../common');
+const { readKey } = require('../common/fixtures');
 
-if (!common.hasCrypto) {
+if (!common.hasCrypto)
   common.skip('missing crypto');
-  return;
-}
 
-const assert = require('assert');
 const https = require('https');
-const fs = require('fs');
-const SSL_OP_NO_TICKET = require('crypto').constants.SSL_OP_NO_TICKET;
+const { SSL_OP_NO_TICKET } = require('crypto').constants;
 
 const options = {
-  key: fs.readFileSync(common.fixturesDir + '/keys/agent1-key.pem'),
-  cert: fs.readFileSync(common.fixturesDir + '/keys/agent1-cert.pem'),
+  key: readKey('agent1-key.pem'),
+  cert: readKey('agent1-cert.pem'),
   secureOptions: SSL_OP_NO_TICKET
 };
 
 // Create TLS1.2 server
 https.createServer(options, function(req, res) {
   res.end('ohai');
-}).listen(common.PORT, function() {
+}).listen(0, function() {
   first(this);
 });
 
 // Do request and let agent cache the session
 function first(server) {
+  const port = server.address().port;
   const req = https.request({
-    port: common.PORT,
+    port: port,
     rejectUnauthorized: false
   }, function(res) {
     res.resume();
 
     server.close(function() {
-      faultyServer();
+      faultyServer(port);
     });
   });
   req.end();
 }
 
 // Create TLS1 server
-function faultyServer() {
+function faultyServer(port) {
   options.secureProtocol = 'TLSv1_method';
   https.createServer(options, function(req, res) {
     res.end('hello faulty');
-  }).listen(common.PORT, function() {
+  }).listen(port, function() {
     second(this);
   });
 }
@@ -53,36 +52,18 @@ function faultyServer() {
 // Attempt to request using cached session
 function second(server, session) {
   const req = https.request({
-    port: common.PORT,
+    port: server.address().port,
     rejectUnauthorized: false
   }, function(res) {
     res.resume();
   });
 
-  // Let it fail
-  req.on('error', common.mustCall(function(err) {
-    assert(/wrong version number/.test(err.message));
-
-    req.on('close', function() {
-      third(server);
-    });
-  }));
-  req.end();
-}
-
-// Try on more time - session should be evicted!
-function third(server) {
-  const req = https.request({
-    port: common.PORT,
-    rejectUnauthorized: false
-  }, function(res) {
-    res.resume();
-    assert(!req.socket.isSessionReused());
+  // Although we have a TLS 1.2 session to offer to the TLS 1.0 server,
+  // connection to the TLS 1.0 server should work.
+  req.on('response', common.mustCall(function(res) {
+    // The test is now complete for OpenSSL 1.1.0.
     server.close();
-  });
-  req.on('error', function(err) {
-    // never called
-    assert(false);
-  });
+  }));
+
   req.end();
 }

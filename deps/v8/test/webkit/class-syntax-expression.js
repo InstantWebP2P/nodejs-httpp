@@ -21,8 +21,6 @@
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 // SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-// Flags: --harmony-sloppy --harmony-destructuring-bind
-
 description('Tests for ES6 class syntax expressions');
 
 var constructorCallCount = 0;
@@ -55,7 +53,7 @@ shouldBe("A.prototype.constructor", "A");
 
 shouldThrow("x = class", "'SyntaxError: Unexpected end of input'");
 shouldThrow("x = class {", "'SyntaxError: Unexpected end of input'");
-shouldThrow("x = class { ( }", "'SyntaxError: Unexpected token ('");
+shouldThrow("x = class { ( }", '"SyntaxError: Unexpected token \'(\'"');
 shouldNotThrow("x = class {}");
 
 shouldThrow("x = class { constructor() {} constructor() {} }", "'SyntaxError: A class may only have one constructor'");
@@ -64,9 +62,9 @@ shouldThrow("x = class { set constructor() {} }", "'SyntaxError: Class construct
 shouldNotThrow("x = class { constructor() {} static constructor() { return staticMethodValue; } }");
 shouldBe("x = class { constructor() {} static constructor() { return staticMethodValue; } }; x.constructor()", "staticMethodValue");
 
-shouldThrow("x = class { constructor() {} static prototype() {} }", "'SyntaxError: Classes may not have static property named prototype'");
-shouldThrow("x = class { constructor() {} static get prototype() {} }", "'SyntaxError: Classes may not have static property named prototype'");
-shouldThrow("x = class { constructor() {} static set prototype() {} }", "'SyntaxError: Classes may not have static property named prototype'");
+shouldThrow("x = class { constructor() {} static prototype() {} }", '"SyntaxError: Classes may not have a static property named \'prototype\'"');
+shouldThrow("x = class { constructor() {} static get prototype() {} }", '"SyntaxError: Classes may not have a static property named \'prototype\'"');
+shouldThrow("x = class { constructor() {} static set prototype() {} }", '"SyntaxError: Classes may not have a static property named \'prototype\'"');
 shouldNotThrow("x = class  { constructor() {} prototype() { return instanceMethodValue; } }");
 shouldBe("x = class { constructor() {} prototype() { return instanceMethodValue; } }; (new x).prototype()", "instanceMethodValue");
 

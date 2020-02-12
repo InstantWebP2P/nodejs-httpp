@@ -70,11 +70,22 @@ Data types
             */
             UV_PROCESS_DETACHED = (1 << 3),
             /*
-            * Hide the subprocess console window that would normally be created. This
+            * Hide the subprocess window that would normally be created. This option is
+            * only meaningful on Windows systems. On Unix it is silently ignored.
+            */
+            UV_PROCESS_WINDOWS_HIDE = (1 << 4),
+            /*
+            * Hide the subprocess console window that would normally be created. This 
             * option is only meaningful on Windows systems. On Unix it is silently
             * ignored.
             */
-            UV_PROCESS_WINDOWS_HIDE = (1 << 4)
+            UV_PROCESS_WINDOWS_HIDE_CONSOLE = (1 << 5),
+            /*
+            * Hide the subprocess GUI window that would normally be created. This 
+            * option is only meaningful on Windows systems. On Unix it is silently
+            * ignored.
+            */
+            UV_PROCESS_WINDOWS_HIDE_GUI = (1 << 6)
         };
 
 .. c:type:: uv_stdio_container_t
@@ -109,6 +120,11 @@ Data types
             */
             UV_READABLE_PIPE = 0x10,
             UV_WRITABLE_PIPE = 0x20
+            /*
+             * Open the child pipe handle in overlapped mode on Windows.
+             * On Unix it is silently ignored.
+             */
+            UV_OVERLAPPED_PIPE = 0x40
         } uv_stdio_flags;
 
 
@@ -212,6 +228,9 @@ API
     setgid specified, or not having enough memory to allocate for the new
     process.
 
+    .. versionchanged:: 1.24.0 Added `UV_PROCESS_WINDOWS_HIDE_CONSOLE` and
+                        `UV_PROCESS_WINDOWS_HIDE_GUI` flags.
+
 .. c:function:: int uv_process_kill(uv_process_t* handle, int signum)
 
     Sends the specified signal to the given process handle. Check the documentation
@@ -221,5 +240,11 @@ API
 
     Sends the specified signal to the given PID. Check the documentation
     on :c:ref:`signal` for signal support, specially on Windows.
+
+.. c:function:: uv_pid_t uv_process_get_pid(const uv_process_t* handle)
+
+    Returns `handle->pid`.
+
+    .. versionadded:: 1.19.0
 
 .. seealso:: The :c:type:`uv_handle_t` API functions also apply.

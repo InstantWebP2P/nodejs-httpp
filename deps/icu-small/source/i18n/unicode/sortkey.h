@@ -1,3 +1,5 @@
+// © 2016 and later: Unicode, Inc. and others.
+// License & terms of use: http://www.unicode.org/copyright.html
 /*
  *****************************************************************************
  * Copyright (C) 1996-2014, International Business Machines Corporation and others.
@@ -22,6 +24,8 @@
 #define SORTKEY_H
 
 #include "unicode/utypes.h"
+
+#if U_SHOW_CPLUSPLUS_API
 
 /**
  * \file
@@ -334,5 +338,7 @@ CollationKey::getByteArray(int32_t &count) const
 U_NAMESPACE_END
 
 #endif /* #if !UCONFIG_NO_COLLATION */
+
+#endif /* U_SHOW_CPLUSPLUS_API */
 
 #endif

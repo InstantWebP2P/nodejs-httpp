@@ -32,13 +32,13 @@ if (process.argv[2] !== 'child') {
       });
     }));
 
-    child.send('socket', socket, {keepOpen: true}, common.mustCall((err) => {
+    child.send('socket', socket, { keepOpen: true }, common.mustCall((err) => {
       assert.ifError(err);
     }));
   });
 
-  server.listen(common.PORT, () => {
-    const socket = net.connect(common.PORT, common.localhostIPv4);
+  server.listen(0, () => {
+    const socket = net.connect(server.address().port, common.localhostIPv4);
     socket.setEncoding('utf8');
     socket.on('data', (data) => result += data);
   });

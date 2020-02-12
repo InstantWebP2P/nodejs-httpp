@@ -1,3 +1,5 @@
+// © 2016 and later: Unicode, Inc. and others.
+// License & terms of use: http://www.unicode.org/copyright.html
 /*
 **********************************************************************
 *   Copyright (C) 2001-2011, International Business Machines
@@ -98,7 +100,7 @@ NameUnicodeTransliterator::NameUnicodeTransliterator(const NameUnicodeTransliter
 /**
  * Transliterator API.
  */
-Transliterator* NameUnicodeTransliterator::clone(void) const {
+NameUnicodeTransliterator* NameUnicodeTransliterator::clone() const {
     return new NameUnicodeTransliterator(*this);
 }
 

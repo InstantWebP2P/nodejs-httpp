@@ -3,13 +3,11 @@ var path = require('path')
 var existsSync = fs.existsSync || path.existsSync
 
 var mkdirp = require('mkdirp')
-var osenv = require('osenv')
-var rimraf = require('rimraf')
 var test = require('tap').test
 
 var common = require('../common-tap.js')
 
-var pkg = path.join(__dirname, 'install-cli-only-production')
+var pkg = common.pkg
 
 var EXEC_OPTS = { cwd: pkg }
 
@@ -47,9 +45,9 @@ test('setup', function (t) {
     JSON.stringify(dependency, null, 2)
   )
 
-  mkdirp.sync(path.join(pkg, 'devDependency'))
+  mkdirp.sync(path.join(pkg, 'dev-dependency'))
   fs.writeFileSync(
-    path.join(pkg, 'devDependency', 'package.json'),
+    path.join(pkg, 'dev-dependency', 'package.json'),
     JSON.stringify(devDependency, null, 2)
   )
 
@@ -59,13 +57,14 @@ test('setup', function (t) {
     JSON.stringify(json, null, 2)
   )
 
-  process.chdir(pkg)
   t.end()
 })
 
 test('\'npm install --only=production\' should only install dependencies', function (t) {
-  common.npm(['install', '--only=production'], EXEC_OPTS, function (err, code) {
-    t.ifError(err, 'install production successful')
+  common.npm(['install', '--only=production'], EXEC_OPTS, function (err, code, stdout, stderr) {
+    if (err) throw err
+    t.comment('1> ' + stdout)
+    t.comment('2> ' + stderr)
     t.equal(code, 0, 'npm install did not raise error code')
     t.ok(
       JSON.parse(fs.readFileSync(
@@ -79,10 +78,4 @@ test('\'npm install --only=production\' should only install dependencies', funct
     )
     t.end()
   })
-})
-
-test('cleanup', function (t) {
-  process.chdir(osenv.tmpdir())
-  rimraf.sync(pkg)
-  t.end()
 })

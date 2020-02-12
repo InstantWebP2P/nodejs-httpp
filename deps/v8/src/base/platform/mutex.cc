@@ -25,7 +25,7 @@ static V8_INLINE void InitializeNativeHandle(pthread_mutex_t* mutex) {
   result = pthread_mutexattr_destroy(&attr);
 #else
   // Use a fast mutex (default attributes).
-  result = pthread_mutex_init(mutex, NULL);
+  result = pthread_mutex_init(mutex, nullptr);
 #endif  // defined(DEBUG)
   DCHECK_EQ(0, result);
   USE(result);
@@ -75,39 +75,6 @@ static V8_INLINE bool TryLockNativeHandle(pthread_mutex_t* mutex) {
   DCHECK_EQ(0, result);
   return true;
 }
-
-#elif V8_OS_WIN
-
-static V8_INLINE void InitializeNativeHandle(PCRITICAL_SECTION cs) {
-  InitializeCriticalSection(cs);
-}
-
-
-static V8_INLINE void InitializeRecursiveNativeHandle(PCRITICAL_SECTION cs) {
-  InitializeCriticalSection(cs);
-}
-
-
-static V8_INLINE void DestroyNativeHandle(PCRITICAL_SECTION cs) {
-  DeleteCriticalSection(cs);
-}
-
-
-static V8_INLINE void LockNativeHandle(PCRITICAL_SECTION cs) {
-  EnterCriticalSection(cs);
-}
-
-
-static V8_INLINE void UnlockNativeHandle(PCRITICAL_SECTION cs) {
-  LeaveCriticalSection(cs);
-}
-
-
-static V8_INLINE bool TryLockNativeHandle(PCRITICAL_SECTION cs) {
-  return TryEnterCriticalSection(cs);
-}
-
-#endif  // V8_OS_POSIX
 
 
 Mutex::Mutex() {
@@ -187,6 +154,147 @@ bool RecursiveMutex::TryLock() {
 #endif
   return true;
 }
+
+SharedMutex::SharedMutex() { pthread_rwlock_init(&native_handle_, nullptr); }
+
+SharedMutex::~SharedMutex() {
+  int result = pthread_rwlock_destroy(&native_handle_);
+  DCHECK_EQ(0, result);
+  USE(result);
+}
+
+void SharedMutex::LockShared() {
+  int result = pthread_rwlock_rdlock(&native_handle_);
+  DCHECK_EQ(0, result);
+  USE(result);
+}
+
+void SharedMutex::LockExclusive() {
+  int result = pthread_rwlock_wrlock(&native_handle_);
+  DCHECK_EQ(0, result);
+  USE(result);
+}
+
+void SharedMutex::UnlockShared() {
+  int result = pthread_rwlock_unlock(&native_handle_);
+  DCHECK_EQ(0, result);
+  USE(result);
+}
+
+void SharedMutex::UnlockExclusive() {
+  // Same code as {UnlockShared} on POSIX.
+  UnlockShared();
+}
+
+bool SharedMutex::TryLockShared() {
+  return pthread_rwlock_tryrdlock(&native_handle_) == 0;
+}
+
+bool SharedMutex::TryLockExclusive() {
+  return pthread_rwlock_trywrlock(&native_handle_) == 0;
+}
+
+#elif V8_OS_WIN
+
+Mutex::Mutex() : native_handle_(SRWLOCK_INIT) {
+#ifdef DEBUG
+  level_ = 0;
+#endif
+}
+
+
+Mutex::~Mutex() {
+  DCHECK_EQ(0, level_);
+}
+
+
+void Mutex::Lock() {
+  AcquireSRWLockExclusive(&native_handle_);
+  AssertUnheldAndMark();
+}
+
+
+void Mutex::Unlock() {
+  AssertHeldAndUnmark();
+  ReleaseSRWLockExclusive(&native_handle_);
+}
+
+
+bool Mutex::TryLock() {
+  if (!TryAcquireSRWLockExclusive(&native_handle_)) {
+    return false;
+  }
+  AssertUnheldAndMark();
+  return true;
+}
+
+
+RecursiveMutex::RecursiveMutex() {
+  InitializeCriticalSection(&native_handle_);
+#ifdef DEBUG
+  level_ = 0;
+#endif
+}
+
+
+RecursiveMutex::~RecursiveMutex() {
+  DeleteCriticalSection(&native_handle_);
+  DCHECK_EQ(0, level_);
+}
+
+
+void RecursiveMutex::Lock() {
+  EnterCriticalSection(&native_handle_);
+#ifdef DEBUG
+  DCHECK_LE(0, level_);
+  level_++;
+#endif
+}
+
+
+void RecursiveMutex::Unlock() {
+#ifdef DEBUG
+  DCHECK_LT(0, level_);
+  level_--;
+#endif
+  LeaveCriticalSection(&native_handle_);
+}
+
+
+bool RecursiveMutex::TryLock() {
+  if (!TryEnterCriticalSection(&native_handle_)) {
+    return false;
+  }
+#ifdef DEBUG
+  DCHECK_LE(0, level_);
+  level_++;
+#endif
+  return true;
+}
+
+SharedMutex::SharedMutex() : native_handle_(SRWLOCK_INIT) {}
+
+SharedMutex::~SharedMutex() {}
+
+void SharedMutex::LockShared() { AcquireSRWLockShared(&native_handle_); }
+
+void SharedMutex::LockExclusive() { AcquireSRWLockExclusive(&native_handle_); }
+
+void SharedMutex::UnlockShared() { ReleaseSRWLockShared(&native_handle_); }
+
+void SharedMutex::UnlockExclusive() {
+  ReleaseSRWLockExclusive(&native_handle_);
+}
+
+bool SharedMutex::TryLockShared() {
+  return TryAcquireSRWLockShared(&native_handle_);
+}
+
+bool SharedMutex::TryLockExclusive() {
+  return TryAcquireSRWLockExclusive(&native_handle_);
+}
+
+#endif  // V8_OS_POSIX
 
 }  // namespace base
 }  // namespace v8

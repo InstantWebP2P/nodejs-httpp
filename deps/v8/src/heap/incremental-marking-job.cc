@@ -5,138 +5,123 @@
 #include "src/heap/incremental-marking-job.h"
 
 #include "src/base/platform/time.h"
+#include "src/execution/isolate.h"
+#include "src/execution/vm-state-inl.h"
+#include "src/heap/embedder-tracing.h"
 #include "src/heap/heap-inl.h"
 #include "src/heap/heap.h"
 #include "src/heap/incremental-marking.h"
-#include "src/isolate.h"
-#include "src/v8.h"
+#include "src/init/v8.h"
 
 namespace v8 {
 namespace internal {
 
+class IncrementalMarkingJob::Task : public CancelableTask {
+ public:
+  static StepResult Step(Heap* heap,
+                         EmbedderHeapTracer::EmbedderStackState stack_state);
+
+  Task(Isolate* isolate, IncrementalMarkingJob* job,
+       EmbedderHeapTracer::EmbedderStackState stack_state, TaskType task_type)
+      : CancelableTask(isolate),
+        isolate_(isolate),
+        job_(job),
+        stack_state_(stack_state),
+        task_type_(task_type) {}
+
+  // CancelableTask overrides.
+  void RunInternal() override;
+
+  Isolate* isolate() const { return isolate_; }
+
+ private:
+  Isolate* const isolate_;
+  IncrementalMarkingJob* const job_;
+  const EmbedderHeapTracer::EmbedderStackState stack_state_;
+  const TaskType task_type_;
+};
 
 void IncrementalMarkingJob::Start(Heap* heap) {
   DCHECK(!heap->incremental_marking()->IsStopped());
-  // We don't need to reset the flags because tasks from the previous job
-  // can still be pending. We just want to ensure that tasks are posted
-  // if they are not pending.
-  // If delayed task is pending and made_progress_since_last_delayed_task_ is
-  // true, then the delayed task will clear that flag when it is rescheduled.
-  ScheduleIdleTask(heap);
-  ScheduleDelayedTask(heap);
+  ScheduleTask(heap);
 }
 
-
-void IncrementalMarkingJob::NotifyIdleTask() { idle_task_pending_ = false; }
-
-
-void IncrementalMarkingJob::NotifyDelayedTask() {
-  delayed_task_pending_ = false;
-}
-
-
-void IncrementalMarkingJob::NotifyIdleTaskProgress() {
-  made_progress_since_last_delayed_task_ = true;
-}
-
-
-void IncrementalMarkingJob::ScheduleIdleTask(Heap* heap) {
-  if (!idle_task_pending_) {
+void IncrementalMarkingJob::ScheduleTask(Heap* heap, TaskType task_type) {
+  if (!IsTaskPending(task_type) && !heap->IsTearingDown()) {
     v8::Isolate* isolate = reinterpret_cast<v8::Isolate*>(heap->isolate());
-    if (V8::GetCurrentPlatform()->IdleTasksEnabled(isolate)) {
-      idle_task_pending_ = true;
-      auto task = new IdleTask(heap->isolate(), this);
-      V8::GetCurrentPlatform()->CallIdleOnForegroundThread(isolate, task);
+    SetTaskPending(task_type, true);
+    auto taskrunner =
+        V8::GetCurrentPlatform()->GetForegroundTaskRunner(isolate);
+    if (task_type == TaskType::kNormal) {
+      if (taskrunner->NonNestableTasksEnabled()) {
+        taskrunner->PostNonNestableTask(std::make_unique<Task>(
+            heap->isolate(), this,
+            EmbedderHeapTracer::EmbedderStackState::kEmpty, task_type));
+      } else {
+        taskrunner->PostTask(std::make_unique<Task>(
+            heap->isolate(), this,
+            EmbedderHeapTracer::EmbedderStackState::kUnknown, task_type));
+      }
+    } else {
+      if (taskrunner->NonNestableDelayedTasksEnabled()) {
+        taskrunner->PostNonNestableDelayedTask(
+            std::make_unique<Task>(
+                heap->isolate(), this,
+                EmbedderHeapTracer::EmbedderStackState::kEmpty, task_type),
+            kDelayInSeconds);
+      } else {
+        taskrunner->PostDelayedTask(
+            std::make_unique<Task>(
+                heap->isolate(), this,
+                EmbedderHeapTracer::EmbedderStackState::kUnknown, task_type),
+            kDelayInSeconds);
+      }
     }
   }
 }
 
-
-void IncrementalMarkingJob::ScheduleDelayedTask(Heap* heap) {
-  if (!delayed_task_pending_ && FLAG_memory_reducer) {
-    v8::Isolate* isolate = reinterpret_cast<v8::Isolate*>(heap->isolate());
-    delayed_task_pending_ = true;
-    made_progress_since_last_delayed_task_ = false;
-    auto task = new DelayedTask(heap->isolate(), this);
-    V8::GetCurrentPlatform()->CallDelayedOnForegroundThread(isolate, task,
-                                                            kDelayInSeconds);
-  }
-}
-
-
-IncrementalMarkingJob::IdleTask::Progress IncrementalMarkingJob::IdleTask::Step(
-    Heap* heap, double deadline_in_ms) {
-  IncrementalMarking* incremental_marking = heap->incremental_marking();
-  MarkCompactCollector* mark_compact_collector = heap->mark_compact_collector();
-  if (incremental_marking->IsStopped()) {
-    return kDone;
-  }
-  if (mark_compact_collector->sweeping_in_progress()) {
-    if (mark_compact_collector->IsSweepingCompleted()) {
-      mark_compact_collector->EnsureSweepingCompleted();
-    }
-    return kMoreWork;
-  }
-  const double remaining_idle_time_in_ms =
-      incremental_marking->AdvanceIncrementalMarking(
-          0, deadline_in_ms, IncrementalMarking::IdleStepActions());
-  if (remaining_idle_time_in_ms > 0.0) {
-    heap->TryFinalizeIdleIncrementalMarking(remaining_idle_time_in_ms);
-  }
-  return incremental_marking->IsStopped() ? kDone : kMoreWork;
-}
-
-
-void IncrementalMarkingJob::IdleTask::RunInternal(double deadline_in_seconds) {
-  double deadline_in_ms =
-      deadline_in_seconds *
-      static_cast<double>(base::Time::kMillisecondsPerSecond);
-  Heap* heap = isolate()->heap();
-  double start_ms = heap->MonotonicallyIncreasingTimeInMs();
-  job_->NotifyIdleTask();
-  job_->NotifyIdleTaskProgress();
-  if (Step(heap, deadline_in_ms) == kMoreWork) {
-    job_->ScheduleIdleTask(heap);
-  }
-  if (FLAG_trace_idle_notification) {
-    double current_time_ms = heap->MonotonicallyIncreasingTimeInMs();
-    double idle_time_in_ms = deadline_in_ms - start_ms;
-    double deadline_difference = deadline_in_ms - current_time_ms;
-    PrintIsolate(isolate(), "%8.0f ms: ", isolate()->time_millis_since_init());
-    PrintF(
-        "Idle task: requested idle time %.2f ms, used idle time %.2f "
-        "ms, deadline usage %.2f ms\n",
-        idle_time_in_ms, idle_time_in_ms - deadline_difference,
-        deadline_difference);
-  }
-}
-
-
-void IncrementalMarkingJob::DelayedTask::Step(Heap* heap) {
-  const int kIncrementalMarkingDelayMs = 50;
+StepResult IncrementalMarkingJob::Task::Step(
+    Heap* heap, EmbedderHeapTracer::EmbedderStackState stack_state) {
+  const int kIncrementalMarkingDelayMs = 1;
   double deadline =
       heap->MonotonicallyIncreasingTimeInMs() + kIncrementalMarkingDelayMs;
-  heap->incremental_marking()->AdvanceIncrementalMarking(
-      0, deadline, i::IncrementalMarking::StepActions(
-                       i::IncrementalMarking::NO_GC_VIA_STACK_GUARD,
-                       i::IncrementalMarking::FORCE_MARKING,
-                       i::IncrementalMarking::FORCE_COMPLETION));
-  heap->FinalizeIncrementalMarkingIfComplete(
-      "Incremental marking task: finalize incremental marking");
+  StepResult result = heap->incremental_marking()->AdvanceWithDeadline(
+      deadline, i::IncrementalMarking::NO_GC_VIA_STACK_GUARD,
+      i::StepOrigin::kTask);
+  {
+    EmbedderStackStateScope scope(heap->local_embedder_heap_tracer(),
+                                  stack_state);
+    heap->FinalizeIncrementalMarkingIfComplete(
+        GarbageCollectionReason::kFinalizeMarkingViaTask);
+  }
+  return result;
 }
 
+void IncrementalMarkingJob::Task::RunInternal() {
+  VMState<GC> state(isolate());
+  TRACE_EVENT_CALL_STATS_SCOPED(isolate(), "v8", "V8.Task");
 
-void IncrementalMarkingJob::DelayedTask::RunInternal() {
   Heap* heap = isolate()->heap();
-  job_->NotifyDelayedTask();
   IncrementalMarking* incremental_marking = heap->incremental_marking();
-  if (!incremental_marking->IsStopped()) {
-    if (job_->ShouldForceMarkingStep()) {
-      Step(heap);
+  if (incremental_marking->IsStopped()) {
+    if (heap->IncrementalMarkingLimitReached() !=
+        Heap::IncrementalMarkingLimit::kNoLimit) {
+      heap->StartIncrementalMarking(heap->GCFlagsForIncrementalMarking(),
+                                    GarbageCollectionReason::kIdleTask,
+                                    kGCCallbackScheduleIdleGarbageCollection);
     }
-    // The Step() above could have finished incremental marking.
+  }
+
+  // Clear this flag after StartIncrementalMarking call to avoid
+  // scheduling a new task when startining incremental marking.
+  job_->SetTaskPending(task_type_, false);
+
+  if (!incremental_marking->IsStopped()) {
+    StepResult step_result = Step(heap, stack_state_);
     if (!incremental_marking->IsStopped()) {
-      job_->ScheduleDelayedTask(heap);
+      job_->ScheduleTask(heap, step_result == StepResult::kNoImmediateWork
+                                   ? TaskType::kDelayed
+                                   : TaskType::kNormal);
     }
   }
 }

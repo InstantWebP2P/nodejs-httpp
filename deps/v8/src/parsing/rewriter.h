@@ -5,13 +5,17 @@
 #ifndef V8_PARSING_REWRITER_H_
 #define V8_PARSING_REWRITER_H_
 
+#include "src/base/macros.h"
+
 namespace v8 {
 namespace internal {
 
 class AstValueFactory;
-class DoExpression;
+class Isolate;
 class ParseInfo;
 class Parser;
+class DeclarationScope;
+class Scope;
 
 class Rewriter {
  public:
@@ -21,12 +25,7 @@ class Rewriter {
   //
   // Assumes code has been parsed and scopes have been analyzed.  Mutates the
   // AST, so the AST should not continue to be used in the case of failure.
-  static bool Rewrite(ParseInfo* info);
-
-  // Rewrite a list of statements, using the same rules as a top-level program,
-  // to  ensure identical behaviour of completion result.
-  static bool Rewrite(Parser* parser, DoExpression* expr,
-                      AstValueFactory* factory);
+  V8_EXPORT_PRIVATE static bool Rewrite(ParseInfo* info);
 };
 
 

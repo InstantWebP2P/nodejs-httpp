@@ -1,103 +1,133 @@
-var fs = require('graceful-fs')
-var path = require('path')
-var osenv = require('osenv')
-var mkdirp = require('mkdirp')
-var mr = require('npm-registry-mock')
-var rimraf = require('rimraf')
-var test = require('tap').test
+'use strict'
+const path = require('path')
+const test = require('tap').test
+const mr = require('npm-registry-mock')
+const Tacks = require('tacks')
+const File = Tacks.File
+const Symlink = Tacks.Symlink
+const Dir = Tacks.Dir
+const common = require('../common-tap.js')
 
-var common = require('../common-tap.js')
+const basedir = common.pkg
+const testdir = path.join(basedir, 'testdir')
+const cachedir = common.cache
+const globaldir = path.join(basedir, 'global')
+const tmpdir = path.join(basedir, 'tmp')
 
-var pkg = path.resolve(__dirname, 'outdated-symlink')
-var cache = path.resolve(pkg, 'cache')
-var extend = Object.assign || require('util')._extend
-
-var fakeRoot = path.join(pkg, 'fakeRoot')
-var OPTS = {
-  env: extend(extend({}, process.env), {
-    'npm_config_prefix': fakeRoot
+const conf = {
+  cwd: path.join(testdir, 'main'),
+  env: Object.assign({}, process.env, {
+    npm_config_cache: cachedir,
+    npm_config_tmp: tmpdir,
+    npm_config_prefix: globaldir,
+    npm_config_registry: common.registry,
+    npm_config_loglevel: 'warn'
   })
 }
 
-var json = {
-  name: 'my-local-package',
-  description: 'fixture',
-  version: '1.0.0'
-}
-
-test('setup', function (t) {
-  cleanup()
-  mkdirp.sync(cache)
-  fs.writeFileSync(
-    path.join(pkg, 'package.json'),
-    JSON.stringify(json, null, 2)
-  )
-  process.chdir(pkg)
-  common.npm(['install', '-g', 'async@0.2.9', 'underscore@1.3.1'], OPTS, function (err, code, stdout, stderr) {
-    if (err) throw err
-    t.comment(stdout)
-    t.comment(stderr)
-    common.npm(['link'], OPTS, function (err, code, stdout, stderr) {
-      if (err) throw err
-      t.comment(stdout)
-      t.comment(stderr)
-      t.is(code, 0)
-      common.npm(['ls', '-g'], OPTS, function (err, code, stdout, stderr) {
-        if (err) throw err
-        t.is(code, 0)
-        t.is(stderr, '', 'got expected stderr')
-        t.match(stdout, /my-local-package@1.0.0/, 'creates global link ok')
-        t.end()
+let server
+const fixture = new Tacks(Dir({
+  cache: Dir(),
+  global: Dir(),
+  tmp: Dir(),
+  testdir: Dir({
+    broken: Dir({
+      'package.json': File({
+        name: 'broken',
+        version: '1.0.0'
+      })
+    }),
+    main: Dir({
+      node_modules: Dir({
+        unbroken: Symlink('/testdir/unbroken')
+      }),
+      'package-lock.json': File({
+        name: 'main',
+        version: '1.0.0',
+        lockfileVersion: 1,
+        requires: true,
+        dependencies: {
+          broken: {
+            version: 'file:../broken'
+          },
+          unbroken: {
+            version: 'file:../unbroken'
+          }
+        }
+      }),
+      'package.json': File({
+        name: 'main',
+        version: '1.0.0',
+        dependencies: {
+          broken: 'file:../broken',
+          unbroken: 'file:../unbroken'
+        }
+      })
+    }),
+    unbroken: Dir({
+      'package.json': File({
+        name: 'unbroken',
+        version: '1.0.0'
       })
     })
   })
+}))
+
+function setup () {
+  cleanup()
+  fixture.create(basedir)
+}
+
+function cleanup () {
+  fixture.remove(basedir)
+}
+
+test('setup', function (t) {
+  setup()
+  mr({port: common.port, throwOnUnmatched: true}, function (err, s) {
+    if (err) throw err
+    server = s
+    t.done()
+  })
 })
 
-test('when outdated is called linked packages should be displayed as such', function (t) {
-  var regOutLinked = /my-local-package\s*1.0.0\s*linked\s*linked\n/
-  var regOutInstallOne = /async\s*0.2.9\s*0.2.9\s*0.2.10\n/
-  var regOutInstallTwo = /underscore\s*1.3.1\s*1.3.1\s*1.5.1\n/
-
-  mr({ port: common.port }, function (er, s) {
-    common.npm(
-      [
-        '--registry', common.registry,
-        'outdated', '-g'
-      ],
-      OPTS,
-      function (err, c, out, stderr) {
-        if (err) throw err
-        t.is(stderr, '')
-        t.match(out, regOutLinked, 'Global Link format as expected')
-        t.match(out, regOutInstallOne, 'Global Install format as expected')
-        t.match(out, regOutInstallTwo, 'Global Install format as expected')
-        s.close()
-        t.end()
+test('outdated sees broken links', function (t) {
+  common.npm(['outdated', '--json'], conf, function (err, code, stdout, stderr) {
+    if (err) throw err
+    t.is(code, 1, 'command ran not ok')
+    t.comment(stderr.trim())
+    t.comment(stdout.trim())
+    t.same(JSON.parse(stdout), {
+      broken: {
+        wanted: 'linked',
+        latest: 'linked',
+        location: ''
       }
-    )
+    })
+    t.done()
+  })
+})
+
+test('outdated with long output sees broken links', function (t) {
+  common.npm(['outdated', '--long', '--json'], conf, function (err, code, stdout, stderr) {
+    if (err) throw err
+    t.is(code, 1, 'command ran not ok')
+    t.comment(stderr.trim())
+    t.comment(stdout.trim())
+    t.same(JSON.parse(stdout), {
+      broken: {
+        wanted: 'linked',
+        latest: 'linked',
+        type: 'dependencies',
+        location: ''
+      }
+    })
+    t.done()
   })
 })
 
 test('cleanup', function (t) {
-  process.chdir(osenv.tmpdir())
-  common.npm(['rm', 'outdated'], OPTS, function (err, code, stdout, stderr) {
-    if (err) throw err
-    t.comment(stdout)
-    t.comment(stderr)
-    t.is(code, 0, 'cleanup outdated in local ok')
-    common.npm(['rm', '-g', 'outdated', 'async', 'underscore'], OPTS, function (err, code) {
-      if (err) throw err
-      t.comment(stdout)
-      t.comment(stderr)
-      t.is(code, 0, 'cleanup outdated in global ok')
-
-      cleanup()
-      t.end()
-    })
-  })
+  server.close()
+  cleanup()
+  t.done()
 })
-
-function cleanup () {
-  rimraf.sync(pkg)
-  rimraf.sync(fakeRoot)
-}

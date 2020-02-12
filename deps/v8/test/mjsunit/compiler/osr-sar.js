@@ -25,7 +25,7 @@
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-// Flags: --allow-natives-syntax --use-osr --turbo-osr
+// Flags: --allow-natives-syntax --use-osr
 
 function test() {
   // Loop to force OSR.
@@ -39,6 +39,7 @@ function test() {
   }
 
   var K3 = 0x80000000;
+  %PrepareFunctionForOptimization(SarShr);
   assertEquals(-2, SarShr(K3 | 0));
   assertEquals(-2, SarShr(K3 | 0));
   %OptimizeFunctionOnNextCall(SarShr);

@@ -1,8 +1,29 @@
-#include "node_crypto_clienthello.h"
+// Copyright Joyent, Inc. and other Node contributors.
+//
+// Permission is hereby granted, free of charge, to any person obtaining a
+// copy of this software and associated documentation files (the
+// "Software"), to deal in the Software without restriction, including
+// without limitation the rights to use, copy, modify, merge, publish,
+// distribute, sublicense, and/or sell copies of the Software, and to permit
+// persons to whom the Software is furnished to do so, subject to the
+// following conditions:
+//
+// The above copyright notice and this permission notice shall be included
+// in all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+// MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN
+// NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+// DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
+// OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
+// USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+#include "node_crypto_clienthello.h"  // NOLINT(build/include_inline)
 #include "node_crypto_clienthello-inl.h"
-#include "node_buffer.h"  // Buffer
 
 namespace node {
+namespace crypto {
 
 void ClientHelloParser::Parse(const uint8_t* data, size_t avail) {
   switch (state_) {
@@ -65,26 +86,28 @@ void ClientHelloParser::ParseHeader(const uint8_t* data, size_t avail) {
   // (3,2) TLS v1.1
   // (3,3) TLS v1.2
   //
+  // Note that TLS v1.3 uses a TLS v1.2 handshake so requires no specific
+  // support here.
   if (data[body_offset_ + 4] != 0x03 ||
       data[body_offset_ + 5] < 0x01 ||
       data[body_offset_ + 5] > 0x03) {
-    goto fail;
+    return End();
   }
 
   if (data[body_offset_] == kClientHello) {
     if (state_ == kTLSHeader) {
       if (!ParseTLSClientHello(data, avail))
-        goto fail;
+        return End();
     } else {
       // We couldn't get here, but whatever
-      goto fail;
+      return End();
     }
 
     // Check if we overflowed (do not reply with any private data)
     if (session_id_ == nullptr ||
         session_size_ > 32 ||
         session_id_ + session_size_ > data + avail) {
-      goto fail;
+      return End();
     }
   }
 
@@ -92,18 +115,13 @@ void ClientHelloParser::ParseHeader(const uint8_t* data, size_t avail) {
   hello.session_id_ = session_id_;
   hello.session_size_ = session_size_;
   hello.has_ticket_ = tls_ticket_ != nullptr && tls_ticket_size_ != 0;
-  hello.ocsp_request_ = ocsp_request_;
   hello.servername_ = servername_;
   hello.servername_size_ = static_cast<uint8_t>(servername_size_);
   onhello_cb_(cb_arg_, hello);
-  return;
-
- fail:
-  return End();
 }
 
 
-void ClientHelloParser::ParseExtension(ClientHelloParser::ExtensionType type,
+void ClientHelloParser::ParseExtension(const uint16_t type,
                                        const uint8_t* data,
                                        size_t len) {
   // NOTE: In case of anything we're just returning back, ignoring the problem.
@@ -132,18 +150,6 @@ void ClientHelloParser::ParseExtension(ClientHelloParser::ExtensionType type,
           offset += name_len;
         }
       }
-      break;
-    case kStatusRequest:
-      // We are ignoring any data, just indicating the presence of extension
-      if (len < kMinStatusRequestSize)
-        return;
-
-      // Unknown type, ignore it
-      if (data[0] != kStatusRequestOCSP)
-        break;
-
-      // Ignore extensions, they won't work with caching on backend anyway
-      ocsp_request_ = 1;
       break;
     case kTLSSessionTicket:
       tls_ticket_size_ = len;
@@ -210,7 +216,7 @@ bool ClientHelloParser::ParseTLSClientHello(const uint8_t* data, size_t avail) {
     if (ext_off + ext_len > avail)
       return false;
 
-    ParseExtension(static_cast<ExtensionType>(ext_type),
+    ParseExtension(ext_type,
                    data + ext_off,
                    ext_len);
 
@@ -224,4 +230,5 @@ bool ClientHelloParser::ParseTLSClientHello(const uint8_t* data, size_t avail) {
   return true;
 }
 
+}  // namespace crypto
 }  // namespace node

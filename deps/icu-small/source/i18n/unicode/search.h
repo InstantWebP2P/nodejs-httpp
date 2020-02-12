@@ -1,3 +1,5 @@
+// © 2016 and later: Unicode, Inc. and others.
+// License & terms of use: http://www.unicode.org/copyright.html
 /*
 **********************************************************************
 *   Copyright (C) 2001-2011 IBM and others. All rights reserved.
@@ -11,6 +13,8 @@
 #define SEARCH_H
 
 #include "unicode/utypes.h"
+
+#if U_SHOW_CPLUSPLUS_API
 
 /**
  * \file
@@ -68,8 +72,7 @@ U_NAMESPACE_BEGIN
  * UErrorCode      error = U_ZERO_ERROR;
  * for (int pos = iter->first(error); pos != USEARCH_DONE;
  *                               pos = iter->next(error)) {
- *     printf("Found match at %d pos, length is %d\n", pos,
- *                                             iter.getMatchLength());
+ *     printf("Found match at %d pos, length is %d\n", pos, iter.getMatchedLength());
  * }
  * </code></pre>
  *
@@ -570,5 +573,7 @@ inline UBool SearchIterator::operator!=(const SearchIterator &that) const
 U_NAMESPACE_END
 
 #endif /* #if !UCONFIG_NO_COLLATION */
+
+#endif /* U_SHOW_CPLUSPLUS_API */
 
 #endif

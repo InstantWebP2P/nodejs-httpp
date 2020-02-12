@@ -19,8 +19,6 @@
  * IN THE SOFTWARE.
  */
 
-#ifdef _WIN32
-
 #include <errno.h>
 #include <stdio.h>
 
@@ -33,10 +31,9 @@
 # define NO_INLINE __attribute__ ((noinline))
 #endif
 
-
-uv_os_sock_t sock;
-uv_poll_t handle;
-
+#ifdef _WIN32
+static uv_os_sock_t sock;
+static uv_poll_t handle;
 static int close_cb_called = 0;
 
 
@@ -50,7 +47,7 @@ static void poll_cb(uv_poll_t* h, int status, int events) {
 }
 
 
-static void NO_INLINE close_socket_and_verify_stack() {
+static void NO_INLINE close_socket_and_verify_stack(void) {
   const uint32_t MARKER = 0xDEADBEEF;
   const int VERIFY_AFTER = 10; /* ms */
   int r;
@@ -69,9 +66,13 @@ static void NO_INLINE close_socket_and_verify_stack() {
   for (i = 0; i < ARRAY_SIZE(data); i++)
     ASSERT(data[i] == MARKER);
 }
+#endif
 
 
 TEST_IMPL(poll_close_doesnt_corrupt_stack) {
+#ifndef _WIN32
+  RETURN_SKIP("Test only relevant on Windows");
+#else
   struct WSAData wsa_data;
   int r;
   unsigned long on;
@@ -109,6 +110,5 @@ TEST_IMPL(poll_close_doesnt_corrupt_stack) {
 
   MAKE_VALGRIND_HAPPY();
   return 0;
+#endif
 }
-
-#endif  /* _WIN32 */

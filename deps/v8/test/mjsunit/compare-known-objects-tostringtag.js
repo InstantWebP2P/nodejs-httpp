@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// Flags: --allow-natives-syntax --harmony-tostring
+// Flags: --allow-natives-syntax
 
 function le(a, b) {
   return a <= b;
@@ -47,6 +47,10 @@ Object.defineProperty(O.prototype, Symbol.toStringTag, {
 var obj1 = new O;
 var obj2 = new O;
 
+%PrepareFunctionForOptimization(le);
+%PrepareFunctionForOptimization(lt);
+%PrepareFunctionForOptimization(ge);
+%PrepareFunctionForOptimization(gt);
 assertTrue(%HaveSameMap(obj1, obj2));
 test(obj1, obj2);
 test(obj1, obj2);

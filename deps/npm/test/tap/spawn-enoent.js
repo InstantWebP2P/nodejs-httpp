@@ -1,11 +1,10 @@
-var path = require('path')
 var test = require('tap').test
 var fs = require('fs')
 var rimraf = require('rimraf')
 var mkdirp = require('mkdirp')
 var common = require('../common-tap.js')
 
-var pkg = path.resolve(__dirname, 'spawn-enoent')
+var pkg = common.pkg
 var pj = JSON.stringify({
   name: 'x',
   version: '1.2.3',
@@ -28,7 +27,7 @@ test('enoent script', function (t) {
       'npm_config_loglevel': 'warn'
     }
   }, function (er, code, sout, serr) {
-    t.similar(serr, /npm ERR! Failed at the x@1\.2\.3 start script 'wharble-garble-blorst'\./)
+    t.similar(serr, /npm ERR! Failed at the x@1\.2\.3 start script\./)
     t.end()
   })
 })

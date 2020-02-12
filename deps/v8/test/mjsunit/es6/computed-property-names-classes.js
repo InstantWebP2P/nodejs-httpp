@@ -81,7 +81,7 @@ function ID(x) {
   // TODO(arv): It is not clear that we are adding the "standard" properties
   // in the right order. As far as I can tell the spec adds them in alphabetical
   // order.
-  assertArrayEquals(['length', 'name', 'prototype', 'a', 'b', 'c', 'd'],
+  assertArrayEquals(['length', 'prototype', 'a', 'b', 'c', 'd', 'name'],
                     Object.getOwnPropertyNames(C));
 })();
 
@@ -99,7 +99,7 @@ function ID(x) {
   assertEquals('D', C[2]());
   // Array indexes first.
   assertArrayEquals([], Object.keys(C));
-  assertArrayEquals(['1', '2', 'length', 'name', 'prototype', 'a', 'c'],
+  assertArrayEquals(['1', '2', 'length', 'prototype', 'a', 'c', 'name'],
                     Object.getOwnPropertyNames(C));
 })();
 
@@ -118,7 +118,7 @@ function ID(x) {
   assertEquals('C', C.c());
   assertEquals('D', C[sym2]());
   assertArrayEquals([], Object.keys(C));
-  assertArrayEquals(['length', 'name', 'prototype', 'a', 'c'],
+  assertArrayEquals(['length', 'prototype', 'a', 'c', 'name'],
                     Object.getOwnPropertyNames(C));
   assertArrayEquals([sym1, sym2], Object.getOwnPropertySymbols(C));
 })();
@@ -210,6 +210,56 @@ function assertIteratorResult(value, done, result) {
   assertArrayEquals([], Object.keys(C.prototype));
   assertArrayEquals(['1', '2', 'constructor', 'a', 'c'],
                     Object.getOwnPropertyNames(C.prototype));
+})();
+
+
+(function TestLength() {
+  class C {
+    static ['length']() {
+      return 42;
+    }
+  }
+  assertEquals(42, C.length());
+
+  class C1 {
+    static get ['length']() {
+      return 'A';
+    }
+  }
+  assertEquals('A', C1.length);
+
+  class C2 {
+    static get length() {
+      assertUnreachable();
+    }
+    static get ['length']() {
+      return 'B';
+    }
+  }
+  assertEquals('B', C2.length);
+
+  class C3 {
+    static get length() {
+      assertUnreachable();
+    }
+    static get ['length']() {
+      assertUnreachable();
+    }
+    static get ['length']() {
+      return 'C';
+    }
+  }
+  assertEquals('C', C3.length);
+
+  class C4 {
+    static get ['length']() {
+      assertUnreachable();
+    }
+    static get length() {
+      return 'D';
+    }
+  }
+  assertEquals('D', C4.length);
 })();
 
 

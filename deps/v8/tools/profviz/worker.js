@@ -100,13 +100,12 @@ function run(args) {
          var profile = "";
          print = function(text) { profile += text + "\n"; };
          // Dummy entries provider, as we cannot call nm.
-         var entriesProvider = new UnixCppEntriesProvider("", "");
+         var entriesProvider = new UnixCppEntriesProvider("", "", "");
          var targetRootFS = "";
          var separateIc = false;
          var callGraphSize = 5;
          var ignoreUnknown = true;
          var stateFilter = null;
-         var snapshotLogProcessor = null;
          var range = range_start_override + "," + range_end_override;
 
          var tickProcessor = new TickProcessor(entriesProvider,
@@ -114,7 +113,6 @@ function run(args) {
                                                callGraphSize,
                                                ignoreUnknown,
                                                stateFilter,
-                                               snapshotLogProcessor,
                                                distortion,
                                                range);
          for (var i = 0; i < content_lines.length; i++) {

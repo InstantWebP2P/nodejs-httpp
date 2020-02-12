@@ -9,8 +9,8 @@ var common = require('../common-tap.js')
 var npm = require('../../')
 
 // config
-var pkg = path.resolve(__dirname, 'outdated-git')
-var cache = path.resolve(pkg, 'cache')
+var pkg = common.pkg
+var cache = common.cache
 var json = {
   name: 'outdated-git',
   author: 'Rocko Artischocko',
@@ -31,9 +31,12 @@ test('setup', function (t) {
 
 test('discovers new versions in outdated', function (t) {
   process.chdir(pkg)
-  t.plan(5)
+  t.plan(7)
   npm.load({cache: cache, registry: common.registry, loglevel: 'silent'}, function () {
     npm.commands.outdated([], function (er, d) {
+      t.ifError(er, 'npm outdated completed successfully')
+      t.is(process.exitCode, 1, 'exitCode set to 1')
+      process.exitCode = 0
       t.equal(d[0][3], 'git')
       t.equal(d[0][4], 'git')
       t.equal(d[0][5], 'github:robertkowalski/foo')

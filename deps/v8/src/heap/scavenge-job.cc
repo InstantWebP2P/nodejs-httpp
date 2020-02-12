@@ -5,10 +5,13 @@
 #include "src/heap/scavenge-job.h"
 
 #include "src/base/platform/time.h"
+#include "src/execution/isolate.h"
+#include "src/execution/vm-state-inl.h"
+#include "src/heap/gc-tracer.h"
 #include "src/heap/heap-inl.h"
 #include "src/heap/heap.h"
-#include "src/isolate.h"
-#include "src/v8.h"
+#include "src/heap/spaces.h"
+#include "src/init/v8.h"
 
 namespace v8 {
 namespace internal {
@@ -17,14 +20,16 @@ namespace internal {
 const double ScavengeJob::kMaxAllocationLimitAsFractionOfNewSpace = 0.8;
 
 void ScavengeJob::IdleTask::RunInternal(double deadline_in_seconds) {
+  VMState<GC> state(isolate());
+  TRACE_EVENT_CALL_STATS_SCOPED(isolate(), "v8", "V8.Task");
   Heap* heap = isolate()->heap();
   double deadline_in_ms =
       deadline_in_seconds *
       static_cast<double>(base::Time::kMillisecondsPerSecond);
   double start_ms = heap->MonotonicallyIncreasingTimeInMs();
   double idle_time_in_ms = deadline_in_ms - start_ms;
-  size_t scavenge_speed_in_bytes_per_ms =
-      static_cast<size_t>(heap->tracer()->ScavengeSpeedInBytesPerMillisecond());
+  double scavenge_speed_in_bytes_per_ms =
+      heap->tracer()->ScavengeSpeedInBytesPerMillisecond();
   size_t new_space_size = heap->new_space()->Size();
   size_t new_space_capacity = heap->new_space()->Capacity();
 
@@ -34,7 +39,7 @@ void ScavengeJob::IdleTask::RunInternal(double deadline_in_seconds) {
                                  new_space_capacity)) {
     if (EnoughIdleTimeForScavenge(
             idle_time_in_ms, scavenge_speed_in_bytes_per_ms, new_space_size)) {
-      heap->CollectGarbage(NEW_SPACE, "idle task: scavenge");
+      heap->CollectGarbage(NEW_SPACE, GarbageCollectionReason::kIdleTask);
     } else {
       // Immediately request another idle task that can get larger idle time.
       job_->RescheduleIdleTask(heap);
@@ -42,9 +47,8 @@ void ScavengeJob::IdleTask::RunInternal(double deadline_in_seconds) {
   }
 }
 
-
 bool ScavengeJob::ReachedIdleAllocationLimit(
-    size_t scavenge_speed_in_bytes_per_ms, size_t new_space_size,
+    double scavenge_speed_in_bytes_per_ms, size_t new_space_size,
     size_t new_space_capacity) {
   if (scavenge_speed_in_bytes_per_ms == 0) {
     scavenge_speed_in_bytes_per_ms = kInitialScavengeSpeedInBytesPerMs;
@@ -52,27 +56,24 @@ bool ScavengeJob::ReachedIdleAllocationLimit(
 
   // Set the allocation limit to the number of bytes we can scavenge in an
   // average idle task.
-  size_t allocation_limit = kAverageIdleTimeMs * scavenge_speed_in_bytes_per_ms;
+  double allocation_limit = kAverageIdleTimeMs * scavenge_speed_in_bytes_per_ms;
 
   // Keep the limit smaller than the new space capacity.
   allocation_limit =
-      Min(allocation_limit,
-          static_cast<size_t>(new_space_capacity *
-                              kMaxAllocationLimitAsFractionOfNewSpace));
+      Min<double>(allocation_limit,
+                  new_space_capacity * kMaxAllocationLimitAsFractionOfNewSpace);
   // Adjust the limit to take into account bytes that will be allocated until
-  // the next check.
-  allocation_limit = allocation_limit < kBytesAllocatedBeforeNextIdleTask
-                         ? 0
-                         : allocation_limit - kBytesAllocatedBeforeNextIdleTask;
-  // Keep the limit large enough to avoid scavenges in tiny new space.
-  allocation_limit = Max(allocation_limit, kMinAllocationLimit);
+  // the next check and keep the limit large enough to avoid scavenges in tiny
+  // new space.
+  allocation_limit =
+      Max<double>(allocation_limit - kBytesAllocatedBeforeNextIdleTask,
+                  kMinAllocationLimit);
 
   return allocation_limit <= new_space_size;
 }
 
-
 bool ScavengeJob::EnoughIdleTimeForScavenge(
-    double idle_time_in_ms, size_t scavenge_speed_in_bytes_per_ms,
+    double idle_time_in_ms, double scavenge_speed_in_bytes_per_ms,
     size_t new_space_size) {
   if (scavenge_speed_in_bytes_per_ms == 0) {
     scavenge_speed_in_bytes_per_ms = kInitialScavengeSpeedInBytesPerMs;
@@ -103,12 +104,13 @@ void ScavengeJob::ScheduleIdleTaskIfNeeded(Heap* heap, int bytes_allocated) {
 
 
 void ScavengeJob::ScheduleIdleTask(Heap* heap) {
-  if (!idle_task_pending_) {
+  if (!idle_task_pending_ && !heap->IsTearingDown()) {
     v8::Isolate* isolate = reinterpret_cast<v8::Isolate*>(heap->isolate());
     if (V8::GetCurrentPlatform()->IdleTasksEnabled(isolate)) {
       idle_task_pending_ = true;
-      auto task = new IdleTask(heap->isolate(), this);
-      V8::GetCurrentPlatform()->CallIdleOnForegroundThread(isolate, task);
+      auto task = std::make_unique<IdleTask>(heap->isolate(), this);
+      V8::GetCurrentPlatform()->GetForegroundTaskRunner(isolate)->PostIdleTask(
+          std::move(task));
     }
   }
 }

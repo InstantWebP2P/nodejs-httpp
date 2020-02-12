@@ -26,7 +26,6 @@
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 // Flags: --allow-natives-syntax --turbo-escape
-//
 
 function f() {
   this.x=0;
@@ -44,6 +43,7 @@ function g(a) {
   return o.x;
 }
 
+%PrepareFunctionForOptimization(g);
 assertEquals(5, g(true));
 assertEquals(7, g(false));
 %OptimizeFunctionOnNextCall(g);

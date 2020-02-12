@@ -1,103 +1,98 @@
+// Flags: --expose-internals
 'use strict';
-var common = require('../common');
-var assert = require('assert');
+const common = require('../common');
+const assert = require('assert');
 
-var TCP = process.binding('tcp_wrap').TCP;
-var WriteWrap = process.binding('stream_wrap').WriteWrap;
+const { internalBinding } = require('internal/test/binding');
+const { TCP, constants: TCPConstants } = internalBinding('tcp_wrap');
+const {
+  WriteWrap,
+  kReadBytesOrError,
+  kArrayBufferOffset,
+  streamBaseState
+} = internalBinding('stream_wrap');
 
-var server = new TCP();
+const server = new TCP(TCPConstants.SOCKET);
 
-var r = server.bind('0.0.0.0', common.PORT);
-assert.equal(0, r);
+const r = server.bind('0.0.0.0', 0);
+assert.strictEqual(r, 0);
+let port = {};
+server.getsockname(port);
+port = port.port;
 
 server.listen(128);
 
-var sliceCount = 0, eofCount = 0;
-
-var writeCount = 0;
-var recvCount = 0;
-
-server.onconnection = function(err, client) {
-  assert.equal(0, client.writeQueueSize);
+server.onconnection = (err, client) => {
+  assert.strictEqual(client.writeQueueSize, 0);
   console.log('got connection');
 
-  function maybeCloseClient() {
-    if (client.pendingWrites.length == 0 && client.gotEOF) {
+  const maybeCloseClient = () => {
+    if (client.pendingWrites.length === 0 && client.gotEOF) {
       console.log('close client');
       client.close();
     }
-  }
+  };
 
   client.readStart();
   client.pendingWrites = [];
-  client.onread = function(err, buffer) {
-    if (buffer) {
+  client.onread = common.mustCall((arrayBuffer) => {
+    if (arrayBuffer) {
+      const offset = streamBaseState[kArrayBufferOffset];
+      const nread = streamBaseState[kReadBytesOrError];
+      const buffer = Buffer.from(arrayBuffer, offset, nread);
       assert.ok(buffer.length > 0);
 
-      assert.equal(0, client.writeQueueSize);
+      assert.strictEqual(client.writeQueueSize, 0);
 
-      var req = new WriteWrap();
+      const req = new WriteWrap();
       req.async = false;
       const returnCode = client.writeBuffer(req, buffer);
-      assert.equal(returnCode, 0);
+      assert.strictEqual(returnCode, 0);
       client.pendingWrites.push(req);
 
-      console.log('client.writeQueueSize: ' + client.writeQueueSize);
+      console.log(`client.writeQueueSize: ${client.writeQueueSize}`);
       // 11 bytes should flush
-      assert.equal(0, client.writeQueueSize);
+      assert.strictEqual(client.writeQueueSize, 0);
 
       if (req.async)
-        req.oncomplete = done;
+        req.oncomplete = common.mustCall(done);
       else
         process.nextTick(done.bind(null, 0, client, req));
 
       function done(status, client_, req_) {
-        assert.equal(req, client.pendingWrites.shift());
+        assert.strictEqual(client.pendingWrites.shift(), req);
 
         // Check parameters.
-        assert.equal(0, status);
-        assert.equal(client, client_);
-        assert.equal(req, req_);
+        assert.strictEqual(status, 0);
+        assert.strictEqual(client_, client);
+        assert.strictEqual(req_, req);
 
-        console.log('client.writeQueueSize: ' + client.writeQueueSize);
-        assert.equal(0, client.writeQueueSize);
+        console.log(`client.writeQueueSize: ${client.writeQueueSize}`);
+        assert.strictEqual(client.writeQueueSize, 0);
 
-        writeCount++;
-        console.log('write ' + writeCount);
         maybeCloseClient();
       }
 
-      sliceCount++;
     } else {
       console.log('eof');
       client.gotEOF = true;
       server.close();
-      eofCount++;
       maybeCloseClient();
     }
-  };
+  }, 2);
 };
 
-var net = require('net');
+const net = require('net');
 
-var c = net.createConnection(common.PORT);
-c.on('connect', function() {
-  c.end('hello world');
-});
+const c = net.createConnection(port);
+
+c.on('connect', common.mustCall(() => { c.end('hello world'); }));
 
 c.setEncoding('utf8');
-c.on('data', function(d) {
-  assert.equal('hello world', d);
-  recvCount++;
-});
+c.on('data', common.mustCall((d) => {
+  assert.strictEqual(d, 'hello world');
+}));
 
-c.on('close', function() {
+c.on('close', () => {
   console.error('client closed');
-});
-
-process.on('exit', function() {
-  assert.equal(1, sliceCount);
-  assert.equal(1, eofCount);
-  assert.equal(1, writeCount);
-  assert.equal(1, recvCount);
 });

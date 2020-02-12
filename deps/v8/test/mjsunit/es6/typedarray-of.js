@@ -1,6 +1,8 @@
 // Copyright 2014 the V8 project authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+//
+// Flags: --expose-gc
 
 // Based on Mozilla Array.of() tests at http://dxr.mozilla.org/mozilla-central/source/js/src/jit-test/tests/collections
 
@@ -115,9 +117,9 @@ function TestTypedArrayOf(constructor) {
   // Check superficial features of %TypedArray%.of.
   var desc = Object.getOwnPropertyDescriptor(constructor.__proto__, "of");
 
-  assertEquals(desc.configurable, false);
+  assertEquals(desc.configurable, true);
   assertEquals(desc.enumerable, false);
-  assertEquals(desc.writable, false);
+  assertEquals(desc.writable, true);
   assertEquals(constructor.of.length, 0);
 
   // %TypedArray%.of is not a constructor.
@@ -129,6 +131,20 @@ function TestTypedArrayOf(constructor) {
   // Array as default constructor.
   for (var x of [undefined, null, false, true, "cow", 42, 3.14]) {
     assertThrows(function () { constructor.of.call(x); }, TypeError);
+  }
+
+  // Check if it's correctly accessing new typed array elements even after
+  // garbage collection is invoked in ToNumber.
+  var not_number = {
+    [Symbol.toPrimitive]() {
+      gc();
+      return 123;
+    }
+  };
+  var dangerous_array = new Array(64).fill(not_number);
+  var a = constructor.of(...dangerous_array);
+  for (var i = 0; i < 64; i++) {
+    assertEquals(123, a[i]);
   }
 }
 

@@ -26,7 +26,6 @@
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 // Flags: --allow-natives-syntax --turbo-escape
-//
 
 function f(h) {
   "use strict";
@@ -42,6 +41,7 @@ function h(x) {
   assertEquals("[object Arguments]", ""+x)
 }
 
+%PrepareFunctionForOptimization(g);
 assertEquals(4, g(h));
 assertEquals(4, g(h));
 %OptimizeFunctionOnNextCall(g);

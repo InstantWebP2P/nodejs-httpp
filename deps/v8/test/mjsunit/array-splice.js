@@ -300,6 +300,55 @@
   }
 })();
 
+// Check the behaviour when approaching maximal values for length.
+(function() {
+  for (var i = 0; i < 7; i++) {
+    try {
+      new Array(Math.pow(2, 32) - 3).splice(-1, 0, 1, 2, 3, 4, 5);
+      throw 'Should have thrown RangeError';
+    } catch (e) {
+      assertTrue(e instanceof RangeError);
+    }
+
+    // Check smi boundary
+    var bigNum = (1 << 30) - 3;
+    var array = new Array(bigNum);
+    array.splice(-1, 0, 1, 2, 3, 4, 5, 6, 7);
+    assertEquals(bigNum + 7, array.length);
+  }
+})();
+
+(function() {
+  for (var i = 0; i < 7; i++) {
+    var a = [7, 8, 9];
+    a.splice(0, 0, 1, 2, 3, 4, 5, 6);
+    assertEquals([1, 2, 3, 4, 5, 6, 7, 8, 9], a);
+    assertFalse(a.hasOwnProperty(10), "a.hasOwnProperty(10)");
+    assertEquals(undefined, a[10]);
+  }
+})();
+
+(function testSpliceDeleteDouble() {
+  var a = [1.1, 1.2, 1.3, 1.4];
+  a.splice(2, 1)
+  assertEquals([1.1, 1.2, 1.4], a);
+})();
+
+// Past this point the ArrayProtector is invalidated since we modify the
+// Array.prototype.
+
+// Check the case of JS builtin .splice()
+(function() {
+  for (var i = 0; i < 7; i++) {
+    var array = [1, 2, 3, 4];
+    Array.prototype[3] = 'foo';  // To force JS builtin.
+
+    var spliced = array.splice();
+
+    assertEquals([], spliced);
+    assertEquals([1, 2, 3, 4], array);
+  }
+})();
 
 // Now check the case with array of holes and some elements on prototype.
 (function() {
@@ -350,7 +399,6 @@
   }
 })();
 
-
 // Now check the case with array of holes and some elements on prototype.
 (function() {
   var len = 9;
@@ -398,45 +446,20 @@
   }
 })();
 
-
-// Check the case of JS builtin .splice()
+// Verify that fast implementations aren't confused by empty DOUBLE element arrays
 (function() {
-  for (var i = 0; i < 7; i++) {
-    var array = [1, 2, 3, 4];
-    Array.prototype[3] = 'foo';  // To force JS builtin.
 
-    var spliced = array.splice();
-
-    assertEquals([], spliced);
-    assertEquals([1, 2, 3, 4], array);
-  }
-})();
-
-
-// Check the behaviour when approaching maximal values for length.
-(function() {
-  for (var i = 0; i < 7; i++) {
-    try {
-      new Array(Math.pow(2, 32) - 3).splice(-1, 0, 1, 2, 3, 4, 5);
-      throw 'Should have thrown RangeError';
-    } catch (e) {
-      assertTrue(e instanceof RangeError);
+  function foo(dontAddAnything) {
+    let a = [];
+    if (dontAddAnything === undefined) {
+      a[1] = 0.5;
     }
-
-    // Check smi boundary
-    var bigNum = (1 << 30) - 3;
-    var array = new Array(bigNum);
-    array.splice(-1, 0, 1, 2, 3, 4, 5, 6, 7);
-    assertEquals(bigNum + 7, array.length);
+    return a.splice(0, 0, 3.5);
   }
-})();
 
-(function() {
-  for (var i = 0; i < 7; i++) {
-    var a = [7, 8, 9];
-    a.splice(0, 0, 1, 2, 3, 4, 5, 6);
-    assertEquals([1, 2, 3, 4, 5, 6, 7, 8, 9], a);
-    assertFalse(a.hasOwnProperty(10), "a.hasOwnProperty(10)");
-    assertEquals(undefined, a[10]);
-  }
+  // Learn via allocation site tracking to create double arrays in foo().
+  foo();
+  foo();
+  // force splice to copy the input array.
+  foo(true);
 })();

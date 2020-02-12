@@ -13,7 +13,7 @@
 namespace v8 {
 namespace internal {
 namespace compiler {
-
+namespace common_operator_unittest {
 
 // -----------------------------------------------------------------------------
 // Shared operators.
@@ -38,7 +38,6 @@ std::ostream& operator<<(std::ostream& os, const SharedOperator& fop) {
   return os << IrOpcode::Mnemonic(fop.opcode);
 }
 
-
 const SharedOperator kSharedOperators[] = {
 #define SHARED(Name, properties, value_input_count, effect_input_count,      \
                control_input_count, value_output_count, effect_output_count, \
@@ -52,7 +51,8 @@ const SharedOperator kSharedOperators[] = {
     SHARED(IfTrue, Operator::kKontrol, 0, 0, 1, 0, 0, 1),
     SHARED(IfFalse, Operator::kKontrol, 0, 0, 1, 0, 0, 1),
     SHARED(IfSuccess, Operator::kKontrol, 0, 0, 1, 0, 0, 1),
-    SHARED(Throw, Operator::kKontrol, 1, 1, 1, 0, 0, 1),
+    SHARED(IfException, Operator::kKontrol, 0, 1, 1, 1, 1, 1),
+    SHARED(Throw, Operator::kKontrol, 0, 1, 1, 0, 0, 1),
     SHARED(Terminate, Operator::kKontrol, 0, 1, 1, 0, 0, 1)
 #undef SHARED
 };
@@ -61,8 +61,6 @@ const SharedOperator kSharedOperators[] = {
 class CommonSharedOperatorTest
     : public TestWithZone,
       public ::testing::WithParamInterface<SharedOperator> {};
-
-}  // namespace
 
 
 TEST_P(CommonSharedOperatorTest, InstancesAreGloballyShared) {
@@ -106,10 +104,8 @@ TEST_P(CommonSharedOperatorTest, Properties) {
   EXPECT_EQ(sop.properties, op->properties());
 }
 
-
-INSTANTIATE_TEST_CASE_P(CommonOperatorTest, CommonSharedOperatorTest,
-                        ::testing::ValuesIn(kSharedOperators));
-
+INSTANTIATE_TEST_SUITE_P(CommonOperatorTest, CommonSharedOperatorTest,
+                         ::testing::ValuesIn(kSharedOperators));
 
 // -----------------------------------------------------------------------------
 // Other operators.
@@ -120,7 +116,7 @@ namespace {
 class CommonOperatorTest : public TestWithZone {
  public:
   CommonOperatorTest() : common_(zone()) {}
-  ~CommonOperatorTest() override {}
+  ~CommonOperatorTest() override = default;
 
   CommonOperatorBuilder* common() { return &common_; }
 
@@ -192,10 +188,10 @@ TEST_F(CommonOperatorTest, Return) {
     const Operator* const op = common()->Return(input_count);
     EXPECT_EQ(IrOpcode::kReturn, op->opcode());
     EXPECT_EQ(Operator::kNoThrow, op->properties());
-    EXPECT_EQ(input_count, op->ValueInputCount());
+    EXPECT_EQ(input_count + 1, op->ValueInputCount());
     EXPECT_EQ(1, op->EffectInputCount());
     EXPECT_EQ(1, op->ControlInputCount());
-    EXPECT_EQ(2 + input_count, OperatorProperties::GetTotalInputCount(op));
+    EXPECT_EQ(3 + input_count, OperatorProperties::GetTotalInputCount(op));
     EXPECT_EQ(0, op->ValueOutputCount());
     EXPECT_EQ(0, op->EffectOutputCount());
     EXPECT_EQ(1, op->ControlOutputCount());
@@ -220,24 +216,6 @@ TEST_F(CommonOperatorTest, Branch) {
 }
 
 
-TEST_F(CommonOperatorTest, IfException) {
-  static const IfExceptionHint kIfExceptionHints[] = {
-      IfExceptionHint::kLocallyCaught, IfExceptionHint::kLocallyUncaught};
-  TRACED_FOREACH(IfExceptionHint, hint, kIfExceptionHints) {
-    const Operator* const op = common()->IfException(hint);
-    EXPECT_EQ(IrOpcode::kIfException, op->opcode());
-    EXPECT_EQ(Operator::kKontrol, op->properties());
-    EXPECT_EQ(0, op->ValueInputCount());
-    EXPECT_EQ(1, op->EffectInputCount());
-    EXPECT_EQ(1, op->ControlInputCount());
-    EXPECT_EQ(2, OperatorProperties::GetTotalInputCount(op));
-    EXPECT_EQ(1, op->ValueOutputCount());
-    EXPECT_EQ(1, op->EffectOutputCount());
-    EXPECT_EQ(1, op->ControlOutputCount());
-  }
-}
-
-
 TEST_F(CommonOperatorTest, Switch) {
   TRACED_FOREACH(size_t, cases, kCases) {
     const Operator* const op = common()->Switch(cases);
@@ -256,17 +234,19 @@ TEST_F(CommonOperatorTest, Switch) {
 
 TEST_F(CommonOperatorTest, IfValue) {
   TRACED_FOREACH(int32_t, value, kInt32Values) {
-    const Operator* const op = common()->IfValue(value);
-    EXPECT_EQ(IrOpcode::kIfValue, op->opcode());
-    EXPECT_EQ(Operator::kKontrol, op->properties());
-    EXPECT_EQ(value, OpParameter<int32_t>(op));
-    EXPECT_EQ(0, op->ValueInputCount());
-    EXPECT_EQ(0, op->EffectInputCount());
-    EXPECT_EQ(1, op->ControlInputCount());
-    EXPECT_EQ(1, OperatorProperties::GetTotalInputCount(op));
-    EXPECT_EQ(0, op->ValueOutputCount());
-    EXPECT_EQ(0, op->EffectOutputCount());
-    EXPECT_EQ(1, op->ControlOutputCount());
+    TRACED_FOREACH(int32_t, order, kInt32Values) {
+      const Operator* const op = common()->IfValue(value, order);
+      EXPECT_EQ(IrOpcode::kIfValue, op->opcode());
+      EXPECT_EQ(Operator::kKontrol, op->properties());
+      EXPECT_EQ(IfValueParameters(value, order), IfValueParametersOf(op));
+      EXPECT_EQ(0, op->ValueInputCount());
+      EXPECT_EQ(0, op->EffectInputCount());
+      EXPECT_EQ(1, op->ControlInputCount());
+      EXPECT_EQ(1, OperatorProperties::GetTotalInputCount(op));
+      EXPECT_EQ(0, op->ValueOutputCount());
+      EXPECT_EQ(0, op->EffectOutputCount());
+      EXPECT_EQ(1, op->ControlOutputCount());
+    }
   }
 }
 
@@ -362,14 +342,25 @@ TEST_F(CommonOperatorTest, NumberConstant) {
 
 
 TEST_F(CommonOperatorTest, BeginRegion) {
-  const Operator* op = common()->BeginRegion();
-  EXPECT_EQ(1, op->EffectInputCount());
-  EXPECT_EQ(1, OperatorProperties::GetTotalInputCount(op));
-  EXPECT_EQ(0, op->ControlOutputCount());
-  EXPECT_EQ(1, op->EffectOutputCount());
-  EXPECT_EQ(0, op->ValueOutputCount());
+  {
+    const Operator* op =
+        common()->BeginRegion(RegionObservability::kObservable);
+    EXPECT_EQ(1, op->EffectInputCount());
+    EXPECT_EQ(1, OperatorProperties::GetTotalInputCount(op));
+    EXPECT_EQ(0, op->ControlOutputCount());
+    EXPECT_EQ(1, op->EffectOutputCount());
+    EXPECT_EQ(0, op->ValueOutputCount());
+  }
+  {
+    const Operator* op =
+        common()->BeginRegion(RegionObservability::kNotObservable);
+    EXPECT_EQ(1, op->EffectInputCount());
+    EXPECT_EQ(1, OperatorProperties::GetTotalInputCount(op));
+    EXPECT_EQ(0, op->ControlOutputCount());
+    EXPECT_EQ(1, op->EffectOutputCount());
+    EXPECT_EQ(0, op->ValueOutputCount());
+  }
 }
-
 
 TEST_F(CommonOperatorTest, FinishRegion) {
   const Operator* op = common()->FinishRegion();
@@ -381,6 +372,21 @@ TEST_F(CommonOperatorTest, FinishRegion) {
   EXPECT_EQ(1, op->ValueOutputCount());
 }
 
+TEST_F(CommonOperatorTest, Projection) {
+  TRACED_FORRANGE(size_t, index, 0, 3) {
+    const Operator* op = common()->Projection(index);
+    EXPECT_EQ(index, ProjectionIndexOf(op));
+    EXPECT_EQ(1, op->ValueInputCount());
+    EXPECT_EQ(1, op->ControlInputCount());
+    EXPECT_EQ(2, OperatorProperties::GetTotalInputCount(op));
+    EXPECT_EQ(0, op->ControlOutputCount());
+    EXPECT_EQ(0, op->EffectOutputCount());
+    EXPECT_EQ(1, op->ValueOutputCount());
+  }
+}
+
+}  // namespace
+}  // namespace common_operator_unittest
 }  // namespace compiler
 }  // namespace internal
 }  // namespace v8

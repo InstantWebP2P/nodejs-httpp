@@ -1,6 +1,8 @@
+// © 2016 and later: Unicode, Inc. and others.
+// License & terms of use: http://www.unicode.org/copyright.html
 /*
 *******************************************************************************
-* Copyright (C) 2011-2015, International Business Machines Corporation and
+* Copyright (C) 2011-2016, International Business Machines Corporation and
 * others. All Rights Reserved.
 *******************************************************************************
 */
@@ -12,6 +14,8 @@
  * \brief C++ API: TimeZoneNames
  */
 #include "unicode/utypes.h"
+
+#if U_SHOW_CPLUSPLUS_API
 
 #if !UCONFIG_NO_FORMATTING
 
@@ -133,7 +137,7 @@ public:
     virtual ~TimeZoneNames();
 
     /**
-     * Return true if the given TimeZoneNames objects are emantically equal.
+     * Return true if the given TimeZoneNames objects are semantically equal.
      * @param other the object to be compared with.
      * @return Return TRUE if the given Format objects are semantically equal.
      * @stable ICU 50
@@ -289,6 +293,16 @@ public:
     virtual UnicodeString& getDisplayName(const UnicodeString& tzID, UTimeZoneNameType type, UDate date, UnicodeString& name) const;
 
     /**
+     * @internal ICU internal only, for specific users only until proposed publicly.
+     */
+    virtual void loadAllDisplayNames(UErrorCode& status);
+
+    /**
+     * @internal ICU internal only, for specific users only until proposed publicly.
+     */
+    virtual void getDisplayNames(const UnicodeString& tzID, const UTimeZoneNameType types[], int32_t numTypes, UDate date, UnicodeString dest[], UErrorCode& status) const;
+
+    /**
      * <code>MatchInfoCollection</code> represents a collection of time zone name matches used by
      * {@link TimeZoneNames#find}.
      * @internal
@@ -399,4 +413,7 @@ public:
 U_NAMESPACE_END
 
 #endif
+
+#endif /* U_SHOW_CPLUSPLUS_API */
+
 #endif

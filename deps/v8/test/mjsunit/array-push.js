@@ -135,7 +135,7 @@
   function f(a, i) {
     a.push(i);
   }
-
+  %PrepareFunctionForOptimization(f);
   var a = [1,2,3];
   a.f = function() { return 10; }
   f(a, 4);
@@ -145,4 +145,17 @@
   f(a, 7);
   f(a, {});
   assertEquals(10, a.f());
+})();
+
+
+(function testDoubleArrayPush() {
+  var a = [];
+  var max = 1000;
+  for (var i = 0; i < max; i++) {
+    a.push(i + 0.1);
+  }
+  assertEquals(max, a.length);
+  for (var i = 0; i < max; i++) {
+    assertEquals(i+0.1, a[i]);
+  }
 })();

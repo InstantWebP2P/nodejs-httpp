@@ -1,10 +1,12 @@
+// © 2016 and later: Unicode, Inc. and others.
+// License & terms of use: http://www.unicode.org/copyright.html
 /*
 *******************************************************************************
 *   Copyright (C) 2010-2012, International Business Machines
 *   Corporation and others.  All Rights Reserved.
 *******************************************************************************
 *   file name:  idna.h
-*   encoding:   US-ASCII
+*   encoding:   UTF-8
 *   tab size:   8 (not used)
 *   indentation:4
 *
@@ -21,6 +23,8 @@
  */
 
 #include "unicode/utypes.h"
+
+#if U_SHOW_CPLUSPLUS_API
 
 #if !UCONFIG_NO_IDNA
 
@@ -198,7 +202,7 @@ public:
      * @stable ICU 4.6
      */
     virtual void
-    labelToASCII_UTF8(const StringPiece &label, ByteSink &dest,
+    labelToASCII_UTF8(StringPiece label, ByteSink &dest,
                       IDNAInfo &info, UErrorCode &errorCode) const;
 
     /**
@@ -216,7 +220,7 @@ public:
      * @stable ICU 4.6
      */
     virtual void
-    labelToUnicodeUTF8(const StringPiece &label, ByteSink &dest,
+    labelToUnicodeUTF8(StringPiece label, ByteSink &dest,
                        IDNAInfo &info, UErrorCode &errorCode) const;
 
     /**
@@ -234,7 +238,7 @@ public:
      * @stable ICU 4.6
      */
     virtual void
-    nameToASCII_UTF8(const StringPiece &name, ByteSink &dest,
+    nameToASCII_UTF8(StringPiece name, ByteSink &dest,
                      IDNAInfo &info, UErrorCode &errorCode) const;
 
     /**
@@ -252,7 +256,7 @@ public:
      * @stable ICU 4.6
      */
     virtual void
-    nameToUnicodeUTF8(const StringPiece &name, ByteSink &dest,
+    nameToUnicodeUTF8(StringPiece name, ByteSink &dest,
                       IDNAInfo &info, UErrorCode &errorCode) const;
 };
 
@@ -320,4 +324,7 @@ private:
 U_NAMESPACE_END
 
 #endif  // UCONFIG_NO_IDNA
+
+#endif /* U_SHOW_CPLUSPLUS_API */
+
 #endif  // __IDNA_H__

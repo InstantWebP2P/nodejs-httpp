@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// Flags: --harmony-proxies --harmony-reflect --allow-natives-syntax
+// Flags: --allow-natives-syntax
 
 
 var symbol = %CreatePrivateSymbol("private");
@@ -28,7 +28,8 @@ for (var key in object2) assertUnreachable();
 
 // Private symbols must never leak to proxy traps.
 
-var proxy = new Proxy({}, new Proxy({}, {get() {return () => {throw 666}}}));
+var proxy = new Proxy({}, new Proxy({}, {get() {return () => {
+  throw new Error()}}}));
 var object = {__proto__: proxy};
 
 // [[Set]]

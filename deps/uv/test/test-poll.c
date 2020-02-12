@@ -31,6 +31,16 @@
 #include "uv.h"
 #include "task.h"
 
+#ifdef __linux__
+# include <sys/epoll.h>
+#endif
+
+#ifdef UV_HAVE_KQUEUE
+# include <sys/types.h>
+# include <sys/event.h>
+# include <sys/time.h>
+#endif
+
 
 #define NUM_CLIENTS 5
 #define TRANSFER_BYTES (1 << 16)
@@ -72,9 +82,9 @@ static int closed_connections = 0;
 static int valid_writable_wakeups = 0;
 static int spurious_writable_wakeups = 0;
 
-#ifndef _AIX
+#if !defined(__sun) && !defined(_AIX) && !defined(__MVS__)
 static int disconnects = 0;
-#endif /* !_AIX */
+#endif /* !__sun && !_AIX  && !__MVS__ */
 
 static int got_eagain(void) {
 #ifdef _WIN32
@@ -124,7 +134,10 @@ static void close_socket(uv_os_sock_t sock) {
 #else
   r = close(sock);
 #endif
-  ASSERT(r == 0);
+  /* On FreeBSD close() can fail with ECONNRESET if the socket was shutdown by
+   * the peer before all pending data was delivered.
+   */
+  ASSERT(r == 0 || errno == ECONNRESET);
 }
 
 
@@ -378,7 +391,7 @@ static void connection_poll_cb(uv_poll_t* handle, int status, int events) {
       new_events &= ~UV_WRITABLE;
     }
   }
-#ifndef _AIX
+#if !defined(__sun) && !defined(_AIX) && !defined(__MVS__)
   if (events & UV_DISCONNECT) {
     context->got_disconnect = 1;
     ++disconnects;
@@ -386,9 +399,9 @@ static void connection_poll_cb(uv_poll_t* handle, int status, int events) {
   }
 
   if (context->got_fin && context->sent_fin && context->got_disconnect) {
-#else /* _AIX */
+#else /* __sun && _AIX  && __MVS__ */
   if (context->got_fin && context->sent_fin) {
-#endif /* !_AIx */
+#endif /* !__sun && !_AIX && !__MVS__  */
     /* Sent and received FIN. Close and destroy context. */
     close_socket(context->sock);
     destroy_connection_context(context);
@@ -556,7 +569,7 @@ static void start_poll_test(void) {
          spurious_writable_wakeups > 20);
 
   ASSERT(closed_connections == NUM_CLIENTS * 2);
-#ifndef _AIX
+#if !defined(__sun) && !defined(_AIX) && !defined(__MVS__)
   ASSERT(disconnects == NUM_CLIENTS * 2);
 #endif
   MAKE_VALGRIND_HAPPY();
@@ -564,6 +577,9 @@ static void start_poll_test(void) {
 
 
 TEST_IMPL(poll_duplex) {
+#if defined(NO_SELF_CONNECT)
+  RETURN_SKIP(NO_SELF_CONNECT);
+#endif
   test_mode = DUPLEX;
   start_poll_test();
   return 0;
@@ -571,6 +587,9 @@ TEST_IMPL(poll_duplex) {
 
 
 TEST_IMPL(poll_unidirectional) {
+#if defined(NO_SELF_CONNECT)
+  RETURN_SKIP(NO_SELF_CONNECT);
+#endif
   test_mode = UNIDIRECTIONAL;
   start_poll_test();
   return 0;
@@ -584,7 +603,9 @@ TEST_IMPL(poll_unidirectional) {
  */
 TEST_IMPL(poll_bad_fdtype) {
 #if !defined(__DragonFly__) && !defined(__FreeBSD__) && !defined(__sun) && \
-    !defined(_AIX)
+    !defined(_AIX) && !defined(__MVS__) && !defined(__FreeBSD_kernel__) && \
+    !defined(__OpenBSD__) && !defined(__CYGWIN__) && !defined(__MSYS__) && \
+    !defined(__NetBSD__)
   uv_poll_t poll_handle;
   int fd;
 
@@ -601,3 +622,47 @@ TEST_IMPL(poll_bad_fdtype) {
   MAKE_VALGRIND_HAPPY();
   return 0;
 }
+
+
+#ifdef __linux__
+TEST_IMPL(poll_nested_epoll) {
+  uv_poll_t poll_handle;
+  int fd;
+
+  fd = epoll_create(1);
+  ASSERT(fd != -1);
+
+  ASSERT(0 == uv_poll_init(uv_default_loop(), &poll_handle, fd));
+  ASSERT(0 == uv_poll_start(&poll_handle, UV_READABLE, (uv_poll_cb) abort));
+  ASSERT(0 != uv_run(uv_default_loop(), UV_RUN_NOWAIT));
+
+  uv_close((uv_handle_t*) &poll_handle, NULL);
+  ASSERT(0 == uv_run(uv_default_loop(), UV_RUN_DEFAULT));
+  ASSERT(0 == close(fd));
+
+  MAKE_VALGRIND_HAPPY();
+  return 0;
+}
+#endif  /* __linux__ */
+
+
+#ifdef UV_HAVE_KQUEUE
+TEST_IMPL(poll_nested_kqueue) {
+  uv_poll_t poll_handle;
+  int fd;
+
+  fd = kqueue();
+  ASSERT(fd != -1);
+
+  ASSERT(0 == uv_poll_init(uv_default_loop(), &poll_handle, fd));
+  ASSERT(0 == uv_poll_start(&poll_handle, UV_READABLE, (uv_poll_cb) abort));
+  ASSERT(0 != uv_run(uv_default_loop(), UV_RUN_NOWAIT));
+
+  uv_close((uv_handle_t*) &poll_handle, NULL);
+  ASSERT(0 == uv_run(uv_default_loop(), UV_RUN_DEFAULT));
+  ASSERT(0 == close(fd));
+
+  MAKE_VALGRIND_HAPPY();
+  return 0;
+}
+#endif  /* UV_HAVE_KQUEUE */

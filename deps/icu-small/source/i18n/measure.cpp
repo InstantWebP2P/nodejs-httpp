@@ -1,3 +1,5 @@
+// © 2016 and later: Unicode, Inc. and others.
+// License & terms of use: http://www.unicode.org/copyright.html
 /*
 **********************************************************************
 * Copyright (c) 2004-2014, International Business Machines
@@ -41,12 +43,12 @@ Measure& Measure::operator=(const Measure& other) {
     if (this != &other) {
         delete unit;
         number = other.number;
-        unit = (MeasureUnit*) other.unit->clone();
+        unit = other.unit->clone();
     }
     return *this;
 }
 
-UObject *Measure::clone() const {
+Measure *Measure::clone() const {
     return new Measure(*this);
 }
 

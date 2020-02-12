@@ -1,3 +1,5 @@
+// © 2016 and later: Unicode, Inc. and others.
+// License & terms of use: http://www.unicode.org/copyright.html
 //
 //  file:  repattrn.cpp
 //
@@ -644,7 +646,7 @@ int32_t  RegexPattern::split(const UnicodeString &input,
 {
     if (U_FAILURE(status)) {
         return 0;
-    };
+    }
 
     RegexMatcher  m(this);
     int32_t r = 0;
@@ -665,7 +667,7 @@ int32_t  RegexPattern::split(UText *input,
 {
     if (U_FAILURE(status)) {
         return 0;
-    };
+    }
 
     RegexMatcher  m(this);
     int32_t r = 0;

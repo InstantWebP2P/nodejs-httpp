@@ -1,20 +1,26 @@
+'use strict'
 
-module.exports = publish
+const BB = require('bluebird')
 
-var npm = require('./npm.js')
-var log = require('npmlog')
-var path = require('path')
-var readJson = require('read-package-json')
-var lifecycle = require('./utils/lifecycle.js')
-var chain = require('slide').chain
-var mapToRegistry = require('./utils/map-to-registry.js')
-var cachedPackageRoot = require('./cache/cached-package-root.js')
-var createReadStream = require('graceful-fs').createReadStream
-var npa = require('npm-package-arg')
-var semver = require('semver')
-var getPublishConfig = require('./utils/get-publish-config.js')
+const cacache = require('cacache')
+const figgyPudding = require('figgy-pudding')
+const libpub = require('libnpm/publish')
+const libunpub = require('libnpm/unpublish')
+const lifecycle = BB.promisify(require('./utils/lifecycle.js'))
+const log = require('npmlog')
+const npa = require('libnpm/parse-arg')
+const npmConfig = require('./config/figgy-config.js')
+const output = require('./utils/output.js')
+const otplease = require('./utils/otplease.js')
+const pack = require('./pack')
+const { tarball, extract } = require('libnpm')
+const path = require('path')
+const readFileAsync = BB.promisify(require('graceful-fs').readFile)
+const readJson = BB.promisify(require('read-package-json'))
+const semver = require('semver')
+const statAsync = BB.promisify(require('graceful-fs').stat)
 
-publish.usage = 'npm publish [<tarball>|<folder>] [--tag <tag>] [--access <public|restricted>]' +
+publish.usage = 'npm publish [<tarball>|<folder>] [--tag <tag>] [--access <public|restricted>] [--dry-run]' +
                 "\n\nPublishes '.' if no argument supplied" +
                 '\n\nSets tag `latest` if no --tag specified'
 
@@ -25,6 +31,17 @@ publish.completion = function (opts, cb) {
   return cb()
 }
 
+const PublishConfig = figgyPudding({
+  dryRun: 'dry-run',
+  'dry-run': { default: false },
+  force: { default: false },
+  json: { default: false },
+  Promise: { default: () => Promise },
+  tag: { default: 'latest' },
+  tmp: {}
+})
+
+module.exports = publish
 function publish (args, isRetry, cb) {
   if (typeof cb !== 'function') {
     cb = isRetry
@@ -35,121 +52,116 @@ function publish (args, isRetry, cb) {
 
   log.verbose('publish', args)
 
-  var t = npm.config.get('tag').trim()
+  const opts = PublishConfig(npmConfig())
+  const t = opts.tag.trim()
   if (semver.validRange(t)) {
-    var er = new Error('Tag name must not be a valid SemVer range: ' + t)
-    return cb(er)
+    return cb(new Error('Tag name must not be a valid SemVer range: ' + t))
   }
 
-  var arg = args[0]
-  // if it's a local folder, then run the prepublish there, first.
-  readJson(path.resolve(arg, 'package.json'), function (er, data) {
-    if (er && er.code !== 'ENOENT' && er.code !== 'ENOTDIR') return cb(er)
-
-    if (data) {
-      if (!data.name) return cb(new Error('No name provided'))
-      if (!data.version) return cb(new Error('No version provided'))
-    }
-
-    // Error is OK. Could be publishing a URL or tarball, however, that means
-    // that we will not have automatically run the prepublish script, since
-    // that gets run when adding a folder to the cache.
-    if (er) return cacheAddPublish(arg, false, isRetry, cb)
-    else cacheAddPublish(arg, true, isRetry, cb)
-  })
-}
-
-// didPre in this case means that we already ran the prepublish script,
-// and that the 'dir' is an actual directory, and not something silly
-// like a tarball or name@version thing.
-// That means that we can run publish/postpublish in the dir, rather than
-// in the cache dir.
-function cacheAddPublish (dir, didPre, isRetry, cb) {
-  npm.commands.cache.add(dir, null, null, false, function (er, data) {
-    if (er) return cb(er)
-    log.silly('publish', data)
-    var cachedir = path.resolve(cachedPackageRoot(data), 'package')
-    chain(
-      [
-        !didPre && [lifecycle, data, 'prepublish', cachedir],
-        [publish_, dir, data, isRetry, cachedir],
-        [lifecycle, data, 'publish', didPre ? dir : cachedir],
-        [lifecycle, data, 'postpublish', didPre ? dir : cachedir]
-      ],
-      cb
-    )
-  })
-}
-
-function publish_ (arg, data, isRetry, cachedir, cb) {
-  if (!data) return cb(new Error('no package.json file found'))
-
-  var mappedConfig = getPublishConfig(
-    data.publishConfig,
-    npm.config,
-    npm.registry
-  )
-  var config = mappedConfig.config
-  var registry = mappedConfig.client
-
-  data._npmVersion = npm.version
-  data._nodeVersion = process.versions.node
-
-  delete data.modules
-  if (data.private) {
-    return cb(new Error(
-      'This package has been marked as private\n' +
-      "Remove the 'private' field from the package.json to publish it."
-    ))
-  }
-
-  mapToRegistry(data.name, config, function (er, registryURI, auth, registryBase) {
-    if (er) return cb(er)
-
-    var tarballPath = cachedir + '.tgz'
-
-    // we just want the base registry URL in this case
-    log.verbose('publish', 'registryBase', registryBase)
-    log.silly('publish', 'uploading', tarballPath)
-
-    data._npmUser = {
-      name: auth.username,
-      email: auth.email
-    }
-
-    var params = {
-      metadata: data,
-      body: createReadStream(tarballPath),
-      auth: auth
-    }
-
-    // registry-frontdoor cares about the access level, which is only
-    // configurable for scoped packages
-    if (config.get('access')) {
-      if (!npa(data.name).scope && config.get('access') === 'restricted') {
-        return cb(new Error("Can't restrict access to unscoped packages."))
+  return publish_(args[0], opts)
+    .then((tarball) => {
+      const silent = log.level === 'silent'
+      if (!silent && opts.json) {
+        output(JSON.stringify(tarball, null, 2))
+      } else if (!silent) {
+        output(`+ ${tarball.id}`)
       }
-
-      params.access = config.get('access')
-    }
-
-    log.showProgress('publish:' + data._id)
-    registry.publish(registryBase, params, function (er) {
-      if (er && er.code === 'EPUBLISHCONFLICT' &&
-          npm.config.get('force') && !isRetry) {
-        log.warn('publish', 'Forced publish over ' + data._id)
-        return npm.commands.unpublish([data._id], function (er) {
-          // ignore errors.  Use the force.  Reach out with your feelings.
-          // but if it fails again, then report the first error.
-          publish([arg], er || true, cb)
-        })
-      }
-      // report the unpublish error if this was a retry and unpublish failed
-      if (er && isRetry && isRetry !== true) return cb(isRetry)
-      if (er) return cb(er)
-      log.clearProgress()
-      console.log('+ ' + data._id)
-      cb()
     })
+    .nodeify(cb)
+}
+
+function publish_ (arg, opts) {
+  return statAsync(arg).then((stat) => {
+    if (stat.isDirectory()) {
+      return stat
+    } else {
+      const err = new Error('not a directory')
+      err.code = 'ENOTDIR'
+      throw err
+    }
+  }).then(() => {
+    return publishFromDirectory(arg, opts)
+  }, (err) => {
+    if (err.code !== 'ENOENT' && err.code !== 'ENOTDIR') {
+      throw err
+    } else {
+      return publishFromPackage(arg, opts)
+    }
   })
+}
+
+function publishFromDirectory (arg, opts) {
+  // All this readJson is because any of the given scripts might modify the
+  // package.json in question, so we need to refresh after every step.
+  let contents
+  return pack.prepareDirectory(arg).then(() => {
+    return readJson(path.join(arg, 'package.json'))
+  }).then((pkg) => {
+    return lifecycle(pkg, 'prepublishOnly', arg)
+  }).then(() => {
+    return readJson(path.join(arg, 'package.json'))
+  }).then((pkg) => {
+    return cacache.tmp.withTmp(opts.tmp, {tmpPrefix: 'fromDir'}, (tmpDir) => {
+      const target = path.join(tmpDir, 'package.tgz')
+      return pack.packDirectory(pkg, arg, target, null, true)
+        .tap((c) => { contents = c })
+        .then((c) => !opts.json && pack.logContents(c))
+        .then(() => upload(pkg, false, target, opts))
+    })
+  }).then(() => {
+    return readJson(path.join(arg, 'package.json'))
+  }).tap((pkg) => {
+    return lifecycle(pkg, 'publish', arg)
+  }).tap((pkg) => {
+    return lifecycle(pkg, 'postpublish', arg)
+  })
+    .then(() => contents)
+}
+
+function publishFromPackage (arg, opts) {
+  return cacache.tmp.withTmp(opts.tmp, {tmpPrefix: 'fromPackage'}, tmp => {
+    const extracted = path.join(tmp, 'package')
+    const target = path.join(tmp, 'package.json')
+    return tarball.toFile(arg, target, opts)
+      .then(() => extract(arg, extracted, opts))
+      .then(() => readJson(path.join(extracted, 'package.json')))
+      .then((pkg) => {
+        return BB.resolve(pack.getContents(pkg, target))
+          .tap((c) => !opts.json && pack.logContents(c))
+          .tap(() => upload(pkg, false, target, opts))
+      })
+  })
+}
+
+function upload (pkg, isRetry, cached, opts) {
+  if (!opts.dryRun) {
+    return readFileAsync(cached).then(tarball => {
+      return otplease(opts, opts => {
+        return libpub(pkg, tarball, opts)
+      }).catch(err => {
+        if (
+          err.code === 'EPUBLISHCONFLICT' &&
+          opts.force &&
+          !isRetry
+        ) {
+          log.warn('publish', 'Forced publish over ' + pkg._id)
+          return otplease(opts, opts => libunpub(
+            npa.resolve(pkg.name, pkg.version), opts
+          )).finally(() => {
+            // ignore errors.  Use the force.  Reach out with your feelings.
+            return otplease(opts, opts => {
+              return upload(pkg, true, tarball, opts)
+            }).catch(() => {
+              // but if it fails again, then report the first error.
+              throw err
+            })
+          })
+        } else {
+          throw err
+        }
+      })
+    })
+  } else {
+    return opts.Promise.resolve(true)
+  }
 }

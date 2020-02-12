@@ -5,9 +5,9 @@ var mkdirp = require('mkdirp')
 var rimraf = require('rimraf')
 var test = require('tap').test
 var requireInject = require('require-inject')
-require('../common-tap.js')
+const common = require('../common-tap.js')
 
-var base = path.join(__dirname, path.basename(__filename, '.js'))
+var base = common.pkg
 
 var baseJSON = {
   name: 'base',
@@ -23,7 +23,11 @@ var baseJSON = {
 
 var lastOpened
 var npm = requireInject.installGlobally('../../lib/npm.js', {
-  '../../lib/utils/lifecycle.js': function (pkg, stage, wd, unsafe, failOk, cb) {
+  '../../lib/utils/lifecycle.js': function (pkg, stage, wd, moreOpts, cb) {
+    if (typeof moreOpts === 'function') {
+      cb = moreOpts
+    }
+
     cb(new Error("Shouldn't be calling lifecycle scripts"))
   },
   opener: function (url, options, cb) {

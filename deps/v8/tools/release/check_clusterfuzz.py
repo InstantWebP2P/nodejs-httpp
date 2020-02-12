@@ -13,6 +13,8 @@ written to public logs. Public automated callers of this script should
 suppress stdout and stderr and only process contents of the results_file.
 """
 
+# for py2/py3 compatibility
+from __future__ import print_function
 
 import argparse
 import httplib
@@ -71,7 +73,25 @@ BUG_SPECS = [
   },
   {
     "args": {
+      "job_type": "linux_asan_d8_ignition_dbg",
+      "reproducible": "True",
+      "open": "True",
+      "bug_information": "",
+    },
+    "crash_state": ANY_RE,
+  },
+  {
+    "args": {
       "job_type": "linux_asan_d8_v8_arm_dbg",
+      "reproducible": "True",
+      "open": "True",
+      "bug_information": "",
+    },
+    "crash_state": ANY_RE,
+  },
+  {
+    "args": {
+      "job_type": "linux_asan_d8_ignition_v8_arm_dbg",
       "reproducible": "True",
       "open": "True",
       "bug_information": "",
@@ -196,14 +216,15 @@ def Main():
     issues = APIRequest(key, **args)
     assert issues is not None
     for issue in issues:
-      if re.match(spec["crash_state"], issue["crash_state"]):
+      if (re.match(spec["crash_state"], issue["crash_state"]) and
+          not issue.get('has_bug_flag')):
         results.append(issue["id"])
 
   if options.results_file:
     with open(options.results_file, "w") as f:
       f.write(json.dumps(results))
   else:
-    print results
+    print(results)
 
 
 if __name__ == "__main__":

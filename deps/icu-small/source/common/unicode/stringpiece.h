@@ -1,3 +1,5 @@
+// © 2016 and later: Unicode, Inc. and others.
+// License & terms of use: http://www.unicode.org/copyright.html
 // Copyright (C) 2009-2013, International Business Machines
 // Corporation and others. All Rights Reserved.
 //
@@ -26,6 +28,12 @@
  */
 
 #include "unicode/utypes.h"
+
+#if U_SHOW_CPLUSPLUS_API
+
+#include <cstddef>
+#include <type_traits>
+
 #include "unicode/uobject.h"
 #include "unicode/std_string.h"
 
@@ -40,9 +48,9 @@ U_NAMESPACE_BEGIN
  * in a "const char*" or a "string" wherever a "StringPiece" is
  * expected.
  *
- * Functions or methods may use const StringPiece& parameters to accept either
- * a "const char*" or a "string" value that will be implicitly converted to
- * a StringPiece.
+ * Functions or methods may use StringPiece parameters to accept either a
+ * "const char*" or a "string" value that will be implicitly converted to a
+ * StringPiece.
  *
  * Systematic usage of StringPiece is encouraged as it will reduce unnecessary
  * conversions from "const char*" to "string" and back again.
@@ -66,14 +74,39 @@ class U_COMMON_API StringPiece : public UMemory {
    * @stable ICU 4.2
    */
   StringPiece(const char* str);
-#if U_HAVE_STD_STRING
   /**
    * Constructs from a std::string.
    * @stable ICU 4.2
    */
   StringPiece(const std::string& str)
     : ptr_(str.data()), length_(static_cast<int32_t>(str.size())) { }
-#endif
+#ifndef U_HIDE_DRAFT_API
+  /**
+   * Constructs from some other implementation of a string piece class, from any
+   * C++ record type that has these two methods:
+   *
+   * \code{.cpp}
+   *
+   *   struct OtherStringPieceClass {
+   *     const char* data();
+   *     size_t size();
+   *   };
+   *
+   * \endcode
+   *
+   * The other string piece class will typically be std::string_view from C++17
+   * or absl::string_view from Abseil.
+   *
+   * @param str the other string piece
+   * @draft ICU 65
+   */
+  template <typename T,
+            typename = typename std::enable_if<
+                std::is_same<decltype(T().data()), const char*>::value &&
+                std::is_same<decltype(T().size()), size_t>::value>::type>
+  StringPiece(T str)
+      : ptr_(str.data()), length_(static_cast<int32_t>(str.size())) {}
+#endif  // U_HIDE_DRAFT_API
   /**
    * Constructs from a const char * pointer and a specified length.
    * @param offset a const char * pointer (need not be terminated)
@@ -220,5 +253,7 @@ inline UBool operator!=(const StringPiece& x, const StringPiece& y) {
 }
 
 U_NAMESPACE_END
+
+#endif /* U_SHOW_CPLUSPLUS_API */
 
 #endif  // __STRINGPIECE_H__

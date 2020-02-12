@@ -1,15 +1,10 @@
 'use strict';
 const common = require('../common');
 const assert = require('assert');
+const vm = require('vm');
 
-if (global.Intl === undefined || Intl.v8BreakIterator === undefined) {
-  return common.skip('no Intl');
-}
+if (!common.hasIntl)
+  common.skip('missing Intl');
 
-try {
-  new Intl.v8BreakIterator();
-  // May succeed if data is available - OK
-} catch (e) {
-  // May throw this error if ICU data is not available - OK
-  assert.throws(() => new Intl.v8BreakIterator(), /ICU data/);
-}
+assert(!('v8BreakIterator' in Intl));
+assert(!vm.runInNewContext('"v8BreakIterator" in Intl'));

@@ -8,7 +8,7 @@ var rimraf = require('rimraf')
 
 var common = require('../common-tap')
 
-var pkg = path.resolve(__dirname, path.basename(__filename, '.js'))
+var pkg = common.pkg
 var pathModA = path.join(pkg, 'node_modules', 'moduleA')
 var pathModB = path.join(pkg, 'node_modules', 'moduleB')
 
@@ -54,7 +54,8 @@ test('setup', function (t) {
 
 var expected = pkg + '\n' +
                '└─┬ moduleA@1.0.0\n' +
-               '  └── moduleB@1.0.0\n\n'
+               '  └─┬ moduleB@1.0.0\n' +
+               '    └── moduleA@1.0.0 deduped\n\n'
 
 test('extraneous-dep-cycle', function (t) {
   common.npm(['ls', '--unicode=true'], {cwd: pkg}, function (er, code, stdout, stderr) {

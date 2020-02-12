@@ -28,14 +28,22 @@
 // Load implementations from <project root>/tools.
 // Files: tools/splaytree.js tools/codemap.js tools/csvparser.js
 // Files: tools/consarray.js tools/profile.js tools/profile_view.js
-// Files: tools/logreader.js tools/tickprocessor.js
+// Files: tools/logreader.js tools/arguments.js tools/tickprocessor.js
+// Resources: test/mjsunit/tools/tickprocessor-test-func-info.log
+// Resources: test/mjsunit/tools/tickprocessor-test.default
+// Resources: test/mjsunit/tools/tickprocessor-test.func-info
+// Resources: test/mjsunit/tools/tickprocessor-test.gc-state
+// Resources: test/mjsunit/tools/tickprocessor-test.ignore-unknown
+// Resources: test/mjsunit/tools/tickprocessor-test.log
+// Resources: test/mjsunit/tools/tickprocessor-test.only-summary
+// Resources: test/mjsunit/tools/tickprocessor-test.separate-ic
 // Env: TEST_FILE_NAME
 
 
 (function testArgumentsProcessor() {
   var p_default = new ArgumentsProcessor([]);
   assertTrue(p_default.parse());
-  assertEquals(ArgumentsProcessor.DEFAULTS, p_default.result());
+  assertEquals(p_default.getDefaultResults(), p_default.result());
 
   var p_logFile = new ArgumentsProcessor(['logfile.log']);
   assertTrue(p_logFile.parse());
@@ -46,10 +54,15 @@
   assertEquals('windows', p_platformAndLog.result().platform);
   assertEquals('winlog.log', p_platformAndLog.result().logFileName);
 
-  var p_flags = new ArgumentsProcessor(['--gc', '--separate-ic']);
+  var p_flags = new ArgumentsProcessor(['--gc', '--separate-ic=true']);
   assertTrue(p_flags.parse());
   assertEquals(TickProcessor.VmStates.GC, p_flags.result().stateFilter);
   assertTrue(p_flags.result().separateIc);
+
+  var p_flags = new ArgumentsProcessor(['--gc', '--separate-ic=false']);
+  assertTrue(p_flags.parse());
+  assertEquals(TickProcessor.VmStates.GC, p_flags.result().stateFilter);
+  assertFalse(p_flags.result().separateIc);
 
   var p_nmAndLog = new ArgumentsProcessor(['--nm=mn', 'nmlog.log']);
   assertTrue(p_nmAndLog.parse());
@@ -81,7 +94,7 @@
 
   var shell_prov = new UnixCppEntriesProvider();
   var shell_syms = [];
-  shell_prov.parseVmSymbols('shell', 0x08048000, 0x081ee000,
+  shell_prov.parseVmSymbols('shell', 0x08048000, 0x081ee000, 0,
       function (name, start, end) {
         shell_syms.push(Array.prototype.slice.apply(arguments, [0]));
       });
@@ -107,7 +120,7 @@
   };
   var libc_prov = new UnixCppEntriesProvider();
   var libc_syms = [];
-  libc_prov.parseVmSymbols('libc', 0xf7c5c000, 0xf7da5000,
+  libc_prov.parseVmSymbols('libc', 0xf7c5c000, 0xf7da5000, 0,
       function (name, start, end) {
         libc_syms.push(Array.prototype.slice.apply(arguments, [0]));
       });
@@ -121,6 +134,47 @@
   }
   assertEquals(libc_ref_syms, libc_syms);
 
+  // Android library with zero length duplicates.
+  UnixCppEntriesProvider.prototype.loadSymbols = function(libName) {
+    this.symbols = [[
+      '00000000013a1088 0000000000000224 t v8::internal::interpreter::BytecodeGenerator::BytecodeGenerator(v8::internal::UnoptimizedCompilationInfo*)',
+      '00000000013a1088 0000000000000224 t v8::internal::interpreter::BytecodeGenerator::BytecodeGenerator(v8::internal::UnoptimizedCompilationInfo*)',
+      '00000000013a12ac t $x.4',
+      '00000000013a12ac 00000000000000d0 t v8::internal::interpreter::BytecodeGenerator::FinalizeBytecode(v8::internal::Isolate*, v8::internal::Handle<v8::internal::Script>)',
+      '00000000013a137c t $x.5',
+      '00000000013a137c 0000000000000528 t v8::internal::interpreter::BytecodeGenerator::AllocateDeferredConstants(v8::internal::Isolate*, v8::internal::Handle<v8::internal::Script>)',
+      '00000000013a1578 N $d.46',
+      '00000000013a18a4 t $x.6',
+      '00000000013a18a4 0000000000000 t v8::internal::interpreter::BytecodeGenerator::GlobalDeclarationsBuilder::AllocateDeclarations(v8::internal::UnoptimizedCompilationInfo*, v8::internal::Handle<v8::internal::Script>, v8::internal::Isolate*)',
+      '00000000013a19e0 t $x.7',
+      '00000000013a19e0 0000000000000244 t v8::internal::interpreter::BytecodeGenerator::GenerateBytecode(unsigned long)',
+      '00000000013a1a88 N $d.7',
+      '00000000013a1ac8 N $d.5',
+      '00000000013a1af8 N $d.35',
+      '00000000013a1c24 t $x.8',
+      '00000000013a1c24 000000000000009c t v8::internal::interpreter::BytecodeGenerator::ContextScope::ContextScope(v8::internal::interpreter::BytecodeGenerator*, v8::internal::Scope*)\n',
+    ].join('\n'), ''];
+  };
+  var android_prov = new UnixCppEntriesProvider();
+  var android_syms = [];
+  android_prov.parseVmSymbols('libmonochrome', 0xf7c5c000, 0xf9c5c000, 0,
+      function (name, start, end) {
+        android_syms.push(Array.prototype.slice.apply(arguments, [0]));
+      });
+  var android_ref_syms = [
+       ['v8::internal::interpreter::BytecodeGenerator::BytecodeGenerator(v8::internal::UnoptimizedCompilationInfo*)', 0x013a1088, 0x013a1088 + 0x224],
+       ['v8::internal::interpreter::BytecodeGenerator::FinalizeBytecode(v8::internal::Isolate*, v8::internal::Handle<v8::internal::Script>)', 0x013a12ac, 0x013a12ac + 0xd0],
+       ['v8::internal::interpreter::BytecodeGenerator::AllocateDeferredConstants(v8::internal::Isolate*, v8::internal::Handle<v8::internal::Script>)', 0x013a137c, 0x013a137c + 0x528],
+       ['v8::internal::interpreter::BytecodeGenerator::GlobalDeclarationsBuilder::AllocateDeclarations(v8::internal::UnoptimizedCompilationInfo*, v8::internal::Handle<v8::internal::Script>, v8::internal::Isolate*)', 0x013a18a4, 0x013a18a4 + 0x13c],
+       ['v8::internal::interpreter::BytecodeGenerator::GenerateBytecode(unsigned long)', 0x013a19e0, 0x013a19e0 + 0x244],
+       ['v8::internal::interpreter::BytecodeGenerator::ContextScope::ContextScope(v8::internal::interpreter::BytecodeGenerator*, v8::internal::Scope*)', 0x013a1c24, 0x013a1c24 + 0x9c],
+  ];
+  for (var i = 0; i < android_ref_syms.length; ++i) {
+    android_ref_syms[i][1] += 0xf7c5c000;
+    android_ref_syms[i][2] += 0xf7c5c000;
+  }
+  assertEquals(android_ref_syms, android_syms);
+
   UnixCppEntriesProvider.prototype.loadSymbols = oldLoadSymbols;
 })();
 
@@ -131,44 +185,43 @@
   // shell executable
   MacCppEntriesProvider.prototype.loadSymbols = function(libName) {
     this.symbols = [[
-      '         U operator delete[]',
-      '00001000 A __mh_execute_header',
-      '00001b00 T start',
-      '00001b40 t dyld_stub_binding_helper',
-      '0011b710 T v8::internal::RegExpMacroAssembler::CheckPosition',
-      '00134250 t v8::internal::Runtime_StringReplaceRegExpWithString',
-      '00137220 T v8::internal::Runtime::GetElementOrCharAt',
-      '00137400 t v8::internal::Runtime_DebugGetPropertyDetails',
-      '001c1a80 b _private_mem\n'
+      '         operator delete[]',
+      '00001000 __mh_execute_header',
+      '00001b00 start',
+      '00001b40 dyld_stub_binding_helper',
+      '0011b710 v8::internal::RegExpMacroAssembler::CheckPosition',
+      '00134250 v8::internal::Runtime_StringReplaceRegExpWithString',
+      '00137220 v8::internal::Runtime::GetElementOrCharAt',
+      '00137400 v8::internal::Runtime_DebugGetPropertyDetails\n'
     ].join('\n'), ''];
   };
 
   var shell_prov = new MacCppEntriesProvider();
   var shell_syms = [];
-  shell_prov.parseVmSymbols('shell', 0x00001b00, 0x00163156,
+  shell_prov.parseVmSymbols('shell', 0x00001c00, 0x00163256, 0x100,
       function (name, start, end) {
         shell_syms.push(Array.prototype.slice.apply(arguments, [0]));
       });
   assertEquals(
-      [['start', 0x00001b00, 0x00001b40],
-       ['dyld_stub_binding_helper', 0x00001b40, 0x0011b710],
-       ['v8::internal::RegExpMacroAssembler::CheckPosition', 0x0011b710, 0x00134250],
-       ['v8::internal::Runtime_StringReplaceRegExpWithString', 0x00134250, 0x00137220],
-       ['v8::internal::Runtime::GetElementOrCharAt', 0x00137220, 0x00137400],
-       ['v8::internal::Runtime_DebugGetPropertyDetails', 0x00137400, 0x00163156]],
+      [['start', 0x00001c00, 0x00001c40],
+       ['dyld_stub_binding_helper', 0x00001c40, 0x0011b810],
+       ['v8::internal::RegExpMacroAssembler::CheckPosition', 0x0011b810, 0x00134350],
+       ['v8::internal::Runtime_StringReplaceRegExpWithString', 0x00134350, 0x00137320],
+       ['v8::internal::Runtime::GetElementOrCharAt', 0x00137320, 0x00137500],
+       ['v8::internal::Runtime_DebugGetPropertyDetails', 0x00137500, 0x00163256]],
       shell_syms);
 
   // stdc++ library
   MacCppEntriesProvider.prototype.loadSymbols = function(libName) {
     this.symbols = [[
-        '0000107a T __gnu_cxx::balloc::__mini_vector<std::pair<__gnu_cxx::bitmap_allocator<char>::_Alloc_block*, __gnu_cxx::bitmap_allocator<char>::_Alloc_block*> >::__mini_vector',
-        '0002c410 T std::basic_streambuf<char, std::char_traits<char> >::pubseekoff',
-        '0002c488 T std::basic_streambuf<char, std::char_traits<char> >::pubseekpos',
-        '000466aa T ___cxa_pure_virtual\n'].join('\n'), ''];
+        '0000107a __gnu_cxx::balloc::__mini_vector<std::pair<__gnu_cxx::bitmap_allocator<char>::_Alloc_block*, __gnu_cxx::bitmap_allocator<char>::_Alloc_block*> >::__mini_vector',
+        '0002c410 std::basic_streambuf<char, std::char_traits<char> >::pubseekoff',
+        '0002c488 std::basic_streambuf<char, std::char_traits<char> >::pubseekpos',
+        '000466aa ___cxa_pure_virtual\n'].join('\n'), ''];
   };
   var stdc_prov = new MacCppEntriesProvider();
   var stdc_syms = [];
-  stdc_prov.parseVmSymbols('stdc++', 0x95728fb4, 0x95770005,
+  stdc_prov.parseVmSymbols('stdc++', 0x95728fb4, 0x95770005, 0,
       function (name, start, end) {
         stdc_syms.push(Array.prototype.slice.apply(arguments, [0]));
       });
@@ -211,7 +264,7 @@
   };
   var shell_prov = new WindowsCppEntriesProvider();
   var shell_syms = [];
-  shell_prov.parseVmSymbols('shell.exe', 0x00400000, 0x0057c000,
+  shell_prov.parseVmSymbols('shell.exe', 0x00400000, 0x0057c000, 0,
       function (name, start, end) {
         shell_syms.push(Array.prototype.slice.apply(arguments, [0]));
       });
@@ -252,7 +305,7 @@
   read = exeSymbols;
   var exe_exe_syms = [];
   (new WindowsCppEntriesProvider()).parseVmSymbols(
-      'chrome.exe', 0x00400000, 0x00472000,
+      'chrome.exe', 0x00400000, 0x00472000, 0,
       function (name, start, end) {
         exe_exe_syms.push(Array.prototype.slice.apply(arguments, [0]));
       });
@@ -264,7 +317,7 @@
   read = dllSymbols;
   var exe_dll_syms = [];
   (new WindowsCppEntriesProvider()).parseVmSymbols(
-      'chrome.exe', 0x00400000, 0x00472000,
+      'chrome.exe', 0x00400000, 0x00472000, 0,
       function (name, start, end) {
         exe_dll_syms.push(Array.prototype.slice.apply(arguments, [0]));
       });
@@ -275,7 +328,7 @@
   read = dllSymbols;
   var dll_dll_syms = [];
   (new WindowsCppEntriesProvider()).parseVmSymbols(
-      'chrome.dll', 0x01c30000, 0x02b80000,
+      'chrome.dll', 0x01c30000, 0x02b80000, 0,
       function (name, start, end) {
         dll_dll_syms.push(Array.prototype.slice.apply(arguments, [0]));
       });
@@ -287,7 +340,7 @@
   read = exeSymbols;
   var dll_exe_syms = [];
   (new WindowsCppEntriesProvider()).parseVmSymbols(
-      'chrome.dll', 0x01c30000, 0x02b80000,
+      'chrome.dll', 0x01c30000, 0x02b80000, 0,
       function (name, start, end) {
         dll_exe_syms.push(Array.prototype.slice.apply(arguments, [0]));
       });
@@ -304,7 +357,7 @@ function CppEntriesProviderMock() {
 
 
 CppEntriesProviderMock.prototype.parseVmSymbols = function(
-    name, startAddr, endAddr, symbolAdder) {
+    name, startAddr, endAddr, slideAddr, symbolAdder) {
   var symbols = {
     'shell':
         [['v8::internal::JSObject::LookupOwnRealNamedProperty(v8::internal::String*, v8::internal::LookupResult*)', 0x080f8800, 0x080f8d90],
@@ -323,8 +376,13 @@ CppEntriesProviderMock.prototype.parseVmSymbols = function(
 
 
 function PrintMonitor(outputOrFileName) {
-  var expectedOut = this.expectedOut = typeof outputOrFileName == 'string' ?
-      this.loadExpectedOutput(outputOrFileName) : outputOrFileName;
+  this.expectedOut = outputOrFileName;
+  this.outputFile = undefined;
+  if (typeof outputOrFileName == 'string') {
+    this.expectedOut = this.loadExpectedOutput(outputOrFileName)
+    this.outputFile = outputOrFileName;
+  }
+  var expectedOut = this.expectedOut;
   var outputPos = 0;
   var diffs = this.diffs = [];
   var realOut = this.realOut = [];
@@ -362,6 +420,9 @@ PrintMonitor.prototype.finish = function() {
     print("===== actual output: =====");
     print(this.realOut.join('\n'));
     print("===== expected output: =====");
+    if (this.outputFile) {
+      print("===== File: " + this.outputFile + " =====");
+    }
     print(this.expectedOut.join('\n'));
     assertEquals([], this.diffs);
     assertNull(this.unexpectedOut);
@@ -370,7 +431,8 @@ PrintMonitor.prototype.finish = function() {
 
 
 function driveTickProcessorTest(
-    separateIc, ignoreUnknown, stateFilter, logInput, refOutput, onlySummary) {
+    separateIc, separateBytecodes, separateBuiltins, separateStubs,
+    ignoreUnknown, stateFilter, logInput, refOutput, onlySummary) {
   // TEST_FILE_NAME must be provided by test runner.
   assertEquals('string', typeof TEST_FILE_NAME);
   var pathLen = TEST_FILE_NAME.lastIndexOf('/');
@@ -381,10 +443,12 @@ function driveTickProcessorTest(
   var testsPath = TEST_FILE_NAME.substr(0, pathLen + 1);
   var tp = new TickProcessor(new CppEntriesProviderMock(),
                              separateIc,
+                             separateBytecodes,
+                             separateBuiltins,
+                             separateStubs,
                              TickProcessor.CALL_GRAPH_SIZE,
                              ignoreUnknown,
                              stateFilter,
-                             undefined,
                              "0",
                              "auto,auto",
                              false,
@@ -401,23 +465,23 @@ function driveTickProcessorTest(
 (function testProcessing() {
   var testData = {
     'Default': [
-      false, false, null,
+      false, false, true, true, false, null,
       'tickprocessor-test.log', 'tickprocessor-test.default', false],
     'SeparateIc': [
-      true, false, null,
+      true, false, true, true, false, null,
       'tickprocessor-test.log', 'tickprocessor-test.separate-ic', false],
     'IgnoreUnknown': [
-      false, true, null,
+      false, false, true, true, true, null,
       'tickprocessor-test.log', 'tickprocessor-test.ignore-unknown', false],
     'GcState': [
-      false, false, TickProcessor.VmStates.GC,
+      false, false, true, true, false, TickProcessor.VmStates.GC,
       'tickprocessor-test.log', 'tickprocessor-test.gc-state', false],
     'FunctionInfo': [
-      false, false, null,
+      false, false, true, true, false, null,
       'tickprocessor-test-func-info.log', 'tickprocessor-test.func-info',
       false],
     'OnlySummary': [
-      false, false, null,
+      false, false, true, true, false, null,
       'tickprocessor-test.log', 'tickprocessor-test.only-summary', true]
   };
   for (var testName in testData) {

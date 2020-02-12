@@ -3,16 +3,19 @@ var fs = require('fs')
 var path = require('path')
 var test = require('tap').test
 var requireInject = require('require-inject')
-var osenv = require('osenv')
-var inherits = require('inherits')
 var npm = require('../../lib/npm.js')
 
+// XXX update this when rpt's realpath.js is extracted out
+var rptRealpath = require.resolve('read-package-tree/realpath.js')
+
+const common = require('../common-tap.js')
+const pkg = common.pkg
 var packages = {
-  test: {package: {name: 'test'}, path: __dirname, children: ['abc', 'def', 'ghi', 'jkl']},
-  abc: {package: {name: 'abc'}, path: path.join(__dirname, 'node_modules', 'abc')},
-  def: {package: {name: 'def'}, path: path.join(__dirname, 'node_modules', 'def')},
-  ghi: {package: {name: 'ghi'}, path: path.join(__dirname, 'node_modules', 'ghi')},
-  jkl: {package: {name: 'jkl'}, path: path.join(__dirname, 'node_modules', 'jkl')}
+  test: {package: {name: 'test'}, path: pkg, children: ['abc', 'def', 'ghi', 'jkl']},
+  abc: {package: {name: 'abc'}, path: path.join(pkg, 'node_modules', 'abc')},
+  def: {package: {name: 'def'}, path: path.join(pkg, 'node_modules', 'def')},
+  ghi: {package: {name: 'ghi'}, path: path.join(pkg, 'node_modules', 'ghi')},
+  jkl: {package: {name: 'jkl'}, path: path.join(pkg, 'node_modules', 'jkl')}
 }
 var dirs = {}
 var files = {}
@@ -20,8 +23,6 @@ Object.keys(packages).forEach(function (name) {
   dirs[path.join(packages[name].path, 'node_modules')] = packages[name].children || []
   files[path.join(packages[name].path, 'package.json')] = packages[name].package
 })
-
-process.chdir(osenv.tmpdir())
 
 var mockReaddir = function (name, cb) {
   if (dirs[name]) return cb(null, dirs[name])
@@ -40,6 +41,8 @@ mockFs.realpath = function (dir, cb) {
   return cb(null, dir)
 }
 
+const mockRptRealpath = path => Promise.resolve(path)
+
 test('setup', function (t) {
   npm.load(function () {
     t.pass('npm loaded')
@@ -47,28 +50,29 @@ test('setup', function (t) {
   })
 })
 
-function loadArgMetadata (cb) {
-  this.args = this.args.map(function (arg) { return {name: arg} })
-  cb()
-}
-
 test('installer', function (t) {
   t.plan(1)
   var installer = requireInject('../../lib/install.js', {
     'fs': mockFs,
     'readdir-scoped-modules': mockReaddir,
-    'read-package-json': mockReadPackageJson
+    'read-package-json': mockReadPackageJson,
+    'mkdirp': function (path, cb) { cb() },
+    [rptRealpath]: mockRptRealpath
   })
 
   var Installer = installer.Installer
-  var TestInstaller = function () {
-    Installer.apply(this, arguments)
-    this.global = true
+  class TestInstaller extends Installer {
+    constructor (where, dryrun, args) {
+      super(where, dryrun, args)
+      this.global = true
+    }
+    loadArgMetadata (cb) {
+      this.args = this.args.map(function (arg) { return {name: arg} })
+      cb()
+    }
   }
-  inherits(TestInstaller, Installer)
-  TestInstaller.prototype.loadArgMetadata = loadArgMetadata
 
-  var inst = new TestInstaller(__dirname, false, ['def', 'abc'])
+  var inst = new TestInstaller(pkg, false, ['def', 'abc'])
   inst.loadCurrentTree(function () {
     var kids = inst.currentTree.children.map(function (child) { return child.package.name })
     t.isDeeply(kids, ['abc', 'def'])
@@ -81,17 +85,20 @@ test('uninstaller', function (t) {
   var uninstaller = requireInject('../../lib/uninstall.js', {
     'fs': mockFs,
     'readdir-scoped-modules': mockReaddir,
-    'read-package-json': mockReadPackageJson
+    'read-package-json': mockReadPackageJson,
+    'mkdirp': function (path, cb) { cb() },
+    [rptRealpath]: mockRptRealpath
   })
 
   var Uninstaller = uninstaller.Uninstaller
-  var TestUninstaller = function () {
-    Uninstaller.apply(this, arguments)
-    this.global = true
+  class TestUninstaller extends Uninstaller {
+    constructor (where, dryrun, args) {
+      super(where, dryrun, args)
+      this.global = true
+    }
   }
-  inherits(TestUninstaller, Uninstaller)
 
-  var uninst = new TestUninstaller(__dirname, false, ['ghi', 'jkl'])
+  var uninst = new TestUninstaller(pkg, false, ['ghi', 'jkl'])
   uninst.loadCurrentTree(function () {
     var kids = uninst.currentTree.children.map(function (child) { return child.package.name })
     t.isDeeply(kids, ['ghi', 'jkl'])

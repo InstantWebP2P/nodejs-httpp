@@ -13,6 +13,7 @@
 namespace v8 {
 namespace internal {
 namespace compiler {
+namespace value_numbering_reducer_unittest {
 
 struct TestOperator : public Operator {
   TestOperator(Operator::Opcode opcode, Operator::Properties properties,
@@ -28,7 +29,8 @@ static const TestOperator kOp1(1, Operator::kIdempotent, 1, 1);
 
 class ValueNumberingReducerTest : public TestWithZone {
  public:
-  ValueNumberingReducerTest() : graph_(zone()), reducer_(zone()) {}
+  ValueNumberingReducerTest()
+      : graph_(zone()), reducer_(zone(), graph()->zone()) {}
 
  protected:
   Reduction Reduce(Node* node) { return reducer_.Reduce(node); }
@@ -125,6 +127,7 @@ TEST_F(ValueNumberingReducerTest, WontReplaceNodeWithItself) {
   EXPECT_FALSE(Reduce(n).Changed());
 }
 
+}  // namespace value_numbering_reducer_unittest
 }  // namespace compiler
 }  // namespace internal
 }  // namespace v8

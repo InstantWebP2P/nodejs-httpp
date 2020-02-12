@@ -5,104 +5,79 @@
 #include "test/unittests/test-utils.h"
 
 #include "include/libplatform/libplatform.h"
+#include "include/v8.h"
+#include "src/api/api-inl.h"
 #include "src/base/platform/time.h"
-#include "src/debug/debug.h"
-#include "src/flags.h"
-#include "src/isolate.h"
-#include "src/v8.h"
+#include "src/execution/isolate.h"
+#include "src/flags/flags.h"
+#include "src/init/v8.h"
+#include "src/objects/objects-inl.h"
 
 namespace v8 {
 
-class ArrayBufferAllocator : public v8::ArrayBuffer::Allocator {
- public:
-  virtual void* Allocate(size_t length) {
-    void* data = AllocateUninitialized(length);
-    return data == NULL ? data : memset(data, 0, length);
-  }
-  virtual void* AllocateUninitialized(size_t length) { return malloc(length); }
-  virtual void Free(void* data, size_t) { free(data); }
-};
-
-
-// static
-ArrayBufferAllocator* TestWithIsolate::array_buffer_allocator_ = NULL;
-
-// static
-Isolate* TestWithIsolate::isolate_ = NULL;
-
-
-TestWithIsolate::TestWithIsolate()
-    : isolate_scope_(isolate()), handle_scope_(isolate()) {}
-
-
-TestWithIsolate::~TestWithIsolate() {}
-
-
-// static
-void TestWithIsolate::SetUpTestCase() {
-  Test::SetUpTestCase();
-  EXPECT_EQ(NULL, isolate_);
+IsolateWrapper::IsolateWrapper(CounterLookupCallback counter_lookup_callback,
+                               bool enforce_pointer_compression)
+    : array_buffer_allocator_(
+          v8::ArrayBuffer::Allocator::NewDefaultAllocator()) {
   v8::Isolate::CreateParams create_params;
-  array_buffer_allocator_ = new ArrayBufferAllocator;
   create_params.array_buffer_allocator = array_buffer_allocator_;
-  isolate_ = v8::Isolate::New(create_params);
-  EXPECT_TRUE(isolate_ != NULL);
+  create_params.counter_lookup_callback = counter_lookup_callback;
+  if (enforce_pointer_compression) {
+    isolate_ = reinterpret_cast<v8::Isolate*>(
+        i::Isolate::New(i::IsolateAllocationMode::kInV8Heap));
+    v8::Isolate::Initialize(isolate_, create_params);
+  } else {
+    isolate_ = v8::Isolate::New(create_params);
+  }
+  CHECK_NOT_NULL(isolate_);
 }
 
-
-// static
-void TestWithIsolate::TearDownTestCase() {
-  ASSERT_TRUE(isolate_ != NULL);
+IsolateWrapper::~IsolateWrapper() {
   v8::Platform* platform = internal::V8::GetCurrentPlatform();
-  ASSERT_TRUE(platform != NULL);
+  CHECK_NOT_NULL(platform);
   while (platform::PumpMessageLoop(platform, isolate_)) continue;
   isolate_->Dispose();
-  isolate_ = NULL;
   delete array_buffer_allocator_;
-  Test::TearDownTestCase();
 }
 
+// static
+v8::IsolateWrapper* SharedIsolateHolder::isolate_wrapper_ = nullptr;
 
-TestWithContext::TestWithContext()
-    : context_(Context::New(isolate())), context_scope_(context_) {}
-
-
-TestWithContext::~TestWithContext() {}
-
-
-namespace base {
-namespace {
-
-inline int64_t GetRandomSeedFromFlag(int random_seed) {
-  return random_seed ? random_seed : TimeTicks::Now().ToInternalValue();
+// static
+int* SharedIsolateAndCountersHolder::LookupCounter(const char* name) {
+  DCHECK_NOT_NULL(counter_map_);
+  auto map_entry = counter_map_->find(name);
+  if (map_entry == counter_map_->end()) {
+    counter_map_->emplace(name, 0);
+  }
+  return &counter_map_->at(name);
 }
 
-}  // namespace
+// static
+v8::IsolateWrapper* SharedIsolateAndCountersHolder::isolate_wrapper_ = nullptr;
 
-TestWithRandomNumberGenerator::TestWithRandomNumberGenerator()
-    : rng_(GetRandomSeedFromFlag(::v8::internal::FLAG_random_seed)) {}
-
-
-TestWithRandomNumberGenerator::~TestWithRandomNumberGenerator() {}
-
-}  // namespace base
-
+// static
+CounterMap* SharedIsolateAndCountersHolder::counter_map_ = nullptr;
 
 namespace internal {
 
-TestWithIsolate::~TestWithIsolate() {}
-
-TestWithIsolateAndZone::~TestWithIsolateAndZone() {}
-
-Factory* TestWithIsolate::factory() const { return isolate()->factory(); }
-
-
-base::RandomNumberGenerator* TestWithIsolate::random_number_generator() const {
-  return isolate()->random_number_generator();
+SaveFlags::SaveFlags() {
+  // For each flag, save the current flag value.
+#define FLAG_MODE_APPLY(ftype, ctype, nam, def, cmt) SAVED_##nam = FLAG_##nam;
+#include "src/flags/flag-definitions.h"  // NOLINT
+#undef FLAG_MODE_APPLY
 }
 
-
-TestWithZone::~TestWithZone() {}
+SaveFlags::~SaveFlags() {
+  // For each flag, set back the old flag value if it changed (don't write the
+  // flag if it didn't change, to keep TSAN happy).
+#define FLAG_MODE_APPLY(ftype, ctype, nam, def, cmt) \
+  if (SAVED_##nam != FLAG_##nam) {                   \
+    FLAG_##nam = SAVED_##nam;                        \
+  }
+#include "src/flags/flag-definitions.h"  // NOLINT
+#undef FLAG_MODE_APPLY
+}
 
 }  // namespace internal
 }  // namespace v8

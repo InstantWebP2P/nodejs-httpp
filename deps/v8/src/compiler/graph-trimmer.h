@@ -5,6 +5,7 @@
 #ifndef V8_COMPILER_GRAPH_TRIMMER_H_
 #define V8_COMPILER_GRAPH_TRIMMER_H_
 
+#include "src/common/globals.h"
 #include "src/compiler/node-marker.h"
 
 namespace v8 {
@@ -14,9 +15,8 @@ namespace compiler {
 // Forward declarations.
 class Graph;
 
-
 // Trims dead nodes from the node graph.
-class GraphTrimmer final {
+class V8_EXPORT_PRIVATE GraphTrimmer final {
  public:
   GraphTrimmer(Zone* zone, Graph* graph);
   ~GraphTrimmer();

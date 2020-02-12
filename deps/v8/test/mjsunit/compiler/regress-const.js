@@ -25,7 +25,7 @@
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-// Flags: --allow-natives-syntax --legacy-const
+// Flags: --allow-natives-syntax
 
 // Test const initialization and assignments.
 function f() {
@@ -38,19 +38,23 @@ function f() {
 
 function g() {
   const x = 42;
-  x += 1;
   return x;
 }
 
+%PrepareFunctionForOptimization(f);
 for (var i = 0; i < 5; i++) {
   f();
+}
+%OptimizeFunctionOnNextCall(f);
+
+assertEquals(1, f());
+
+%PrepareFunctionForOptimization(g);
+for (var i = 0; i < 5; i++) {
   g();
 }
-
-%OptimizeFunctionOnNextCall(f);
 %OptimizeFunctionOnNextCall(g);
 
-assertEquals(42, f());
 assertEquals(42, g());
 
 
@@ -59,6 +63,8 @@ function h(a, b) {
   const X = 42;
   return r + X;
 }
+
+%PrepareFunctionForOptimization(h);
 
 for (var i = 0; i < 5; i++) h(1,2);
 

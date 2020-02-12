@@ -13,43 +13,53 @@
 namespace v8 {
 namespace internal {
 
-// Forward declarations.
-class TypeCache;
-
+class TickCounter;
 
 namespace compiler {
 
 // Forward declarations.
+class NodeOriginTable;
 class RepresentationChanger;
+class RepresentationSelector;
 class SourcePositionTable;
+class TypeCache;
 
-class SimplifiedLowering final {
+class V8_EXPORT_PRIVATE SimplifiedLowering final {
  public:
-  SimplifiedLowering(JSGraph* jsgraph, Zone* zone,
-                     SourcePositionTable* source_positions);
-  ~SimplifiedLowering() {}
+  SimplifiedLowering(JSGraph* jsgraph, JSHeapBroker* broker, Zone* zone,
+                     SourcePositionTable* source_position,
+                     NodeOriginTable* node_origins,
+                     PoisoningMitigationLevel poisoning_level,
+                     TickCounter* tick_counter);
+  ~SimplifiedLowering() = default;
 
   void LowerAllNodes();
 
-  // TODO(turbofan): The representation can be removed once the result of the
-  // representation analysis is stored in the node bounds.
-  void DoLoadBuffer(Node* node, MachineRepresentation rep,
-                    RepresentationChanger* changer);
-  void DoStoreBuffer(Node* node);
-  void DoShift(Node* node, Operator const* op, Type* rhs_type);
-  void DoStringEqual(Node* node);
-  void DoStringLessThan(Node* node);
-  void DoStringLessThanOrEqual(Node* node);
-
-  // TODO(bmeurer): This is a gigantic hack to support the gigantic LoadBuffer
-  // typing hack to support the gigantic "asm.js should be fast without proper
-  // verifier"-hack, ... Kill this! Soon! Really soon! I'm serious!
-  bool abort_compilation_ = false;
+  void DoMax(Node* node, Operator const* op, MachineRepresentation rep);
+  void DoMin(Node* node, Operator const* op, MachineRepresentation rep);
+  void DoJSToNumberOrNumericTruncatesToFloat64(
+      Node* node, RepresentationSelector* selector);
+  void DoJSToNumberOrNumericTruncatesToWord32(Node* node,
+                                              RepresentationSelector* selector);
+  void DoIntegral32ToBit(Node* node);
+  void DoOrderedNumberToBit(Node* node);
+  void DoNumberToBit(Node* node);
+  void DoIntegerToUint8Clamped(Node* node);
+  void DoNumberToUint8Clamped(Node* node);
+  void DoSigned32ToUint8Clamped(Node* node);
+  void DoUnsigned32ToUint8Clamped(Node* node);
 
  private:
   JSGraph* const jsgraph_;
+  JSHeapBroker* broker_;
   Zone* const zone_;
-  TypeCache const& type_cache_;
+  TypeCache const* type_cache_;
+  SetOncePointer<Node> to_number_code_;
+  SetOncePointer<Node> to_number_convert_big_int_code_;
+  SetOncePointer<Node> to_numeric_code_;
+  SetOncePointer<Operator const> to_number_operator_;
+  SetOncePointer<Operator const> to_number_convert_big_int_operator_;
+  SetOncePointer<Operator const> to_numeric_operator_;
 
   // TODO(danno): SimplifiedLowering shouldn't know anything about the source
   // positions table, but must for now since there currently is no other way to
@@ -57,12 +67,27 @@ class SimplifiedLowering final {
   // lowering. Once this phase becomes a vanilla reducer, it should get source
   // position information via the SourcePositionWrapper like all other reducers.
   SourcePositionTable* source_positions_;
+  NodeOriginTable* node_origins_;
 
-  Node* StringComparison(Node* node);
+  PoisoningMitigationLevel poisoning_level_;
+
+  TickCounter* const tick_counter_;
+
+  Node* Float64Round(Node* const node);
+  Node* Float64Sign(Node* const node);
+  Node* Int32Abs(Node* const node);
   Node* Int32Div(Node* const node);
   Node* Int32Mod(Node* const node);
+  Node* Int32Sign(Node* const node);
   Node* Uint32Div(Node* const node);
   Node* Uint32Mod(Node* const node);
+
+  Node* ToNumberCode();
+  Node* ToNumberConvertBigIntCode();
+  Node* ToNumericCode();
+  Operator const* ToNumberOperator();
+  Operator const* ToNumberConvertBigIntOperator();
+  Operator const* ToNumericOperator();
 
   friend class RepresentationSelector;
 
@@ -72,6 +97,7 @@ class SimplifiedLowering final {
   Graph* graph() { return jsgraph()->graph(); }
   CommonOperatorBuilder* common() { return jsgraph()->common(); }
   MachineOperatorBuilder* machine() { return jsgraph()->machine(); }
+  SimplifiedOperatorBuilder* simplified() { return jsgraph()->simplified(); }
 };
 
 }  // namespace compiler

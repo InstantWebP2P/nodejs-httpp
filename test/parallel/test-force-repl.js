@@ -1,24 +1,22 @@
 'use strict';
-var common = require('../common');
-var assert = require('assert');
-var spawn = require('child_process').spawn;
+const common = require('../common');
+const assert = require('assert');
+const spawn = require('child_process').spawn;
 
-// spawn a node child process in "interactive" mode (force the repl)
-var cp = spawn(process.execPath, ['-i']);
-var gotToEnd = false;
-var timeoutId = setTimeout(function() {
-  throw new Error('timeout!');
-}, common.platformTimeout(1000)); // give node + the repl 1 second to boot up
+// Spawn a node child process in interactive mode (enabling the REPL) and
+// confirm the '> ' prompt and welcome message is included in the output.
+const cp = spawn(process.execPath, ['-i']);
 
 cp.stdout.setEncoding('utf8');
 
-cp.stdout.once('data', function(b) {
-  clearTimeout(timeoutId);
-  assert.equal(b, '> ');
-  gotToEnd = true;
-  cp.kill();
+let out = '';
+cp.stdout.on('data', (d) => {
+  out += d;
 });
 
-process.on('exit', function() {
-  assert(gotToEnd);
-});
+cp.stdout.on('end', common.mustCall(() => {
+  assert.strictEqual(out, `Welcome to Node.js ${process.version}.\n` +
+                        'Type ".help" for more information.\n> ');
+}));
+
+cp.stdin.end('');

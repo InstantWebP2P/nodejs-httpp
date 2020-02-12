@@ -14,6 +14,7 @@ var shorthandNames = Object.keys(shorthands)
 var allConfs = configNames.concat(shorthandNames)
 var once = require('once')
 var isWindowsShell = require('./utils/is-windows-shell.js')
+var output = require('./utils/output.js')
 
 completion.completion = function (opts, cb) {
   if (opts.w > 3) return cb()
@@ -48,7 +49,7 @@ function completion (args, cb) {
   if (isWindowsShell) {
     var e = new Error('npm completion supported only in MINGW / Git bash on Windows')
     e.code = 'ENOTSUP'
-    e.errno = require('constants').ENOTSUP
+    e.errno = require('constants').ENOTSUP // eslint-disable-line node/no-deprecated-api
     return cb(e)
   }
 
@@ -149,7 +150,7 @@ function dumpScript (cb) {
 
   fs.readFile(p, 'utf8', function (er, d) {
     if (er) return cb(er)
-    d = d.replace(/^\#\!.*?\n/, '')
+    d = d.replace(/^#!.*?\n/, '')
 
     process.stdout.write(d, function () { cb() })
     process.stdout.on('error', function (er) {
@@ -203,7 +204,7 @@ function wrapCb (cb, opts) {
     console.error([er && er.stack, compls, opts.partialWord])
     if (er || compls.length === 0) return cb(er)
 
-    console.log(compls.join('\n'))
+    output(compls.join('\n'))
     cb()
   }
 }

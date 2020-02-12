@@ -5,8 +5,12 @@
 #ifndef V8_COMPILER_GRAPH_H_
 #define V8_COMPILER_GRAPH_H_
 
-#include "src/zone.h"
-#include "src/zone-containers.h"
+#include <array>
+
+#include "src/base/compiler-specific.h"
+#include "src/common/globals.h"
+#include "src/zone/zone-containers.h"
+#include "src/zone/zone.h"
 
 namespace v8 {
 namespace internal {
@@ -21,17 +25,35 @@ class Operator;
 // Marks are used during traversal of the graph to distinguish states of nodes.
 // Each node has a mark which is a monotonically increasing integer, and a
 // {NodeMarker} has a range of values that indicate states of a node.
-typedef uint32_t Mark;
-
+using Mark = uint32_t;
 
 // NodeIds are identifying numbers for nodes that can be used to index auxiliary
 // out-of-line data associated with each node.
-typedef uint32_t NodeId;
+using NodeId = uint32_t;
 
-
-class Graph : public ZoneObject {
+class V8_EXPORT_PRIVATE Graph final : public NON_EXPORTED_BASE(ZoneObject) {
  public:
   explicit Graph(Zone* zone);
+
+  // Scope used when creating a subgraph for inlining. Automatically preserves
+  // the original start and end nodes of the graph, and resets them when you
+  // leave the scope.
+  class SubgraphScope final {
+   public:
+    explicit SubgraphScope(Graph* graph)
+        : graph_(graph), start_(graph->start()), end_(graph->end()) {}
+    ~SubgraphScope() {
+      graph_->SetStart(start_);
+      graph_->SetEnd(end_);
+    }
+
+   private:
+    Graph* const graph_;
+    Node* const start_;
+    Node* const end_;
+
+    DISALLOW_COPY_AND_ASSIGN(SubgraphScope);
+  };
 
   // Base implementation used by all factory methods.
   Node* NewNodeUnchecked(const Operator* op, int input_count,
@@ -41,47 +63,11 @@ class Graph : public ZoneObject {
   Node* NewNode(const Operator* op, int input_count, Node* const* inputs,
                 bool incomplete = false);
 
-  // Factories for nodes with static input counts.
-  Node* NewNode(const Operator* op) {
-    return NewNode(op, 0, static_cast<Node* const*>(nullptr));
-  }
-  Node* NewNode(const Operator* op, Node* n1) { return NewNode(op, 1, &n1); }
-  Node* NewNode(const Operator* op, Node* n1, Node* n2) {
-    Node* nodes[] = {n1, n2};
-    return NewNode(op, arraysize(nodes), nodes);
-  }
-  Node* NewNode(const Operator* op, Node* n1, Node* n2, Node* n3) {
-    Node* nodes[] = {n1, n2, n3};
-    return NewNode(op, arraysize(nodes), nodes);
-  }
-  Node* NewNode(const Operator* op, Node* n1, Node* n2, Node* n3, Node* n4) {
-    Node* nodes[] = {n1, n2, n3, n4};
-    return NewNode(op, arraysize(nodes), nodes);
-  }
-  Node* NewNode(const Operator* op, Node* n1, Node* n2, Node* n3, Node* n4,
-                Node* n5) {
-    Node* nodes[] = {n1, n2, n3, n4, n5};
-    return NewNode(op, arraysize(nodes), nodes);
-  }
-  Node* NewNode(const Operator* op, Node* n1, Node* n2, Node* n3, Node* n4,
-                Node* n5, Node* n6) {
-    Node* nodes[] = {n1, n2, n3, n4, n5, n6};
-    return NewNode(op, arraysize(nodes), nodes);
-  }
-  Node* NewNode(const Operator* op, Node* n1, Node* n2, Node* n3, Node* n4,
-                Node* n5, Node* n6, Node* n7) {
-    Node* nodes[] = {n1, n2, n3, n4, n5, n6, n7};
-    return NewNode(op, arraysize(nodes), nodes);
-  }
-  Node* NewNode(const Operator* op, Node* n1, Node* n2, Node* n3, Node* n4,
-                Node* n5, Node* n6, Node* n7, Node* n8) {
-    Node* nodes[] = {n1, n2, n3, n4, n5, n6, n7, n8};
-    return NewNode(op, arraysize(nodes), nodes);
-  }
-  Node* NewNode(const Operator* op, Node* n1, Node* n2, Node* n3, Node* n4,
-                Node* n5, Node* n6, Node* n7, Node* n8, Node* n9) {
-    Node* nodes[] = {n1, n2, n3, n4, n5, n6, n7, n8, n9};
-    return NewNode(op, arraysize(nodes), nodes);
+  // Factory template for nodes with static input counts.
+  template <typename... Nodes>
+  Node* NewNode(const Operator* op, Nodes*... nodes) {
+    std::array<Node*, sizeof...(nodes)> nodes_arr{{nodes...}};
+    return NewNode(op, nodes_arr.size(), nodes_arr.data());
   }
 
   // Clone the {node}, and assign a new node id to the copy.
@@ -99,6 +85,9 @@ class Graph : public ZoneObject {
   void Decorate(Node* node);
   void AddDecorator(GraphDecorator* decorator);
   void RemoveDecorator(GraphDecorator* decorator);
+
+  // Very simple print API usable in a debugger.
+  void Print() const;
 
  private:
   friend class NodeMarkerBase;
@@ -120,7 +109,7 @@ class Graph : public ZoneObject {
 // in a graph.
 class GraphDecorator : public ZoneObject {
  public:
-  virtual ~GraphDecorator() {}
+  virtual ~GraphDecorator() = default;
   virtual void Decorate(Node* node) = 0;
 };
 

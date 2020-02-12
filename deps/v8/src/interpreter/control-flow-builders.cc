@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include "src/interpreter/control-flow-builders.h"
+#include "src/objects/objects-inl.h"
 
 namespace v8 {
 namespace internal {
@@ -10,133 +11,93 @@ namespace interpreter {
 
 
 BreakableControlFlowBuilder::~BreakableControlFlowBuilder() {
-  DCHECK(break_sites_.empty());
-}
-
-
-void BreakableControlFlowBuilder::SetBreakTarget(const BytecodeLabel& target) {
-  BindLabels(target, &break_sites_);
-}
-
-
-void BreakableControlFlowBuilder::EmitJump(ZoneVector<BytecodeLabel>* sites) {
-  sites->push_back(BytecodeLabel());
-  builder()->Jump(&sites->back());
-}
-
-
-void BreakableControlFlowBuilder::EmitJumpIfTrue(
-    ZoneVector<BytecodeLabel>* sites) {
-  sites->push_back(BytecodeLabel());
-  builder()->JumpIfTrue(&sites->back());
-}
-
-
-void BreakableControlFlowBuilder::EmitJumpIfFalse(
-    ZoneVector<BytecodeLabel>* sites) {
-  sites->push_back(BytecodeLabel());
-  builder()->JumpIfFalse(&sites->back());
-}
-
-
-void BreakableControlFlowBuilder::EmitJumpIfUndefined(
-    ZoneVector<BytecodeLabel>* sites) {
-  sites->push_back(BytecodeLabel());
-  builder()->JumpIfUndefined(&sites->back());
-}
-
-
-void BreakableControlFlowBuilder::EmitJumpIfNull(
-    ZoneVector<BytecodeLabel>* sites) {
-  sites->push_back(BytecodeLabel());
-  builder()->JumpIfNull(&sites->back());
-}
-
-
-void BreakableControlFlowBuilder::EmitJump(ZoneVector<BytecodeLabel>* sites,
-                                           int index) {
-  builder()->Jump(&sites->at(index));
-}
-
-
-void BreakableControlFlowBuilder::EmitJumpIfTrue(
-    ZoneVector<BytecodeLabel>* sites, int index) {
-  builder()->JumpIfTrue(&sites->at(index));
-}
-
-
-void BreakableControlFlowBuilder::EmitJumpIfFalse(
-    ZoneVector<BytecodeLabel>* sites, int index) {
-  builder()->JumpIfFalse(&sites->at(index));
-}
-
-
-void BreakableControlFlowBuilder::BindLabels(const BytecodeLabel& target,
-                                             ZoneVector<BytecodeLabel>* sites) {
-  for (size_t i = 0; i < sites->size(); i++) {
-    BytecodeLabel& site = sites->at(i);
-    builder()->Bind(target, &site);
+  BindBreakTarget();
+  DCHECK(break_labels_.empty() || break_labels_.is_bound());
+  if (block_coverage_builder_ != nullptr) {
+    block_coverage_builder_->IncrementBlockCounter(
+        node_, SourceRangeKind::kContinuation);
   }
-  sites->clear();
 }
 
-
-void BlockBuilder::EndBlock() {
-  builder()->Bind(&block_end_);
-  SetBreakTarget(block_end_);
+void BreakableControlFlowBuilder::BindBreakTarget() {
+  break_labels_.Bind(builder());
 }
 
+void BreakableControlFlowBuilder::EmitJump(BytecodeLabels* sites) {
+  builder()->Jump(sites->New());
+}
 
-LoopBuilder::~LoopBuilder() { DCHECK(continue_sites_.empty()); }
+void BreakableControlFlowBuilder::EmitJumpIfTrue(
+    BytecodeArrayBuilder::ToBooleanMode mode, BytecodeLabels* sites) {
+  builder()->JumpIfTrue(mode, sites->New());
+}
 
+void BreakableControlFlowBuilder::EmitJumpIfFalse(
+    BytecodeArrayBuilder::ToBooleanMode mode, BytecodeLabels* sites) {
+  builder()->JumpIfFalse(mode, sites->New());
+}
+
+void BreakableControlFlowBuilder::EmitJumpIfUndefined(BytecodeLabels* sites) {
+  builder()->JumpIfUndefined(sites->New());
+}
+
+void BreakableControlFlowBuilder::EmitJumpIfNull(BytecodeLabels* sites) {
+  builder()->JumpIfNull(sites->New());
+}
+
+LoopBuilder::~LoopBuilder() {
+  DCHECK(continue_labels_.empty() || continue_labels_.is_bound());
+}
 
 void LoopBuilder::LoopHeader() {
   // Jumps from before the loop header into the loop violate ordering
   // requirements of bytecode basic blocks. The only entry into a loop
   // must be the loop header. Surely breaks is okay? Not if nested
   // and misplaced between the headers.
-  DCHECK(break_sites_.empty() && continue_sites_.empty());
+  DCHECK(break_labels_.empty() && continue_labels_.empty());
   builder()->Bind(&loop_header_);
 }
 
-
-void LoopBuilder::EndLoop() {
-  // Loop must have closed form, i.e. all loop elements are within the loop,
-  // the loop header precedes the body and next elements in the loop.
-  DCHECK(loop_header_.is_bound());
-  builder()->Bind(&loop_end_);
-  SetBreakTarget(loop_end_);
-  if (next_.is_bound()) {
-    DCHECK(!condition_.is_bound() || next_.offset() >= condition_.offset());
-    SetContinueTarget(next_);
-  } else {
-    DCHECK(condition_.is_bound());
-    DCHECK_GE(condition_.offset(), loop_header_.offset());
-    DCHECK_LE(condition_.offset(), loop_end_.offset());
-    SetContinueTarget(condition_);
+void LoopBuilder::LoopBody() {
+  if (block_coverage_builder_ != nullptr) {
+    block_coverage_builder_->IncrementBlockCounter(block_coverage_body_slot_);
   }
 }
 
-
-void LoopBuilder::SetContinueTarget(const BytecodeLabel& target) {
-  BindLabels(target, &continue_sites_);
+void LoopBuilder::JumpToHeader(int loop_depth) {
+  // Pass the proper loop nesting level to the backwards branch, to trigger
+  // on-stack replacement when armed for the given loop nesting depth.
+  int level = Min(loop_depth, AbstractCode::kMaxLoopNestingMarker - 1);
+  // Loop must have closed form, i.e. all loop elements are within the loop,
+  // the loop header precedes the body and next elements in the loop.
+  builder()->JumpLoop(&loop_header_, level);
 }
 
+void LoopBuilder::BindContinueTarget() { continue_labels_.Bind(builder()); }
 
 SwitchBuilder::~SwitchBuilder() {
 #ifdef DEBUG
   for (auto site : case_sites_) {
-    DCHECK(site.is_bound());
+    DCHECK(!site.has_referrer_jump() || site.is_bound());
   }
 #endif
 }
 
-
-void SwitchBuilder::SetCaseTarget(int index) {
+void SwitchBuilder::SetCaseTarget(int index, CaseClause* clause) {
   BytecodeLabel& site = case_sites_.at(index);
   builder()->Bind(&site);
+  if (block_coverage_builder_) {
+    block_coverage_builder_->IncrementBlockCounter(clause,
+                                                   SourceRangeKind::kBody);
+  }
 }
 
+TryCatchBuilder::~TryCatchBuilder() {
+  if (block_coverage_builder_ != nullptr) {
+    block_coverage_builder_->IncrementBlockCounter(
+        statement_, SourceRangeKind::kContinuation);
+  }
+}
 
 void TryCatchBuilder::BeginTry(Register context) {
   builder()->MarkTryBegin(handler_id_, context);
@@ -146,13 +107,22 @@ void TryCatchBuilder::BeginTry(Register context) {
 void TryCatchBuilder::EndTry() {
   builder()->MarkTryEnd(handler_id_);
   builder()->Jump(&exit_);
-  builder()->Bind(&handler_);
-  builder()->MarkHandler(handler_id_, true);
-}
+  builder()->MarkHandler(handler_id_, catch_prediction_);
 
+  if (block_coverage_builder_ != nullptr) {
+    block_coverage_builder_->IncrementBlockCounter(statement_,
+                                                   SourceRangeKind::kCatch);
+  }
+}
 
 void TryCatchBuilder::EndCatch() { builder()->Bind(&exit_); }
 
+TryFinallyBuilder::~TryFinallyBuilder() {
+  if (block_coverage_builder_ != nullptr) {
+    block_coverage_builder_->IncrementBlockCounter(
+        statement_, SourceRangeKind::kContinuation);
+  }
+}
 
 void TryFinallyBuilder::BeginTry(Register context) {
   builder()->MarkTryBegin(handler_id_, context);
@@ -160,8 +130,7 @@ void TryFinallyBuilder::BeginTry(Register context) {
 
 
 void TryFinallyBuilder::LeaveTry() {
-  finalization_sites_.push_back(BytecodeLabel());
-  builder()->Jump(&finalization_sites_.back());
+  builder()->Jump(finalization_sites_.New());
 }
 
 
@@ -172,20 +141,55 @@ void TryFinallyBuilder::EndTry() {
 
 void TryFinallyBuilder::BeginHandler() {
   builder()->Bind(&handler_);
-  builder()->MarkHandler(handler_id_, will_catch_);
+  builder()->MarkHandler(handler_id_, catch_prediction_);
 }
 
-
 void TryFinallyBuilder::BeginFinally() {
-  for (size_t i = 0; i < finalization_sites_.size(); i++) {
-    BytecodeLabel& site = finalization_sites_.at(i);
-    builder()->Bind(&site);
+  finalization_sites_.Bind(builder());
+
+  if (block_coverage_builder_ != nullptr) {
+    block_coverage_builder_->IncrementBlockCounter(statement_,
+                                                   SourceRangeKind::kFinally);
   }
 }
 
-
 void TryFinallyBuilder::EndFinally() {
   // Nothing to be done here.
+}
+
+ConditionalControlFlowBuilder::~ConditionalControlFlowBuilder() {
+  if (!else_labels_.is_bound()) else_labels_.Bind(builder());
+  end_labels_.Bind(builder());
+
+  DCHECK(end_labels_.empty() || end_labels_.is_bound());
+  DCHECK(then_labels_.empty() || then_labels_.is_bound());
+  DCHECK(else_labels_.empty() || else_labels_.is_bound());
+
+  // IfStatement requires a continuation counter, Conditional does not (as it
+  // can only contain expressions).
+  if (block_coverage_builder_ != nullptr && node_->IsIfStatement()) {
+    block_coverage_builder_->IncrementBlockCounter(
+        node_, SourceRangeKind::kContinuation);
+  }
+}
+
+void ConditionalControlFlowBuilder::JumpToEnd() {
+  DCHECK(end_labels_.empty());  // May only be called once.
+  builder()->Jump(end_labels_.New());
+}
+
+void ConditionalControlFlowBuilder::Then() {
+  then_labels()->Bind(builder());
+  if (block_coverage_builder_ != nullptr) {
+    block_coverage_builder_->IncrementBlockCounter(block_coverage_then_slot_);
+  }
+}
+
+void ConditionalControlFlowBuilder::Else() {
+  else_labels()->Bind(builder());
+  if (block_coverage_builder_ != nullptr) {
+    block_coverage_builder_->IncrementBlockCounter(block_coverage_else_slot_);
+  }
 }
 
 }  // namespace interpreter

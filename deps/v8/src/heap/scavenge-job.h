@@ -5,8 +5,8 @@
 #ifndef V8_HEAP_SCAVENGE_JOB_H_
 #define V8_HEAP_SCAVENGE_JOB_H_
 
-#include "src/cancelable-task.h"
-#include "src/heap/gc-tracer.h"
+#include "src/common/globals.h"
+#include "src/tasks/cancelable-task.h"
 
 namespace v8 {
 namespace internal {
@@ -14,18 +14,20 @@ namespace internal {
 class Heap;
 class Isolate;
 
-
 // This class posts idle tasks and performs scavenges in the idle tasks.
-class ScavengeJob {
+class V8_EXPORT_PRIVATE ScavengeJob {
  public:
   class IdleTask : public CancelableIdleTask {
    public:
     explicit IdleTask(Isolate* isolate, ScavengeJob* job)
-        : CancelableIdleTask(isolate), job_(job) {}
+        : CancelableIdleTask(isolate), isolate_(isolate), job_(job) {}
     // CancelableIdleTask overrides.
     void RunInternal(double deadline_in_seconds) override;
 
+    Isolate* isolate() { return isolate_; }
+
    private:
+    Isolate* isolate_;
     ScavengeJob* job_;
   };
 
@@ -47,12 +49,12 @@ class ScavengeJob {
   void NotifyIdleTask() { idle_task_pending_ = false; }
   bool IdleTaskRescheduled() { return idle_task_rescheduled_; }
 
-  static bool ReachedIdleAllocationLimit(size_t scavenge_speed_in_bytes_per_ms,
+  static bool ReachedIdleAllocationLimit(double scavenge_speed_in_bytes_per_ms,
                                          size_t new_space_size,
                                          size_t new_space_capacity);
 
   static bool EnoughIdleTimeForScavenge(double idle_time_ms,
-                                        size_t scavenge_speed_in_bytes_per_ms,
+                                        double scavenge_speed_in_bytes_per_ms,
                                         size_t new_space_size);
 
   // If we haven't recorded any scavenger events yet, we use a conservative
@@ -62,7 +64,7 @@ class ScavengeJob {
   static const int kAverageIdleTimeMs = 5;
   // The number of bytes to be allocated in new space before the next idle
   // task is posted.
-  static const size_t kBytesAllocatedBeforeNextIdleTask = 512 * KB;
+  static const size_t kBytesAllocatedBeforeNextIdleTask = 1024 * KB;
   // The minimum size of allocated new space objects to trigger a scavenge.
   static const size_t kMinAllocationLimit = 512 * KB;
   // The allocation limit cannot exceed this fraction of the new space capacity.

@@ -4,8 +4,9 @@
 
 #include <limits>
 
-#include "src/globals.h"
+#include "src/common/globals.h"
 #include "src/heap/scavenge-job.h"
+#include "src/utils/utils.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace v8 {
@@ -31,6 +32,8 @@ TEST(ScavengeJob, AllocationLimitUnknownScavengeSpeed) {
   size_t expected_size = ScavengeJob::kInitialScavengeSpeedInBytesPerMs *
                              ScavengeJob::kAverageIdleTimeMs -
                          ScavengeJob::kBytesAllocatedBeforeNextIdleTask;
+  expected_size = Max(expected_size, ScavengeJob::kMinAllocationLimit);
+
   EXPECT_FALSE(ScavengeJob::ReachedIdleAllocationLimit(0, expected_size - 1,
                                                        kNewSpaceCapacity));
   EXPECT_TRUE(ScavengeJob::ReachedIdleAllocationLimit(0, expected_size,
@@ -71,7 +74,7 @@ TEST(ScavengeJob, AllocationLimitHighScavengeSpeed) {
   EXPECT_FALSE(ScavengeJob::ReachedIdleAllocationLimit(
       scavenge_speed, expected_size - 1, kNewSpaceCapacity));
   EXPECT_TRUE(ScavengeJob::ReachedIdleAllocationLimit(
-      scavenge_speed, expected_size, kNewSpaceCapacity));
+      scavenge_speed, expected_size + 1, kNewSpaceCapacity));
 }
 
 

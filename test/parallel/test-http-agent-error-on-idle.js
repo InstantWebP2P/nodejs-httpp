@@ -1,55 +1,49 @@
 'use strict';
-var common = require('../common');
-var assert = require('assert');
-var http = require('http');
-var Agent = http.Agent;
 
-var agent = new Agent({
-  keepAlive: true,
-});
+const common = require('../common');
+const assert = require('assert');
+const http = require('http');
+const Agent = http.Agent;
 
-var requestParams = {
-  host: 'localhost',
-  port: common.PORT,
-  agent: agent,
-  path: '/'
-};
-
-var socketKey = agent.getName(requestParams);
-
-function get(callback) {
-  return http.get(requestParams, callback);
-}
-
-var server = http.createServer(function(req, res) {
+const server = http.createServer(common.mustCall((req, res) => {
   res.end('hello world');
-});
+}, 2));
 
-server.listen(common.PORT, function() {
-  get(function(res) {
-    assert.equal(res.statusCode, 200);
+server.listen(0, () => {
+  const agent = new Agent({ keepAlive: true });
+
+  const requestParams = {
+    host: 'localhost',
+    port: server.address().port,
+    agent: agent,
+    path: '/'
+  };
+
+  const socketKey = agent.getName(requestParams);
+
+  http.get(requestParams, common.mustCall((res) => {
+    assert.strictEqual(res.statusCode, 200);
     res.resume();
-    res.on('end', function() {
-      process.nextTick(function() {
-        var freeSockets = agent.freeSockets[socketKey];
-        assert.equal(freeSockets.length, 1,
-                     'expect a free socket on ' + socketKey);
+    res.on('end', common.mustCall(() => {
+      process.nextTick(common.mustCall(() => {
+        const freeSockets = agent.freeSockets[socketKey];
+        // Expect a free socket on socketKey
+        assert.strictEqual(freeSockets.length, 1);
 
-        //generate a random error on the free socket
-        var freeSocket = freeSockets[0];
+        // Generate a random error on the free socket
+        const freeSocket = freeSockets[0];
         freeSocket.emit('error', new Error('ECONNRESET: test'));
 
-        get(done);
-      });
-    });
-  });
+        http.get(requestParams, done);
+      }));
+    }));
+  }));
+
+  function done() {
+    // Expect the freeSockets pool to be empty
+    assert.strictEqual(Object.keys(agent.freeSockets).length, 0);
+
+    agent.destroy();
+    server.close();
+  }
 });
-
-function done() {
-  assert.equal(Object.keys(agent.freeSockets).length, 0,
-               'expect the freeSockets pool to be empty');
-
-  agent.destroy();
-  server.close();
-  process.exit(0);
-}

@@ -1,3 +1,5 @@
+// © 2016 and later: Unicode, Inc. and others.
+// License & terms of use: http://www.unicode.org/copyright.html
 /*
 ******************************************************************************
 *
@@ -17,6 +19,7 @@
 
 #include "unicode/utypes.h"
 #include "unicode/putil.h"
+#include "unicode/uchar.h"
 #include "unicode/ustring.h"
 #include "unicode/utf16.h"
 #include "cstring.h"
@@ -991,7 +994,7 @@ U_CAPI int32_t   U_EXPORT2
 u_strlen(const UChar *s)
 {
 #if U_SIZEOF_WCHAR_T == U_SIZEOF_UCHAR
-    return (int32_t)uprv_wcslen(s);
+    return (int32_t)uprv_wcslen((const wchar_t *)s);
 #else
     const UChar *t = s;
     while(*t != 0) {
@@ -1113,7 +1116,7 @@ u_strHasMoreChar32Than(const UChar *s, int32_t length, int32_t number) {
 U_CAPI UChar * U_EXPORT2
 u_memcpy(UChar *dest, const UChar *src, int32_t count) {
     if(count > 0) {
-        uprv_memcpy(dest, src, count*U_SIZEOF_UCHAR);
+        uprv_memcpy(dest, src, (size_t)count*U_SIZEOF_UCHAR);
     }
     return dest;
 }
@@ -1121,7 +1124,7 @@ u_memcpy(UChar *dest, const UChar *src, int32_t count) {
 U_CAPI UChar * U_EXPORT2
 u_memmove(UChar *dest, const UChar *src, int32_t count) {
     if(count > 0) {
-        uprv_memmove(dest, src, count*U_SIZEOF_UCHAR);
+        uprv_memmove(dest, src, (size_t)count*U_SIZEOF_UCHAR);
     }
     return dest;
 }
@@ -1425,7 +1428,7 @@ u_unescape(const char *src, UChar *dest, int32_t destCapacity) {
  * NUL-terminate a string no matter what its type.
  * Set warning and error codes accordingly.
  */
-#define __TERMINATE_STRING(dest, destCapacity, length, pErrorCode)      \
+#define __TERMINATE_STRING(dest, destCapacity, length, pErrorCode) UPRV_BLOCK_MACRO_BEGIN { \
     if(pErrorCode!=NULL && U_SUCCESS(*pErrorCode)) {                    \
         /* not a public function, so no complete argument checking */   \
                                                                         \
@@ -1445,7 +1448,8 @@ u_unescape(const char *src, UChar *dest, int32_t destCapacity) {
             /* even the string itself did not fit - set an error code */ \
             *pErrorCode=U_BUFFER_OVERFLOW_ERROR;                        \
         }                                                               \
-    }
+    } \
+} UPRV_BLOCK_MACRO_END
 
 U_CAPI int32_t U_EXPORT2
 u_terminateUChars(UChar *dest, int32_t destCapacity, int32_t length, UErrorCode *pErrorCode) {
@@ -1485,7 +1489,7 @@ u_terminateWChars(wchar_t *dest, int32_t destCapacity, int32_t length, UErrorCod
   the output range. [LIU]
 */
 
-#define STRING_HASH(TYPE, STR, STRLEN, DEREF) \
+#define STRING_HASH(TYPE, STR, STRLEN, DEREF) UPRV_BLOCK_MACRO_BEGIN { \
     uint32_t hash = 0;                        \
     const TYPE *p = (const TYPE*) STR;        \
     if (p != NULL) {                          \
@@ -1497,7 +1501,8 @@ u_terminateWChars(wchar_t *dest, int32_t destCapacity, int32_t length, UErrorCod
             p += inc;                         \
         }                                     \
     }                                         \
-    return static_cast<int32_t>(hash)
+    return static_cast<int32_t>(hash);        \
+} UPRV_BLOCK_MACRO_END
 
 /* Used by UnicodeString to compute its hashcode - Not public API. */
 U_CAPI int32_t U_EXPORT2

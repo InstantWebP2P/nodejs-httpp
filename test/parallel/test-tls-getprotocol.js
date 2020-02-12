@@ -1,14 +1,14 @@
 'use strict';
 const common = require('../common');
-const assert = require('assert');
-
-if (!common.hasCrypto) {
+if (!common.hasCrypto)
   common.skip('missing crypto');
-  return;
-}
 
+// This test ensures that `getProtocol` returns the right protocol
+// from a TLS connection
+
+const assert = require('assert');
 const tls = require('tls');
-const fs = require('fs');
+const fixtures = require('../common/fixtures');
 
 const clientConfigs = [
   { secureProtocol: 'TLSv1_method', version: 'TLSv1' },
@@ -17,18 +17,19 @@ const clientConfigs = [
 ];
 
 const serverConfig = {
-  key: fs.readFileSync(common.fixturesDir + '/keys/agent2-key.pem'),
-  cert: fs.readFileSync(common.fixturesDir + '/keys/agent2-cert.pem')
+  secureProtocol: 'TLS_method',
+  key: fixtures.readKey('agent2-key.pem'),
+  cert: fixtures.readKey('agent2-cert.pem')
 };
 
 const server = tls.createServer(serverConfig, common.mustCall(function() {
 
-}, clientConfigs.length)).listen(common.PORT, common.localhostIPv4, function() {
+}, clientConfigs.length)).listen(0, common.localhostIPv4, function() {
   let connected = 0;
   clientConfigs.forEach(function(v) {
     tls.connect({
       host: common.localhostIPv4,
-      port: common.PORT,
+      port: server.address().port,
       rejectUnauthorized: false,
       secureProtocol: v.secureProtocol
     }, common.mustCall(function() {

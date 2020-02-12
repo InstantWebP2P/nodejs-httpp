@@ -1,3 +1,5 @@
+// © 2016 and later: Unicode, Inc. and others.
+// License & terms of use: http://www.unicode.org/copyright.html
 /*
  *******************************************************************************
  * Copyright (C) 2008-2016, International Business Machines Corporation and
@@ -13,6 +15,8 @@
 #define __DTITVINF_H__
 
 #include "unicode/utypes.h"
+
+#if U_SHOW_CPLUSPLUS_API
 
 /**
  * \file
@@ -147,10 +151,8 @@ U_NAMESPACE_BEGIN
  * calendar; non-Gregorian calendars are supported from ICU 4.4.1.
  * @stable ICU 4.0
 **/
-
 class U_I18N_API DateIntervalInfo U_FINAL : public UObject {
 public:
-#ifndef U_HIDE_INTERNAL_API
     /**
      * Default constructor.
      * It does not initialize any interval patterns except
@@ -165,7 +167,6 @@ public:
      * @internal ICU 4.0
      */
     DateIntervalInfo(UErrorCode& status);
-#endif  /* U_HIDE_INTERNAL_API */
 
 
     /**
@@ -196,7 +197,7 @@ public:
      * @return   a copy of the object
      * @stable ICU 4.0
      */
-    virtual DateIntervalInfo* clone(void) const;
+    virtual DateIntervalInfo* clone() const;
 
     /**
      * Destructor.
@@ -339,7 +340,10 @@ private:
      */
     friend class DateIntervalFormat;
 
-    friend struct DateIntervalSink;
+    /**
+     * Internal struct used to load resource bundle data.
+     */
+    struct DateIntervalSink;
 
     /**
      * Following is for saving the interval patterns.
@@ -512,5 +516,7 @@ DateIntervalInfo::operator!=(const DateIntervalInfo& other) const {
 U_NAMESPACE_END
 
 #endif
+
+#endif /* U_SHOW_CPLUSPLUS_API */
 
 #endif

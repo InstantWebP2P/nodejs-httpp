@@ -2,16 +2,25 @@
 var npm = require('../npm.js')
 var util = require('util')
 var nameValidator = require('validate-npm-package-name')
+var npmlog = require('npmlog')
 
 module.exports = errorMessage
 
 function errorMessage (er) {
   var short = []
   var detail = []
-  if (er.optional) {
-    short.push(['optional', 'Skipping failed optional dependency ' + er.optional + ':'])
-  }
   switch (er.code) {
+    case 'ENOAUDIT':
+      short.push(['audit', er.message])
+      break
+    case 'EAUDITNOPJSON':
+      short.push(['audit', er.message])
+      break
+    case 'EAUDITNOLOCK':
+      short.push(['audit', er.message])
+      detail.push(['audit', 'Try creating one first with: npm i --package-lock-only'])
+      break
+
     case 'ECONNREFUSED':
       short.push(['', er])
       detail.push([
@@ -25,9 +34,56 @@ function errorMessage (er) {
 
     case 'EACCES':
     case 'EPERM':
-      short.push(['', er])
-      detail.push(['', ['\nPlease try running this command again as root/Administrator.'
-                ].join('\n')])
+      const isCachePath = typeof er.path === 'string' &&
+        er.path.startsWith(npm.config.get('cache'))
+      const isCacheDest = typeof er.dest === 'string' &&
+        er.dest.startsWith(npm.config.get('cache'))
+
+      const isWindows = process.platform === 'win32'
+
+      if (!isWindows && (isCachePath || isCacheDest)) {
+        // user probably doesn't need this, but still add it to the debug log
+        npmlog.verbose(er.stack)
+        short.push([
+          '',
+          [
+            '',
+            'Your cache folder contains root-owned files, due to a bug in',
+            'previous versions of npm which has since been addressed.',
+            '',
+            'To permanently fix this problem, please run:',
+            `  sudo chown -R ${process.getuid()}:${process.getgid()} ${JSON.stringify(npm.config.get('cache'))}`
+          ].join('\n')
+        ])
+      } else {
+        short.push(['', er])
+        detail.push([
+          '',
+          [
+            '\nThe operation was rejected by your operating system.',
+            (process.platform === 'win32'
+              ? 'It\'s possible that the file was already in use (by a text editor or antivirus),\n' +
+                'or that you lack permissions to access it.'
+              : 'It is likely you do not have the permissions to access this file as the current user'),
+            '\nIf you believe this might be a permissions issue, please double-check the',
+            'permissions of the file and its containing directories, or try running',
+            'the command again as root/Administrator.'
+          ].join('\n')])
+      }
+      break
+
+    case 'EUIDLOOKUP':
+      short.push(['lifecycle', er.message])
+      detail.push([
+        '',
+        [
+          '',
+          'Failed to look up the user/group for running scripts.',
+          '',
+          'Try again with a different --user or --group settings, or',
+          'run with --unsafe-perm to execute scripts as root.'
+        ].join('\n')
+      ])
       break
 
     case 'ELIFECYCLE':
@@ -36,17 +92,8 @@ function errorMessage (er) {
         '',
         [
           '',
-          'Failed at the ' + er.pkgid + ' ' + er.stage + " script '" + er.script + "'.",
-          'Make sure you have the latest version of node.js and npm installed.',
-          'If you do, this is most likely a problem with the ' + er.pkgname + ' package,',
-          'not with npm itself.',
-          'Tell the author that this fails on your system:',
-          '    ' + er.script,
-          'You can get information on how to open an issue for this project with:',
-          '    npm bugs ' + er.pkgname,
-          'Or if that isn\'t available, you can get their info via:',
-          '    npm owner ls ' + er.pkgname,
-          'There is likely additional logging output above.'
+          'Failed at the ' + er.pkgid + ' ' + er.stage + ' script.',
+          'This is probably not a problem with npm. There is likely additional logging output above.'
         ].join('\n')]
       )
       break
@@ -58,40 +105,100 @@ function errorMessage (er) {
         [
           '',
           'Failed using git.',
-          'This is most likely not a problem with npm itself.',
           'Please check if you have git installed and in your PATH.'
         ].join('\n')
       ])
       break
 
     case 'EJSONPARSE':
-      short.push(['', er.message])
-      short.push(['', 'File: ' + er.file])
+      const path = require('path')
+      // Check whether we ran into a conflict in our own package.json
+      if (er.file === path.join(npm.prefix, 'package.json')) {
+        const isDiff = require('../install/read-shrinkwrap.js')._isDiff
+        const txt = require('fs').readFileSync(er.file, 'utf8')
+        if (isDiff(txt)) {
+          detail.push([
+            '',
+            [
+              'Merge conflict detected in your package.json.',
+              '',
+              'Please resolve the package.json conflict and retry the command:',
+              '',
+              `$ ${process.argv.join(' ')}`
+            ].join('\n')
+          ])
+          break
+        }
+      }
+      short.push(['JSON.parse', er.message])
       detail.push([
-        '',
+        'JSON.parse',
         [
           'Failed to parse package.json data.',
-          'package.json must be actual JSON, not just JavaScript.',
-          '',
-          'This is not a bug in npm.',
-          'Tell the package author to fix their package.json file.'
-        ].join('\n'),
-        'JSON.parse'
+          'package.json must be actual JSON, not just JavaScript.'
+        ].join('\n')
       ])
       break
 
-    // TODO(isaacs)
-    // Add a special case here for E401 and E403 explaining auth issues?
+    case 'EOTP':
+    case 'E401':
+      // E401 is for places where we accidentally neglect OTP stuff
+      if (er.code === 'EOTP' || /one-time pass/.test(er.message)) {
+        short.push(['', 'This operation requires a one-time password from your authenticator.'])
+        detail.push([
+          '',
+          [
+            'You can provide a one-time password by passing --otp=<code> to the command you ran.',
+            'If you already provided a one-time password then it is likely that you either typoed',
+            'it, or it timed out. Please try again.'
+          ].join('\n')
+        ])
+      } else {
+        // npm ERR! code E401
+        // npm ERR! Unable to authenticate, need: Basic
+        const auth = (er.headers && er.headers['www-authenticate'] && er.headers['www-authenticate'].map((au) => au.split(/,\s*/))[0]) || []
+        if (auth.indexOf('Bearer') !== -1) {
+          short.push(['', 'Unable to authenticate, your authentication token seems to be invalid.'])
+          detail.push([
+            '',
+            [
+              'To correct this please trying logging in again with:',
+              '    npm login'
+            ].join('\n')
+          ])
+        } else if (auth.indexOf('Basic') !== -1) {
+          short.push(['', 'Incorrect or missing password.'])
+          detail.push([
+            '',
+            [
+              'If you were trying to login, change your password, create an',
+              'authentication token or enable two-factor authentication then',
+              'that means you likely typed your password in incorrectly.',
+              'Please try again, or recover your password at:',
+              '    https://www.npmjs.com/forgot',
+              '',
+              'If you were doing some other operation then your saved credentials are',
+              'probably out of date. To correct this please try logging in again with:',
+              '    npm login'
+            ].join('\n')
+          ])
+        } else {
+          short.push(['', er.message || er])
+        }
+      }
+      break
 
     case 'E404':
       // There's no need to have 404 in the message as well.
       var msg = er.message.replace(/^404\s+/, '')
       short.push(['404', msg])
       if (er.pkgid && er.pkgid !== '-') {
+        var pkg = er.pkgid.replace(/(?!^)@.*$/, '')
+
         detail.push(['404', ''])
         detail.push(['404', '', "'" + er.pkgid + "' is not in the npm registry."])
 
-        var valResult = nameValidator(er.pkgid)
+        var valResult = nameValidator(pkg)
 
         if (valResult.validForNewPackages) {
           detail.push(['404', 'You should bug the author to publish it (or use the name yourself!)'])
@@ -150,17 +257,21 @@ function errorMessage (er) {
       break
 
     case 'EBADPLATFORM':
+      var validOs = er.os.join ? er.os.join(',') : er.os
+      var validArch = er.cpu.join ? er.cpu.join(',') : er.cpu
+      var expected = {os: validOs, arch: validArch}
+      var actual = {os: process.platform, arch: process.arch}
       short.push([
         'notsup',
         [
-          'Not compatible with your operating system or architecture: ' + er.pkgid
+          util.format('Unsupported platform for %s: wanted %j (current: %j)', er.pkgid, expected, actual)
         ].join('\n')
       ])
       detail.push([
         'notsup',
         [
-          'Valid OS:    ' + (er.os.join ? er.os.join(',') : util.inspect(er.os)),
-          'Valid Arch:  ' + (er.cpu.join ? er.cpu.join(',') : util.inspect(er.cpu)),
+          'Valid OS:    ' + validOs,
+          'Valid Arch:  ' + validArch,
           'Actual OS:   ' + process.platform,
           'Actual Arch: ' + process.arch
         ].join('\n')
@@ -169,8 +280,9 @@ function errorMessage (er) {
 
     case 'EEXIST':
       short.push(['', er.message])
-      short.push(['', 'File exists: ' + er.path])
-      detail.push(['', 'Move it away, and try again.'])
+      short.push(['', 'File exists: ' + (er.dest || er.path)])
+      detail.push(['', 'Remove the existing file and try again, or run npm'])
+      detail.push(['', 'with --force to overwrite files recklessly.'])
       break
 
     case 'ENEEDAUTH':
@@ -186,8 +298,7 @@ function errorMessage (er) {
       detail.push([
         'network',
         [
-          'This is most likely not a problem with npm itself',
-          'and is related to network connectivity.',
+          'This is a problem related to network connectivity.',
           'In most cases you are behind a proxy or have bad network settings.',
           '\nIf you are behind a proxy, please make sure that the',
           "'proxy' config is set properly.  See: 'npm help config'"
@@ -200,7 +311,6 @@ function errorMessage (er) {
       detail.push([
         'package.json',
         [
-          'This is most likely not a problem with npm itself.',
           "npm can't find a package.json file in your current directory."
         ].join('\n')
       ])
@@ -209,7 +319,6 @@ function errorMessage (er) {
     case 'ETARGET':
       short.push(['notarget', er.message])
       msg = [
-        'This is most likely not a problem with npm itself.',
         'In most cases you or one of your dependencies are requesting',
         "a package version that doesn't exist."
       ]
@@ -217,6 +326,18 @@ function errorMessage (er) {
         msg.push("\nIt was specified as a dependency of '" + er.parent + "'\n")
       }
       detail.push(['notarget', msg.join('\n')])
+      break
+
+    case 'E403':
+      short.push(['403', er.message])
+      msg = [
+        'In most cases, you or one of your dependencies are requesting',
+        'a package version that is forbidden by your security policy.'
+      ]
+      if (er.parent) {
+        msg.push("\nIt was specified as a dependency of '" + er.parent + "'\n")
+      }
+      detail.push(['403', msg.join('\n')])
       break
 
     case 'ENOTSUP':
@@ -236,15 +357,15 @@ function errorMessage (er) {
         ])
         break
       } // else passthrough
-      /*eslint no-fallthrough:0*/
+      /* eslint no-fallthrough:0 */
 
     case 'ENOSPC':
       short.push(['nospc', er.message])
       detail.push([
         'nospc',
         [
-          'This is most likely not a problem with npm itself',
-          'and is related to insufficient space on your system.'
+          'There appears to be insufficient space on your system to finish.',
+          'Clear up some disk space and try again.'
         ].join('\n')
       ])
       break
@@ -254,9 +375,7 @@ function errorMessage (er) {
       detail.push([
         'rofs',
         [
-          'This is most likely not a problem with npm itself',
-          'and is related to the file system being read-only.',
-          '\nOften virtualized file systems, or other file systems',
+          'Often virtualized file systems, or other file systems',
           "that don't support symlinks, give this error."
         ].join('\n')
       ])
@@ -267,9 +386,7 @@ function errorMessage (er) {
       detail.push([
         'enoent',
         [
-          er.message,
-          'This is most likely not a problem with npm itself',
-          'and is related to npm not being able to find a file.',
+          'This is related to npm not being able to find a file.',
           er.file ? "\nCheck if the file '" + er.file + "' is present." : ''
         ].join('\n')
       ])
@@ -284,34 +401,21 @@ function errorMessage (er) {
         'typeerror',
         [
           'This is an error with npm itself. Please report this error at:',
-          '    <http://github.com/npm/npm/issues>'
-        ].join('\n')
-      ])
-      break
-
-    case 'EISDIR':
-      short.push(['eisdir', er.message])
-      detail.push([
-        'eisdir',
-        [
-          'This is most likely not a problem with npm itself',
-          'and is related to npm not being able to find a package.json in',
-          'a package you are trying to install.'
+          '    <https://npm.community>'
         ].join('\n')
       ])
       break
 
     default:
       short.push(['', er.message || er])
-      detail.push([
-        '',
-        [
-          '',
-          'If you need help, you may report this error at:',
-          '    <https://github.com/npm/npm/issues>'
-        ].join('\n')
-      ])
       break
+  }
+  if (er.optional) {
+    short.unshift(['optional', er.optional + ' (' + er.location + '):'])
+    short.concat(detail).forEach(function (msg) {
+      if (!msg[0]) msg[0] = 'optional'
+      if (msg[1]) msg[1] = msg[1].toString().replace(/(^|\n)/g, '$1SKIPPING OPTIONAL DEPENDENCY: ')
+    })
   }
   return {summary: short, detail: detail}
 }

@@ -1,18 +1,22 @@
 'use strict';
 
 const common = require('../common');
-const assert = require('assert');
 const net = require('net');
 
-const server = net.createServer().listen(common.PORT, connectToServer);
+const server = net.createServer().listen(0, connectToServer);
 
 function connectToServer() {
-  const client = net.createConnection(common.PORT, () => {
-    assert.throws(() => {
-      client.write(1337);
-    }, /Invalid data, chunk must be a string or buffer, not number/);
+  const client = net.createConnection(this.address().port, () => {
+    client.write(1337, common.expectsError({
+      code: 'ERR_INVALID_ARG_TYPE',
+      name: 'TypeError'
+    }));
+    client.on('error', common.expectsError({
+      code: 'ERR_INVALID_ARG_TYPE',
+      name: 'TypeError'
+    }));
 
-    client.end();
+    client.destroy();
   })
-  .on('end', () => server.close());
+  .on('close', () => server.close());
 }

@@ -56,15 +56,18 @@ Data types
 
     * `handle`: UDP handle
     * `nread`:  Number of bytes that have been received.
-      0 if there is no more data to read. You may discard or repurpose
-      the read buffer. Note that 0 may also mean that an empty datagram
-      was received (in this case `addr` is not NULL). < 0 if a transmission
-      error was detected.
+      0 if there is no more data to read. Note that 0 may also mean that an
+      empty datagram was received (in this case `addr` is not NULL). < 0 if
+      a transmission error was detected.
     * `buf`: :c:type:`uv_buf_t` with the received data.
     * `addr`: ``struct sockaddr*`` containing the address of the sender.
       Can be NULL. Valid for the duration of the callback only.
     * `flags`: One or more or'ed UV_UDP_* constants. Right now only
       ``UV_UDP_PARTIAL`` is used.
+
+    The callee is responsible for freeing the buffer, libuv does not reuse it.
+    The buffer may be a null buffer (where `buf->base` == NULL and `buf->len` == 0)
+    on error.
 
     .. note::
         The receive callback will be called with `nread` == 0 and `addr` == NULL when there is
@@ -150,6 +153,44 @@ API
 
     :returns: 0 on success, or an error code < 0 on failure.
 
+.. c:function:: int uv_udp_connect(uv_udp_t* handle, const struct sockaddr* addr)
+
+    Associate the UDP handle to a remote address and port, so every
+    message sent by this handle is automatically sent to that destination.
+    Calling this function with a `NULL` `addr` disconnects the handle.
+    Trying to call `uv_udp_connect()` on an already connected handle will result
+    in an `UV_EISCONN` error. Trying to disconnect a handle that is not
+    connected will return an `UV_ENOTCONN` error.
+
+    :param handle: UDP handle. Should have been initialized with
+        :c:func:`uv_udp_init`.
+
+    :param addr: `struct sockaddr_in` or `struct sockaddr_in6`
+        with the address and port to associate to.
+
+    :returns: 0 on success, or an error code < 0 on failure.
+
+    .. versionadded:: 1.27.0
+
+.. c:function:: int uv_udp_getpeername(const uv_udp_t* handle, struct sockaddr* name, int* namelen)
+
+    Get the remote IP and port of the UDP handle on connected UDP handles.
+    On unconnected handles, it returns `UV_ENOTCONN`.
+
+    :param handle: UDP handle. Should have been initialized with
+        :c:func:`uv_udp_init` and bound.
+
+    :param name: Pointer to the structure to be filled with the address data.
+        In order to support IPv4 and IPv6 `struct sockaddr_storage` should be
+        used.
+
+    :param namelen: On input it indicates the data of the `name` field. On
+        output it indicates how much of it was filled.
+
+    :returns: 0 on success, or an error code < 0 on failure
+
+    .. versionadded:: 1.27.0
+
 .. c:function:: int uv_udp_getsockname(const uv_udp_t* handle, struct sockaddr* name, int* namelen)
 
     Get the local IP and port of the UDP handle.
@@ -180,6 +221,25 @@ API
     :param membership: Should be ``UV_JOIN_GROUP`` or ``UV_LEAVE_GROUP``.
 
     :returns: 0 on success, or an error code < 0 on failure.
+
+.. c:function:: int uv_udp_set_source_membership(uv_udp_t* handle, const char* multicast_addr, const char* interface_addr, const char* source_addr, uv_membership membership)
+
+    Set membership for a source-specific multicast group.
+
+    :param handle: UDP handle. Should have been initialized with
+        :c:func:`uv_udp_init`.
+
+    :param multicast_addr: Multicast address to set membership for.
+
+    :param interface_addr: Interface address.
+
+    :param source_addr: Source address.
+
+    :param membership: Should be ``UV_JOIN_GROUP`` or ``UV_LEAVE_GROUP``.
+
+    :returns: 0 on success, or an error code < 0 on failure.
+
+    .. versionadded:: 1.32.0
 
 .. c:function:: int uv_udp_set_multicast_loop(uv_udp_t* handle, int on)
 
@@ -243,6 +303,16 @@ API
     with :c:func:`uv_udp_bind` it will be bound to 0.0.0.0
     (the "all interfaces" IPv4 address) and a random port number.
 
+    On Windows if the `addr` is initialized to point to an unspecified address
+    (``0.0.0.0`` or ``::``) it will be changed to point to ``localhost``.
+    This is done to match the behavior of Linux systems.
+
+    For connected UDP handles, `addr` must be set to `NULL`, otherwise it will
+    return `UV_EISCONN` error.
+
+    For connectionless UDP handles, `addr` cannot be `NULL`, otherwise it will
+    return `UV_EDESTADDRREQ` error.
+
     :param req: UDP request handle. Need not be initialized.
 
     :param handle: UDP handle. Should have been initialized with
@@ -259,14 +329,27 @@ API
 
     :returns: 0 on success, or an error code < 0 on failure.
 
+    .. versionchanged:: 1.19.0 added ``0.0.0.0`` and ``::`` to ``localhost``
+        mapping
+
+    .. versionchanged:: 1.27.0 added support for connected sockets
+
 .. c:function:: int uv_udp_try_send(uv_udp_t* handle, const uv_buf_t bufs[], unsigned int nbufs, const struct sockaddr* addr)
 
     Same as :c:func:`uv_udp_send`, but won't queue a send request if it can't
     be completed immediately.
 
+    For connected UDP handles, `addr` must be set to `NULL`, otherwise it will
+    return `UV_EISCONN` error.
+
+    For connectionless UDP handles, `addr` cannot be `NULL`, otherwise it will
+    return `UV_EDESTADDRREQ` error.
+
     :returns: >= 0: number of bytes sent (it matches the given buffer size).
         < 0: negative error code (``UV_EAGAIN`` is returned when the message
         can't be sent immediately).
+
+    .. versionchanged:: 1.27.0 added support for connected sockets
 
 .. c:function:: int uv_udp_recv_start(uv_udp_t* handle, uv_alloc_cb alloc_cb, uv_udp_recv_cb recv_cb)
 
@@ -291,5 +374,17 @@ API
         :c:func:`uv_udp_init`.
 
     :returns: 0 on success, or an error code < 0 on failure.
+
+.. c:function:: size_t uv_udp_get_send_queue_size(const uv_udp_t* handle)
+
+    Returns `handle->send_queue_size`.
+
+    .. versionadded:: 1.19.0
+
+.. c:function:: size_t uv_udp_get_send_queue_count(const uv_udp_t* handle)
+
+    Returns `handle->send_queue_count`.
+
+    .. versionadded:: 1.19.0
 
 .. seealso:: The :c:type:`uv_handle_t` API functions also apply.

@@ -8,7 +8,9 @@ const tests = [
   { headers: {}, expected: 'regular' },
   { headers: { upgrade: 'h2c' }, expected: 'regular' },
   { headers: { connection: 'upgrade' }, expected: 'regular' },
-  { headers: { connection: 'upgrade', upgrade: 'h2c' }, expected: 'upgrade' }
+  { headers: { connection: 'upgrade', upgrade: 'h2c' }, expected: 'upgrade' },
+  { headers: { connection: 'upgrade', upgrade: 'h2c' }, expected: 'destroy' },
+  { headers: { connection: 'upgrade', upgrade: 'h2c' }, expected: 'regular' },
 ];
 
 function fire() {
@@ -18,13 +20,13 @@ function fire() {
   const test = tests.shift();
 
   const done = common.mustCall(function done(result) {
-    assert.equal(result, test.expected);
+    assert.strictEqual(result, test.expected);
 
     fire();
   });
 
   const req = http.request({
-    port: common.PORT,
+    port: server.address().port,
     path: '/',
     headers: test.headers
   }, function onResponse(res) {
@@ -32,10 +34,17 @@ function fire() {
     done('regular');
   });
 
-  req.on('upgrade', function onUpgrade(res, socket) {
-    socket.destroy();
-    done('upgrade');
-  });
+  if (test.expected === 'destroy') {
+    req.on('socket', () => req.socket.on('close', () => {
+      server.removeAllListeners('upgrade');
+      done('destroy');
+    }));
+  } else {
+    req.on('upgrade', function onUpgrade(res, socket) {
+      socket.destroy();
+      done('upgrade');
+    });
+  }
 
   req.end();
 }
@@ -51,4 +60,4 @@ const server = http.createServer(function(req, res) {
              'Connection: upgrade\r\n' +
              'Upgrade: h2c\r\n\r\n' +
              'ohai');
-}).listen(common.PORT, fire);
+}).listen(0, fire);

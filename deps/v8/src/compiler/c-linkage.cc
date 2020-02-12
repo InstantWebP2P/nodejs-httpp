@@ -2,22 +2,18 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "src/assembler.h"
-#include "src/macro-assembler.h"
+#include "src/codegen/assembler-inl.h"
+#include "src/codegen/macro-assembler.h"
 
 #include "src/compiler/linkage.h"
 
-#include "src/zone.h"
+#include "src/zone/zone.h"
 
 namespace v8 {
 namespace internal {
 namespace compiler {
 
 namespace {
-LinkageLocation regloc(Register reg) {
-  return LinkageLocation::ForRegister(reg.code());
-}
-
 
 // Platform-specific configuration for C calling convention.
 #if V8_TARGET_ARCH_IA32
@@ -31,7 +27,7 @@ LinkageLocation regloc(Register reg) {
 // == x64 ====================================================================
 // ===========================================================================
 
-#ifdef _WIN64
+#ifdef V8_TARGET_OS_WIN
 // == x64 windows ============================================================
 #define STACK_SHADOW_WORDS 4
 #define PARAM_REGISTERS rcx, rdx, r8, r9
@@ -43,18 +39,12 @@ LinkageLocation regloc(Register reg) {
       (1 << xmm9.code()) | (1 << xmm10.code()) | (1 << xmm11.code()) |  \
       (1 << xmm12.code()) | (1 << xmm13.code()) | (1 << xmm14.code()) | \
       (1 << xmm15.code())
-#else
+#else  // V8_TARGET_OS_WIN
 // == x64 other ==============================================================
 #define PARAM_REGISTERS rdi, rsi, rdx, rcx, r8, r9
 #define CALLEE_SAVE_REGISTERS \
   rbx.bit() | r12.bit() | r13.bit() | r14.bit() | r15.bit()
-#endif
-
-#elif V8_TARGET_ARCH_X87
-// ===========================================================================
-// == x87 ====================================================================
-// ===========================================================================
-#define CALLEE_SAVE_REGISTERS esi.bit() | edi.bit() | ebx.bit()
+#endif  // V8_TARGET_OS_WIN
 
 #elif V8_TARGET_ARCH_ARM
 // ===========================================================================
@@ -109,10 +99,15 @@ LinkageLocation regloc(Register reg) {
 #define CALLEE_SAVE_FP_REGISTERS \
   f20.bit() | f22.bit() | f24.bit() | f26.bit() | f28.bit() | f30.bit()
 
-#elif V8_TARGET_ARCH_PPC || V8_TARGET_ARCH_PPC64
+#elif V8_TARGET_ARCH_PPC64
 // ===========================================================================
 // == ppc & ppc64 ============================================================
 // ===========================================================================
+#ifdef V8_TARGET_LITTLE_ENDIAN  // ppc64le linux
+#define STACK_SHADOW_WORDS 12
+#else  // AIX
+#define STACK_SHADOW_WORDS 14
+#endif
 #define PARAM_REGISTERS r3, r4, r5, r6, r7, r8, r9, r10
 #define CALLEE_SAVE_REGISTERS                                                 \
   r14.bit() | r15.bit() | r16.bit() | r17.bit() | r18.bit() | r19.bit() |     \
@@ -122,6 +117,18 @@ LinkageLocation regloc(Register reg) {
   d14.bit() | d15.bit() | d16.bit() | d17.bit() | d18.bit() | d19.bit() |     \
       d20.bit() | d21.bit() | d22.bit() | d23.bit() | d24.bit() | d25.bit() | \
       d26.bit() | d27.bit() | d28.bit() | d29.bit() | d30.bit() | d31.bit()
+
+#elif V8_TARGET_ARCH_S390X
+// ===========================================================================
+// == s390x ==================================================================
+// ===========================================================================
+#define STACK_SHADOW_WORDS 20
+#define PARAM_REGISTERS r2, r3, r4, r5, r6
+#define CALLEE_SAVE_REGISTERS \
+  r6.bit() | r7.bit() | r8.bit() | r9.bit() | r10.bit() | ip.bit() | r13.bit()
+#define CALLEE_SAVE_FP_REGISTERS                                        \
+  d8.bit() | d9.bit() | d10.bit() | d11.bit() | d12.bit() | d13.bit() | \
+      d14.bit() | d15.bit()
 
 #else
 // ===========================================================================
@@ -133,13 +140,16 @@ LinkageLocation regloc(Register reg) {
 
 
 // General code uses the above configuration data.
-CallDescriptor* Linkage::GetSimplifiedCDescriptor(
-    Zone* zone, const MachineSignature* msig, bool set_initialize_root_flag) {
+CallDescriptor* Linkage::GetSimplifiedCDescriptor(Zone* zone,
+                                                  const MachineSignature* msig,
+                                                  CallDescriptor::Flags flags) {
+  DCHECK_LE(msig->parameter_count(), static_cast<size_t>(kMaxCParameters));
+
   LocationSignature::Builder locations(zone, msig->return_count(),
                                        msig->parameter_count());
   // Check the types of the signature.
   // Currently no floating point parameters or returns are allowed because
-  // on x87 and ia32, the FP top of stack is involved.
+  // on ia32, the FP top of stack is involved.
   for (size_t i = 0; i < msig->return_count(); i++) {
     MachineRepresentation rep = msig->GetReturn(i).representation();
     CHECK_NE(MachineRepresentation::kFloat32, rep);
@@ -153,30 +163,30 @@ CallDescriptor* Linkage::GetSimplifiedCDescriptor(
 
 #ifdef UNSUPPORTED_C_LINKAGE
   // This method should not be called on unknown architectures.
-  V8_Fatal(__FILE__, __LINE__,
-           "requested C call descriptor on unsupported architecture");
+  FATAL("requested C call descriptor on unsupported architecture");
   return nullptr;
 #endif
 
   // Add return location(s).
-  CHECK(locations.return_count_ <= 2);
+  CHECK_GE(2, locations.return_count_);
 
   if (locations.return_count_ > 0) {
-    locations.AddReturn(regloc(kReturnRegister0));
+    locations.AddReturn(LinkageLocation::ForRegister(kReturnRegister0.code(),
+                                                     msig->GetReturn(0)));
   }
   if (locations.return_count_ > 1) {
-    locations.AddReturn(regloc(kReturnRegister1));
+    locations.AddReturn(LinkageLocation::ForRegister(kReturnRegister1.code(),
+                                                     msig->GetReturn(1)));
   }
 
   const int parameter_count = static_cast<int>(msig->parameter_count());
 
 #ifdef PARAM_REGISTERS
-  static const Register kParamRegisters[] = {PARAM_REGISTERS};
-  static const int kParamRegisterCount =
-      static_cast<int>(arraysize(kParamRegisters));
+  const v8::internal::Register kParamRegisters[] = {PARAM_REGISTERS};
+  const int kParamRegisterCount = static_cast<int>(arraysize(kParamRegisters));
 #else
-  static const Register* kParamRegisters = nullptr;
-  static const int kParamRegisterCount = 0;
+  const v8::internal::Register* kParamRegisters = nullptr;
+  const int kParamRegisterCount = 0;
 #endif
 
 #ifdef STACK_SHADOW_WORDS
@@ -187,10 +197,11 @@ CallDescriptor* Linkage::GetSimplifiedCDescriptor(
   // Add register and/or stack parameter(s).
   for (int i = 0; i < parameter_count; i++) {
     if (i < kParamRegisterCount) {
-      locations.AddParam(regloc(kParamRegisters[i]));
+      locations.AddParam(LinkageLocation::ForRegister(kParamRegisters[i].code(),
+                                                      msig->GetParam(i)));
     } else {
-      locations.AddParam(
-          LinkageLocation::ForCallerFrameSlot(-1 - stack_offset));
+      locations.AddParam(LinkageLocation::ForCallerFrameSlot(
+          -1 - stack_offset, msig->GetParam(i)));
       stack_offset++;
     }
   }
@@ -209,21 +220,19 @@ CallDescriptor* Linkage::GetSimplifiedCDescriptor(
 
   // The target for C calls is always an address (i.e. machine pointer).
   MachineType target_type = MachineType::Pointer();
-  LinkageLocation target_loc = LinkageLocation::ForAnyRegister();
+  LinkageLocation target_loc = LinkageLocation::ForAnyRegister(target_type);
+  flags |= CallDescriptor::kNoAllocate;
+
   return new (zone) CallDescriptor(  // --
       CallDescriptor::kCallAddress,  // kind
       target_type,                   // target MachineType
       target_loc,                    // target location
-      msig,                          // machine_sig
       locations.Build(),             // location_sig
       0,                             // stack_parameter_count
-      Operator::kNoProperties,       // properties
+      Operator::kNoThrow,            // properties
       kCalleeSaveRegisters,          // callee-saved registers
       kCalleeSaveFPRegisters,        // callee-saved fp regs
-      set_initialize_root_flag ?     // flags
-          CallDescriptor::kInitializeRootRegister
-                               : CallDescriptor::kNoFlags,
-      "c-call");
+      flags, "c-call");
 }
 
 }  // namespace compiler

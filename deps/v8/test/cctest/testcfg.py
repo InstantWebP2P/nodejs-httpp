@@ -25,70 +25,67 @@
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+# for py2/py3 compatibility
+from __future__ import print_function
+
 import os
 import shutil
 
-from testrunner.local import commands
+from testrunner.local import command
 from testrunner.local import testsuite
 from testrunner.local import utils
 from testrunner.objects import testcase
 
+SHELL = 'cctest'
 
-class CcTestSuite(testsuite.TestSuite):
 
-  def __init__(self, name, root):
-    super(CcTestSuite, self).__init__(name, root)
-    if utils.IsWindows():
-      build_dir = "build"
-    else:
-      build_dir = "out"
-    self.serdes_dir = os.path.normpath(
-        os.path.join(root, "..", "..", build_dir, ".serdes"))
-
-  def SetupWorkingDirectory(self):
-    # This is only called once per machine, while init above is called once per
-    # process.
-    if os.path.exists(self.serdes_dir):
-      shutil.rmtree(self.serdes_dir, True)
-    os.makedirs(self.serdes_dir)
-
-  def ListTests(self, context):
-    shell = os.path.abspath(os.path.join(context.shell_dir, self.shell()))
+class TestLoader(testsuite.TestLoader):
+  def _list_test_filenames(self):
+    shell = os.path.abspath(os.path.join(self.test_config.shell_dir, SHELL))
     if utils.IsWindows():
       shell += ".exe"
-    output = commands.Execute(context.command_prefix +
-                              [shell, "--list"] +
-                              context.extra_flags)
+    cmd = command.Command(
+        cmd_prefix=self.test_config.command_prefix,
+        shell=shell,
+        args=["--list"] + self.test_config.extra_flags)
+    output = cmd.execute()
+    # TODO make errors visible (see duplicated code in 'unittests')
     if output.exit_code != 0:
-      print output.stdout
-      print output.stderr
+      print(cmd)
+      print(output.stdout)
+      print(output.stderr)
       return []
-    tests = []
-    for test_desc in output.stdout.strip().split():
-      if test_desc.find('<') < 0:
-        # Native Client output can contain a few non-test arguments
-        # before the tests. Skip these.
-        continue
-      raw_test, dependency = test_desc.split('<')
-      if dependency != '':
-        dependency = raw_test.split('/')[0] + '/' + dependency
-      else:
-        dependency = None
-      test = testcase.TestCase(self, raw_test, dependency=dependency)
-      tests.append(test)
-    tests.sort()
-    return tests
 
-  def GetFlagsForTestCase(self, testcase, context):
-    testname = testcase.path.split(os.path.sep)[-1]
-    serialization_file = os.path.join(self.serdes_dir, "serdes_" + testname)
-    serialization_file += ''.join(testcase.flags).replace('-', '_')
-    return (testcase.flags + [testcase.path] + context.mode_flags +
-            ["--testing_serialization_file=" + serialization_file])
-
-  def shell(self):
-    return "cctest"
+    return sorted(output.stdout.strip().split())
 
 
-def GetSuite(name, root):
-  return CcTestSuite(name, root)
+class TestSuite(testsuite.TestSuite):
+  def _test_loader_class(self):
+    return TestLoader
+
+  def _test_class(self):
+    return TestCase
+
+
+class TestCase(testcase.TestCase):
+  def get_shell(self):
+    return SHELL
+
+  def _get_files_params(self):
+    return [self.path]
+
+  def _get_resources(self):
+    # Bytecode-generator tests are the only ones requiring extra files on
+    # Android.
+    parts = self.name.split('/')
+    if parts[0] == 'test-bytecode-generator':
+      expectation_file = os.path.join(
+          self.suite.root, 'interpreter', 'bytecode_expectations',
+          '%s.golden' % parts[1])
+      if os.path.exists(expectation_file):
+        return [expectation_file]
+    return []
+
+
+def GetSuite(*args, **kwargs):
+  return TestSuite(*args, **kwargs)

@@ -1,35 +1,55 @@
+// Copyright Joyent, Inc. and other Node contributors.
+//
+// Permission is hereby granted, free of charge, to any person obtaining a
+// copy of this software and associated documentation files (the
+// "Software"), to deal in the Software without restriction, including
+// without limitation the rights to use, copy, modify, merge, publish,
+// distribute, sublicense, and/or sell copies of the Software, and to permit
+// persons to whom the Software is furnished to do so, subject to the
+// following conditions:
+//
+// The above copyright notice and this permission notice shall be included
+// in all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+// MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN
+// NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+// DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
+// OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
+// USE OR OTHER DEALINGS IN THE SOFTWARE.
+
 #ifndef SRC_NODE_CRYPTO_BIO_H_
 #define SRC_NODE_CRYPTO_BIO_H_
 
 #if defined(NODE_WANT_INTERNALS) && NODE_WANT_INTERNALS
 
+#include "node_crypto.h"
 #include "openssl/bio.h"
-#include "env.h"
-#include "env-inl.h"
 #include "util.h"
-#include "util-inl.h"
 #include "v8.h"
 
 namespace node {
 
-class NodeBIO {
+class Environment;
+
+namespace crypto {
+
+// This class represents buffers for OpenSSL I/O, implemented as a singly-linked
+// list of chunks. It can be used either for writing data from Node to OpenSSL,
+// or for reading data back, but not both.
+// The structure is only accessed, and owned by, the OpenSSL BIOPointer
+// (a.k.a. std::unique_ptr<BIO>).
+class NodeBIO : public MemoryRetainer {
  public:
-  NodeBIO() : env_(nullptr),
-              initial_(kInitialBufferLength),
-              length_(0),
-              read_head_(nullptr),
-              write_head_(nullptr) {
-  }
+  ~NodeBIO() override;
 
-  ~NodeBIO();
-
-  static BIO* New();
+  static BIOPointer New(Environment* env = nullptr);
 
   // NewFixed takes a copy of `len` bytes from `data` and returns a BIO that,
   // when read from, returns those bytes followed by EOF.
-  static BIO* NewFixed(const char* data, size_t len);
-
-  void AssignEnvironment(Environment* env);
+  static BIOPointer NewFixed(const char* data, size_t len,
+                             Environment* env = nullptr);
 
   // Move read head to next buffer if needed
   void TryMoveReadHead();
@@ -62,11 +82,12 @@ class NodeBIO {
   // Put `len` bytes from `data` into buffer
   void Write(const char* data, size_t size);
 
-  // Return pointer to internal data and amount of
-  // contiguous data available for future writes
+  // Return pointer to contiguous block of reserved data and the size available
+  // for future writes. Call Commit() once the write is complete.
   char* PeekWritable(size_t* size);
 
-  // Commit reserved data
+  // Specify how much data was written into the block returned by
+  // PeekWritable().
   void Commit(size_t size);
 
 
@@ -75,14 +96,26 @@ class NodeBIO {
     return length_;
   }
 
+  inline void set_eof_return(int num) {
+    eof_return_ = num;
+  }
+
+  inline int eof_return() {
+    return eof_return_;
+  }
+
   inline void set_initial(size_t initial) {
     initial_ = initial;
   }
 
-  static inline NodeBIO* FromBIO(BIO* bio) {
-    CHECK_NE(bio->ptr, nullptr);
-    return static_cast<NodeBIO*>(bio->ptr);
+  static NodeBIO* FromBIO(BIO* bio);
+
+  void MemoryInfo(MemoryTracker* tracker) const override {
+    tracker->TrackFieldWithSize("buffer", length_, "NodeBIO::Buffer");
   }
+
+  SET_MEMORY_INFO_NAME(NodeBIO)
+  SET_SELF_SIZE(NodeBIO)
 
  private:
   static int New(BIO* bio);
@@ -91,13 +124,14 @@ class NodeBIO {
   static int Write(BIO* bio, const char* data, int len);
   static int Puts(BIO* bio, const char* str);
   static int Gets(BIO* bio, char* out, int size);
-  static long Ctrl(BIO* bio, int cmd, long num, void* ptr);
+  static long Ctrl(BIO* bio, int cmd, long num,  // NOLINT(runtime/int)
+                   void* ptr);
+
+  static const BIO_METHOD* GetMethod();
 
   // Enough to handle the most of the client hellos
   static const size_t kInitialBufferLength = 1024;
   static const size_t kThroughputBufferLength = 16384;
-
-  static const BIO_METHOD method;
 
   class Buffer {
    public:
@@ -127,13 +161,17 @@ class NodeBIO {
     char* data_;
   };
 
-  Environment* env_;
-  size_t initial_;
-  size_t length_;
-  Buffer* read_head_;
-  Buffer* write_head_;
+  Environment* env_ = nullptr;
+  size_t initial_ = kInitialBufferLength;
+  size_t length_ = 0;
+  int eof_return_ = -1;
+  Buffer* read_head_ = nullptr;
+  Buffer* write_head_ = nullptr;
+
+  friend void node::crypto::InitCryptoOnce();
 };
 
+}  // namespace crypto
 }  // namespace node
 
 #endif  // defined(NODE_WANT_INTERNALS) && NODE_WANT_INTERNALS

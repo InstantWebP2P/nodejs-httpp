@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <memory>
 #include <sstream>
 
 #include "src/compiler/operator.h"
@@ -67,11 +68,10 @@ TEST(TestOperator_Equals) {
   CHECK(!op2b.Equals(&op1b));
 }
 
-
-static v8::base::SmartArrayPointer<const char> OperatorToString(Operator* op) {
+static std::unique_ptr<char[]> OperatorToString(Operator* op) {
   std::ostringstream os;
   os << *op;
-  return v8::base::SmartArrayPointer<const char>(StrDup(os.str().c_str()));
+  return std::unique_ptr<char[]>(StrDup(os.str().c_str()));
 }
 
 
@@ -261,7 +261,7 @@ TEST(TestOpParameter_Operator1float) {
 
 
 TEST(TestOpParameter_Operator1int) {
-  int values[] = {7777, -66, 0, 11, 1, 0x666aff};
+  int values[] = {7777, -66, 0, 11, 1, 0x666AFF};
 
   for (size_t i = 0; i < arraysize(values); i++) {
     Operator1<int> op(33, NONE, "Scurvy", 0, 0, 0, 0, 0, 0, values[i]);
@@ -280,6 +280,9 @@ TEST(Operator_CountsOrder) {
   CHECK_EQ(55, op.EffectOutputCount());
   CHECK_EQ(66, op.ControlOutputCount());
 }
+
+#undef NONE
+#undef FOLD
 
 }  // namespace compiler
 }  // namespace internal

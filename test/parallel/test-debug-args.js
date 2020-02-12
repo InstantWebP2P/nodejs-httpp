@@ -1,7 +1,10 @@
 'use strict';
 // Flags: --debug-code
 
-require('../common');
-var assert = require('assert');
+const common = require('../common');
+const assert = require('assert');
 
-assert.notEqual(process.execArgv.indexOf('--debug-code'), -1);
+if (!common.isMainThread)
+  common.skip('execArgv does not affect Workers');
+
+assert(process.execArgv.includes('--debug-code'));

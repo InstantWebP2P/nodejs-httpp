@@ -1,0 +1,20 @@
+{
+  "name": "node-lint-md-cli-rollup",
+  "description": "remark packaged for Node.js Markdown linting",
+  "version": "2.0.1",
+  "devDependencies": {
+    "@zeit/ncc": "^0.21.0"
+  },
+  "dependencies": {
+    "markdown-extensions": "^1.1.1",
+    "remark": "^11.0.2",
+    "remark-lint": "^6.0.5",
+    "remark-preset-lint-node": "^1.11.0",
+    "unified-args": "^7.1.0"
+  },
+  "main": "src/cli-entry.js",
+  "scripts": {
+    "build": "ncc build -m",
+    "build-node": "npm run build && cp dist/index.js ../lint-md.js"
+  }
+}

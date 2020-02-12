@@ -26,6 +26,9 @@
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+# for py2/py3 compatibility
+from __future__ import print_function
+
 import argparse
 import os
 import sys
@@ -46,7 +49,7 @@ class Preparation(Step):
 
     if(self["current_branch"] == self.Config("CANDIDATESBRANCH")
        or self["current_branch"] == self.Config("BRANCHNAME")):
-      print "Warning: Script started on branch %s" % self["current_branch"]
+      print("Warning: Script started on branch %s" % self["current_branch"])
 
     self.PrepareBranch()
     self.DeleteBranch(self.Config("CANDIDATESBRANCH"))
@@ -119,24 +122,6 @@ class DetectLastRelease(Step):
 class PrepareChangeLog(Step):
   MESSAGE = "Prepare raw ChangeLog entry."
 
-  def Reload(self, body):
-    """Attempts to reload the commit message from rietveld in order to allow
-    late changes to the LOG flag. Note: This is brittle to future changes of
-    the web page name or structure.
-    """
-    match = re.search(r"^Review URL: https://codereview\.chromium\.org/(\d+)$",
-                      body, flags=re.M)
-    if match:
-      cl_url = ("https://codereview.chromium.org/%s/description"
-                % match.group(1))
-      try:
-        # Fetch from Rietveld but only retry once with one second delay since
-        # there might be many revisions.
-        body = self.ReadURL(cl_url, wait_plan=[1])
-      except urllib2.URLError:  # pragma: no cover
-        pass
-    return body
-
   def RunStep(self):
     self["date"] = self.GetDate()
     output = "%s: Version %s\n\n" % (self["date"], self["version"])
@@ -149,7 +134,7 @@ class PrepareChangeLog(Step):
     commit_messages = [
       [
         self.GitLog(n=1, format="%s", git_hash=commit),
-        self.Reload(self.GitLog(n=1, format="%B", git_hash=commit)),
+        self.GitLog(n=1, format="%B", git_hash=commit),
         self.GitLog(n=1, format="%an", git_hash=commit),
       ] for commit in commits.splitlines()
     ]
@@ -365,10 +350,10 @@ class PushToCandidates(ScriptsBase):
 
   def _ProcessOptions(self, options):  # pragma: no cover
     if not options.manual and not options.reviewer:
-      print "A reviewer (-r) is required in (semi-)automatic mode."
+      print("A reviewer (-r) is required in (semi-)automatic mode.")
       return False
     if not options.manual and not options.author:
-      print "Specify your chromium.org email with -a in (semi-)automatic mode."
+      print("Specify your chromium.org email with -a in (semi-)automatic mode.")
       return False
 
     options.tbr_commit = not options.manual

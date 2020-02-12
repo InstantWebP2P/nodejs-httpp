@@ -1,91 +1,109 @@
-var fs = require('graceful-fs')
-var path = require('path')
-var osenv = require('osenv')
-var mkdirp = require('mkdirp')
-var mr = require('npm-registry-mock')
-var rimraf = require('rimraf')
-var test = require('tap').test
+'use strict'
+const path = require('path')
+const test = require('tap').test
+const mr = require('npm-registry-mock')
+const Tacks = require('tacks')
+const File = Tacks.File
+const Symlink = Tacks.Symlink
+const Dir = Tacks.Dir
+const common = require('../common-tap.js')
 
-var common = require('../common-tap.js')
+const basedir = common.pkg
+const testdir = path.join(basedir, 'testdir')
+const cachedir = common.cache
+const globaldir = path.join(basedir, 'global')
+const tmpdir = path.join(basedir, 'tmp')
 
-var pkg = path.resolve(__dirname, 'update-symlink')
-var originalLog
-
-var fakeRoot = path.join(__dirname, 'fakeRoot')
-var OPTS = {
-  env: {
-    'npm_config_prefix': fakeRoot
-  }
+const conf = {
+  cwd: path.join(testdir, 'main'),
+  env: Object.assign({}, process.env, {
+    npm_config_cache: cachedir,
+    npm_config_tmp: tmpdir,
+    npm_config_prefix: globaldir,
+    npm_config_registry: common.registry,
+    npm_config_loglevel: 'warn'
+  })
 }
 
-var jsonLocal = {
-  name: 'my-local-package',
-  description: 'fixture',
-  version: '1.0.0',
-  dependencies: {
-    'async': '*',
-    'underscore': '*'
-  }
-}
-
-test('setup', function (t) {
-  cleanup()
-  originalLog = console.log
-  mkdirp.sync(pkg)
-  common.npm(['install', '-g', 'underscore@1.3.1'], OPTS, function (err, c, out) {
-    t.ifError(err, 'global install did not error')
-    process.chdir(pkg)
-    fs.writeFileSync(
-      path.join(pkg, 'package.json'),
-      JSON.stringify(jsonLocal, null, 2)
-    )
-    common.npm(['link', 'underscore'], OPTS, function (err, c, out) {
-      t.ifError(err, 'link did not error')
-      common.npm(['install', 'async@0.2.9'], OPTS, function (err, c, out) {
-        t.ifError(err, 'local install did not error')
-        common.npm(['ls'], OPTS, function (err, c, out, stderr) {
-          t.ifError(err)
-          t.equal(c, 0)
-          t.equal(stderr, '', 'got expected stderr')
-          t.has(out, /async@0.2.9/, 'installed ok')
-          t.has(out, /underscore@1.3.1/, 'creates local link ok')
-          t.end()
-        })
+let server
+const fixture = new Tacks(Dir({
+  cache: Dir(),
+  global: Dir(),
+  tmp: Dir(),
+  testdir: Dir({
+    broken: Dir({
+      'package.json': File({
+        name: 'broken',
+        version: '1.0.0'
+      })
+    }),
+    main: Dir({
+      node_modules: Dir({
+        unbroken: Symlink('/testdir/unbroken')
+      }),
+      'package-lock.json': File({
+        name: 'main',
+        version: '1.0.0',
+        lockfileVersion: 1,
+        requires: true,
+        dependencies: {
+          broken: {
+            version: 'file:../broken'
+          },
+          unbroken: {
+            version: 'file:../unbroken'
+          }
+        }
+      }),
+      'package.json': File({
+        name: 'main',
+        version: '1.0.0',
+        dependencies: {
+          broken: 'file:../broken',
+          unbroken: 'file:../unbroken'
+        }
+      })
+    }),
+    unbroken: Dir({
+      'package.json': File({
+        name: 'unbroken',
+        version: '1.0.0'
       })
     })
   })
+}))
+
+function setup () {
+  cleanup()
+  fixture.create(basedir)
+}
+
+function cleanup () {
+  fixture.remove(basedir)
+}
+
+test('setup', function (t) {
+  setup()
+  mr({port: common.port, throwOnUnmatched: true}, function (err, s) {
+    if (err) throw err
+    server = s
+    t.done()
+  })
 })
 
-test('when update is called linked packages should be excluded', function (t) {
-  console.log = function () {}
-  mr({ port: common.port }, function (er, s) {
-    common.npm(['update'], OPTS, function (err, c, out, stderr) {
-      t.ifError(err)
-      t.has(out, /async@1.5.2/, 'updated ok')
-      t.doesNotHave(stderr, /ERR!/, 'no errors in stderr')
-      s.close()
-      t.end()
-    })
+test('update fixes broken links', function (t) {
+  common.npm(['update'], conf, function (err, code, stdout, stderr) {
+    if (err) throw err
+    t.is(code, 0, 'command ran ok')
+    t.comment(stdout.trim())
+    t.comment(stderr.trim())
+    t.match(stdout, '+ broken@1.0.0')
+    t.done()
   })
 })
 
 test('cleanup', function (t) {
-  common.npm(['rm', 'underscore', 'async'], OPTS, function (err, code) {
-    t.ifError(err, 'npm removed the linked package without error')
-    t.equal(code, 0, 'cleanup in local ok')
-    process.chdir(osenv.tmpdir())
-    common.npm(['rm', '-g', 'underscore'], OPTS, function (err, code) {
-      t.ifError(err, 'npm removed the global package without error')
-      t.equal(code, 0, 'cleanup in global ok')
-
-      console.log = originalLog
-      cleanup()
-      t.end()
-    })
-  })
+  server.close()
+  cleanup()
+  t.done()
 })
-
-function cleanup () {
-  rimraf.sync(pkg)
-  rimraf.sync(fakeRoot)
-}

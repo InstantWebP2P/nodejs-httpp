@@ -29,7 +29,7 @@
 #include <stdlib.h>
 
 #if defined(_MSC_VER) && _MSC_VER < 1600
-# include "stdint-msvc2008.h"
+# include "uv/stdint-msvc2008.h"
 #else
 # include <stdint.h>
 #endif
@@ -42,6 +42,10 @@
 #ifdef __clang__
 # pragma clang diagnostic ignored "-Wvariadic-macros"
 # pragma clang diagnostic ignored "-Wc99-extensions"
+#endif
+
+#ifdef __GNUC__
+# pragma GCC diagnostic ignored "-Wvariadic-macros"
 #endif
 
 #define TEST_PORT 9123
@@ -127,29 +131,18 @@ typedef enum {
   int run_helper_##name(void);                                                \
   int run_helper_##name(void)
 
-/* Pause the calling thread for a number of milliseconds. */
-void uv_sleep(int msec);
-
 /* Format big numbers nicely. WARNING: leaks memory. */
 const char* fmt(double d);
 
 /* Reserved test exit codes. */
 enum test_status {
   TEST_OK = 0,
-  TEST_TODO,
   TEST_SKIP
 };
 
 #define RETURN_OK()                                                           \
   do {                                                                        \
     return TEST_OK;                                                           \
-  } while (0)
-
-#define RETURN_TODO(explanation)                                              \
-  do {                                                                        \
-    fprintf(stderr, "%s\n", explanation);                                     \
-    fflush(stderr);                                                           \
-    return TEST_TODO;                                                         \
   } while (0)
 
 #define RETURN_SKIP(explanation)                                              \
@@ -182,11 +175,16 @@ extern int snprintf(char*, size_t, const char*, ...);
 
 #if defined(__clang__) ||                                \
     defined(__GNUC__) ||                                 \
-    defined(__INTEL_COMPILER) ||                         \
-    defined(__SUNPRO_C)
+    defined(__INTEL_COMPILER)
 # define UNUSED __attribute__((unused))
 #else
 # define UNUSED
+#endif
+
+#if defined(_WIN32)
+#define notify_parent_process() ((void) 0)
+#else
+extern void notify_parent_process(void);
 #endif
 
 /* Fully close a loop */
@@ -216,5 +214,25 @@ UNUSED static int can_ipv6(void) {
   uv_free_interface_addresses(addr, count);
   return supported;
 }
+
+#if defined(__CYGWIN__) || defined(__MSYS__) || defined(__PASE__)
+# define NO_FS_EVENTS "Filesystem watching not supported on this platform."
+#endif
+
+#if defined(__MSYS__)
+# define NO_SEND_HANDLE_ON_PIPE \
+  "MSYS2 runtime does not support sending handles on pipes."
+#elif defined(__CYGWIN__)
+# define NO_SEND_HANDLE_ON_PIPE \
+  "Cygwin runtime does not support sending handles on pipes."
+#endif
+
+#if defined(__MSYS__)
+# define NO_SELF_CONNECT \
+  "MSYS2 runtime hangs on listen+connect in same process."
+#elif defined(__CYGWIN__)
+# define NO_SELF_CONNECT \
+  "Cygwin runtime hangs on listen+connect in same process."
+#endif
 
 #endif /* TASK_H_ */

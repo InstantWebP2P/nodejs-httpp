@@ -47,6 +47,7 @@ namespace {
 
 typedef std::string MangledName;
 typedef std::set<MangledName> CalleesSet;
+typedef std::map<MangledName, MangledName> CalleesMap;
 
 static bool GetMangledName(clang::MangleContext* ctx,
                            const clang::NamedDecl* decl,
@@ -138,14 +139,16 @@ class CalleesPrinter : public clang::RecursiveASTVisitor<CalleesPrinter> {
   virtual bool VisitDeclRefExpr(clang::DeclRefExpr* expr) {
     // If function mentions EXTERNAL VMState add artificial garbage collection
     // mark.
-    if (IsExternalVMState(expr->getDecl())) AddCallee("CollectGarbage");
+    if (IsExternalVMState(expr->getDecl()))
+      AddCallee("CollectGarbage", "CollectGarbage");
     return true;
   }
 
   void AnalyzeFunction(const clang::FunctionDecl* f) {
     MangledName name;
     if (InV8Namespace(f) && GetMangledName(ctx_, f, &name)) {
-      AddCallee(name);
+      const std::string& function = f->getNameAsString();
+      AddCallee(name, function);
 
       const clang::FunctionDecl* body = NULL;
       if (f->hasBody(body) && !Analyzed(name)) {
@@ -176,21 +179,22 @@ class CalleesPrinter : public clang::RecursiveASTVisitor<CalleesPrinter> {
     scopes_.pop();
   }
 
-  void AddCallee(const MangledName& name) {
+  void AddCallee(const MangledName& name, const MangledName& function) {
     if (!scopes_.empty()) scopes_.top()->insert(name);
+    mangled_to_function_[name] = function;
   }
 
   void PrintCallGraph() {
     for (Callgraph::const_iterator i = callgraph_.begin(), e = callgraph_.end();
          i != e;
          ++i) {
-      std::cout << i->first << "\n";
+      std::cout << i->first << "," << mangled_to_function_[i->first] << "\n";
 
       CalleesSet* callees = i->second;
       for (CalleesSet::const_iterator j = callees->begin(), e = callees->end();
            j != e;
            ++j) {
-        std::cout << "\t" << *j << "\n";
+        std::cout << "\t" << *j << "," << mangled_to_function_[*j] << "\n";
       }
     }
   }
@@ -200,6 +204,7 @@ class CalleesPrinter : public clang::RecursiveASTVisitor<CalleesPrinter> {
 
   std::stack<CalleesSet* > scopes_;
   Callgraph callgraph_;
+  CalleesMap mangled_to_function_;
 };
 
 
@@ -234,23 +239,40 @@ class FunctionDeclarationFinder
   CalleesPrinter* callees_printer_;
 };
 
-
-static bool loaded = false;
+static bool gc_suspects_loaded = false;
 static CalleesSet gc_suspects;
-
+static CalleesSet gc_functions;
+static bool whitelist_loaded = false;
+static CalleesSet suspects_whitelist;
 
 static void LoadGCSuspects() {
-  if (loaded) return;
+  if (gc_suspects_loaded) return;
 
   std::ifstream fin("gcsuspects");
-  std::string s;
+  std::string mangled, function;
 
-  while (fin >> s) gc_suspects.insert(s);
+  while (!fin.eof()) {
+    std::getline(fin, mangled, ',');
+    gc_suspects.insert(mangled);
+    std::getline(fin, function);
+    gc_functions.insert(function);
+  }
 
-  loaded = true;
+  gc_suspects_loaded = true;
 }
 
+static void LoadSuspectsWhitelist() {
+  if (whitelist_loaded) return;
 
+  std::ifstream fin("tools/gcmole/suspects.whitelist");
+  std::string s;
+
+  while (fin >> s) suspects_whitelist.insert(s);
+
+  whitelist_loaded = true;
+}
+
+// Looks for exact match of the mangled name
 static bool KnownToCauseGC(clang::MangleContext* ctx,
                            const clang::FunctionDecl* decl) {
   LoadGCSuspects();
@@ -265,6 +287,25 @@ static bool KnownToCauseGC(clang::MangleContext* ctx,
   return false;
 }
 
+// Looks for partial match of only the function name
+static bool SuspectedToCauseGC(clang::MangleContext* ctx,
+                               const clang::FunctionDecl* decl) {
+  LoadGCSuspects();
+
+  if (!InV8Namespace(decl)) return false;
+
+  LoadSuspectsWhitelist();
+  if (suspects_whitelist.find(decl->getNameAsString()) !=
+      suspects_whitelist.end()) {
+    return false;
+  }
+
+  if (gc_functions.find(decl->getNameAsString()) != gc_functions.end()) {
+    return true;
+  }
+
+  return false;
+}
 
 static const int kNoEffect = 0;
 static const int kCausesGC = 1;
@@ -318,22 +359,24 @@ const std::string DEAD_VAR_MSG("Possibly dead variable.");
 
 class Environment {
  public:
-  Environment() { }
+  Environment() = default;
 
   static Environment Unreachable() {
     Environment env;
-    env.live_.set();
+    env.unreachable_ = true;
     return env;
   }
 
   static Environment Merge(const Environment& l,
                            const Environment& r) {
-    return Environment(l, r);
+    Environment out(l);
+    out &= r;
+    return out;
   }
 
   Environment ApplyEffect(ExprEffect effect) const {
     Environment out = effect.hasGC() ? Environment() : Environment(*this);
-    if (effect.env() != NULL) out.live_ |= effect.env()->live_;
+    if (effect.env()) out |= *effect.env();
     return out;
   }
 
@@ -342,20 +385,23 @@ class Environment {
   bool IsAlive(const std::string& name) const {
     SymbolTable::iterator code = symbol_table_.find(name);
     if (code == symbol_table_.end()) return false;
-    return live_[code->second];
+    return is_live(code->second);
   }
 
   bool Equal(const Environment& env) {
-    return live_ == env.live_;
+    if (unreachable_ && env.unreachable_) return true;
+    size_t size = std::max(live_.size(), env.live_.size());
+    for (size_t i = 0; i < size; ++i) {
+      if (is_live(i) != env.is_live(i)) return false;
+    }
+    return true;
   }
 
   Environment Define(const std::string& name) const {
     return Environment(*this, SymbolToCode(name));
   }
 
-  void MDefine(const std::string& name) {
-    live_.set(SymbolToCode(name));
-  }
+  void MDefine(const std::string& name) { set_live(SymbolToCode(name)); }
 
   static int SymbolToCode(const std::string& name) {
     SymbolTable::iterator code = symbol_table_.find(name);
@@ -370,12 +416,7 @@ class Environment {
   }
 
   static void ClearSymbolTable() {
-    std::vector<Environment*>::iterator end = envs_.end();
-    for (std::vector<Environment*>::iterator i = envs_.begin();
-         i != end;
-         ++i) {
-      delete *i;
-    }
+    for (Environment* e : envs_) delete e;
     envs_.clear();
     symbol_table_.clear();
   }
@@ -383,15 +424,11 @@ class Environment {
   void Print() const {
     bool comma = false;
     std::cout << "{";
-    SymbolTable::iterator end = symbol_table_.end();
-    for (SymbolTable::iterator i = symbol_table_.begin();
-         i != end;
-         ++i) {
-      if (live_[i->second]) {
-        if (comma) std::cout << ", ";
-        std::cout << i->first;
-        comma = true;
-      }
+    for (auto& e : symbol_table_) {
+      if (!is_live(e.second)) continue;
+      if (comma) std::cout << ", ";
+      std::cout << e.first;
+      comma = true;
     }
     std::cout << "}";
   }
@@ -403,20 +440,54 @@ class Environment {
   }
 
  private:
-  Environment(const Environment& l, const Environment& r)
-      : live_(l.live_ & r.live_) {
-  }
-
   Environment(const Environment& l, int code)
       : live_(l.live_) {
-    live_.set(code);
+    set_live(code);
+  }
+
+  void set_live(size_t pos) {
+    if (unreachable_) return;
+    if (pos >= live_.size()) live_.resize(pos + 1);
+    live_[pos] = true;
+  }
+
+  bool is_live(size_t pos) const {
+    return unreachable_ || (live_.size() > pos && live_[pos]);
+  }
+
+  Environment& operator|=(const Environment& o) {
+    if (o.unreachable_) {
+      unreachable_ = true;
+      live_.clear();
+    } else if (!unreachable_) {
+      for (size_t i = 0, e = o.live_.size(); i < e; ++i) {
+        if (o.live_[i]) set_live(i);
+      }
+    }
+    return *this;
+  }
+
+  Environment& operator&=(const Environment& o) {
+    if (o.unreachable_) return *this;
+    if (unreachable_) return *this = o;
+
+    // Carry over false bits from the tail of o.live_, and reset all bits that
+    // are not set in o.live_.
+    size_t size = std::max(live_.size(), o.live_.size());
+    if (size > live_.size()) live_.resize(size);
+    for (size_t i = 0; i < size; ++i) {
+      if (live_[i] && (i >= o.live_.size() || !o.live_[i])) live_[i] = false;
+    }
+    return *this;
   }
 
   static SymbolTable symbol_table_;
-  static std::vector<Environment* > envs_;
+  static std::vector<Environment*> envs_;
 
-  static const int kMaxNumberOfLocals = 256;
-  std::bitset<kMaxNumberOfLocals> live_;
+  std::vector<bool> live_;
+  // unreachable_ == true implies live_.empty(), but still is_live(i) returns
+  // true for all i.
+  bool unreachable_ = false;
 
   friend class ExprEffect;
   friend class CallProps;
@@ -428,28 +499,40 @@ class CallProps {
   CallProps() : env_(NULL) { }
 
   void SetEffect(int arg, ExprEffect in) {
-    if (in.hasGC()) gc_.set(arg);
+    if (in.hasGC()) {
+      gc_.set(arg);
+    }
     if (in.hasRawDef()) raw_def_.set(arg);
     if (in.hasRawUse()) raw_use_.set(arg);
     if (in.env() != NULL) {
-      if (env_ == NULL) env_ = in.env();
-      env_->live_ |= in.env()->live_;
+      if (env_ == NULL) {
+        env_ = in.env();
+      } else {
+        *env_ |= *in.env();
+      }
     }
   }
 
   ExprEffect ComputeCumulativeEffect(bool result_is_raw) {
     ExprEffect out = ExprEffect::NoneWithEnv(env_);
-    if (gc_.any()) out.setGC();
+    if (gc_.any()) {
+      out.setGC();
+    }
     if (raw_use_.any()) out.setRawUse();
     if (result_is_raw) out.setRawDef();
     return out;
   }
 
   bool IsSafe() {
-    if (!gc_.any()) return true;
+    if (!gc_.any()) {
+      return true;
+    }
     std::bitset<kMaxNumberOfArguments> raw = (raw_def_ | raw_use_);
-    if (!raw.any()) return true;
-    return gc_.count() == 1 && !((raw ^ gc_).any());
+    if (!raw.any()) {
+      return true;
+    }
+    bool result = gc_.count() == 1 && !((raw ^ gc_).any());
+    return result;
   }
 
  private:
@@ -462,8 +545,7 @@ class CallProps {
 
 
 Environment::SymbolTable Environment::symbol_table_;
-std::vector<Environment* > Environment::envs_;
-
+std::vector<Environment*> Environment::envs_;
 
 ExprEffect ExprEffect::Merge(ExprEffect a, ExprEffect b) {
   Environment* a_env = a.env();
@@ -471,7 +553,7 @@ ExprEffect ExprEffect::Merge(ExprEffect a, ExprEffect b) {
   Environment* out = NULL;
   if (a_env != NULL && b_env != NULL) {
     out = Environment::Allocate(*a_env);
-    out->live_ &= b_env->live_;
+    *out &= *b_env;
   }
   return ExprEffect(a.effect_ | b.effect_, out);
 }
@@ -483,7 +565,7 @@ ExprEffect ExprEffect::MergeSeq(ExprEffect a, ExprEffect b) {
   Environment* out = (b_env == NULL) ? a_env : b_env;
   if (a_env != NULL && b_env != NULL) {
     out = Environment::Allocate(*b_env);
-    out->live_ |= a_env->live_;
+    *out |= *a_env;
   }
   return ExprEffect(a.effect_ | b.effect_, out);
 }
@@ -505,19 +587,18 @@ static std::string THIS ("this");
 class FunctionAnalyzer {
  public:
   FunctionAnalyzer(clang::MangleContext* ctx,
-                   clang::DeclarationName handle_decl_name,
                    clang::CXXRecordDecl* object_decl,
+                   clang::CXXRecordDecl* maybe_object_decl,
                    clang::CXXRecordDecl* smi_decl, clang::DiagnosticsEngine& d,
                    clang::SourceManager& sm, bool dead_vars_analysis)
       : ctx_(ctx),
-        handle_decl_name_(handle_decl_name),
         object_decl_(object_decl),
+        maybe_object_decl_(maybe_object_decl),
         smi_decl_(smi_decl),
         d_(d),
         sm_(sm),
         block_(NULL),
         dead_vars_analysis_(dead_vars_analysis) {}
-
 
   // --------------------------------------------------------------------------
   // Expressions
@@ -542,6 +623,7 @@ class FunctionAnalyzer {
     VISIT(CharacterLiteral);
     VISIT(ChooseExpr);
     VISIT(CompoundLiteralExpr);
+    VISIT(ConstantExpr);
     VISIT(CXXBindTemporaryExpr);
     VISIT(CXXBoolLiteralExpr);
     VISIT(CXXConstructExpr);
@@ -566,9 +648,11 @@ class FunctionAnalyzer {
     VISIT(FloatingLiteral);
     VISIT(GNUNullExpr);
     VISIT(ImaginaryLiteral);
+    VISIT(ImplicitCastExpr);
     VISIT(ImplicitValueInitExpr);
     VISIT(InitListExpr);
     VISIT(IntegerLiteral);
+    VISIT(MaterializeTemporaryExpr);
     VISIT(MemberExpr);
     VISIT(OffsetOfExpr);
     VISIT(OpaqueValueExpr);
@@ -584,6 +668,7 @@ class FunctionAnalyzer {
     VISIT(SubstNonTypeTemplateParmPackExpr);
     VISIT(TypeTraitExpr);
     VISIT(UnaryOperator);
+    VISIT(UnaryExprOrTypeTraitExpr);
     VISIT(VAArgExpr);
 #undef VISIT
 
@@ -653,6 +738,7 @@ class FunctionAnalyzer {
           llvm::cast<clang::DeclRefExpr>(expr)->getDecl()->getNameAsString();
       return true;
     }
+
     return false;
   }
 
@@ -669,14 +755,6 @@ class FunctionAnalyzer {
       case clang::BO_LOr:
         return ExprEffect::Merge(VisitExpr(lhs, env), VisitExpr(rhs, env));
 
-      case clang::BO_Assign: {
-        std::string var_name;
-        if (IsRawPointerVar(lhs, &var_name)) {
-          return VisitExpr(rhs, env).Define(var_name);
-        }
-        return Par(expr, 2, exprs, env);
-      }
-
       default:
         return Par(expr, 2, exprs, env);
     }
@@ -684,6 +762,10 @@ class FunctionAnalyzer {
 
   DECL_VISIT_EXPR(CXXBindTemporaryExpr) {
     return VisitExpr(expr->getSubExpr(), env);
+  }
+
+  DECL_VISIT_EXPR(MaterializeTemporaryExpr) {
+    return VisitExpr(expr->GetTemporaryExpr(), env);
   }
 
   DECL_VISIT_EXPR(CXXConstructExpr) {
@@ -708,6 +790,12 @@ class FunctionAnalyzer {
     return VisitExpr(expr->getSubExpr(), env);
   }
 
+  DECL_VISIT_EXPR(ImplicitCastExpr) {
+    return VisitExpr(expr->getSubExpr(), env);
+  }
+
+  DECL_VISIT_EXPR(ConstantExpr) { return VisitExpr(expr->getSubExpr(), env); }
+
   DECL_VISIT_EXPR(InitListExpr) {
     return Seq(expr, expr->getNumInits(), expr->getInits(), env);
   }
@@ -729,11 +817,11 @@ class FunctionAnalyzer {
   }
 
   DECL_VISIT_EXPR(UnaryOperator) {
-    // TODO We are treating all expressions that look like &raw_pointer_var
-    //      as definitions of raw_pointer_var. This should be changed to
-    //      recognize less generic pattern:
+    // TODO(mstarzinger): We are treating all expressions that look like
+    // {&raw_pointer_var} as definitions of {raw_pointer_var}. This should be
+    // changed to recognize less generic pattern:
     //
-    //         if (maybe_object->ToObject(&obj)) return maybe_object;
+    //   if (maybe_object->ToObject(&obj)) return maybe_object;
     //
     if (expr->getOpcode() == clang::UO_AddrOf) {
       std::string var_name;
@@ -742,6 +830,14 @@ class FunctionAnalyzer {
       }
     }
     return VisitExpr(expr->getSubExpr(), env);
+  }
+
+  DECL_VISIT_EXPR(UnaryExprOrTypeTraitExpr) {
+    if (expr->isArgumentType()) {
+      return ExprEffect::None();
+    }
+
+    return VisitExpr(expr->getArgumentExpr(), env);
   }
 
   DECL_VISIT_EXPR(CastExpr) {
@@ -764,7 +860,8 @@ class FunctionAnalyzer {
 
     if (!props.IsSafe()) ReportUnsafe(parent, BAD_EXPR_MSG);
 
-    return props.ComputeCumulativeEffect(IsRawPointerType(parent->getType()));
+    return props.ComputeCumulativeEffect(
+        RepresentsRawPointerType(parent->getType()));
   }
 
   ExprEffect Seq(clang::Stmt* parent,
@@ -784,7 +881,7 @@ class FunctionAnalyzer {
                  const clang::QualType& var_type,
                  const std::string& var_name,
                  const Environment& env) {
-    if (IsRawPointerType(var_type)) {
+    if (RepresentsRawPointerType(var_type)) {
       if (!env.IsAlive(var_name) && dead_vars_analysis_) {
         ReportUnsafe(parent, DEAD_VAR_MSG);
       }
@@ -808,7 +905,8 @@ class FunctionAnalyzer {
     CallProps props;
     VisitArguments<>(call, &props, env);
     if (!props.IsSafe()) ReportUnsafe(call, BAD_EXPR_MSG);
-    return props.ComputeCumulativeEffect(IsRawPointerType(call->getType()));
+    return props.ComputeCumulativeEffect(
+        RepresentsRawPointerType(call->getType()));
   }
 
   template<typename ExprType>
@@ -832,16 +930,51 @@ class FunctionAnalyzer {
       props.SetEffect(0, VisitExpr(receiver, env));
     }
 
-    VisitArguments<>(call, &props, env);
+    std::string var_name;
+    clang::CXXOperatorCallExpr* opcall =
+        llvm::dyn_cast_or_null<clang::CXXOperatorCallExpr>(call);
+    if (opcall != NULL && opcall->isAssignmentOp() &&
+        IsRawPointerVar(opcall->getArg(0), &var_name)) {
+      // TODO(mstarzinger): We are treating all assignment operator calls with
+      // the left hand side looking like {raw_pointer_var} as safe independent
+      // of the concrete assignment operator implementation. This should be
+      // changed to be more narrow only if the assignment operator of the base
+      // {Object} or {HeapObject} class was used, which we know to be safe.
+      props.SetEffect(1, VisitExpr(call->getArg(1), env).Define(var_name));
+    } else {
+      VisitArguments<>(call, &props, env);
+    }
 
     if (!props.IsSafe()) ReportUnsafe(call, BAD_EXPR_MSG);
 
-    ExprEffect out =
-        props.ComputeCumulativeEffect(IsRawPointerType(call->getType()));
+    ExprEffect out = props.ComputeCumulativeEffect(
+        RepresentsRawPointerType(call->getType()));
 
     clang::FunctionDecl* callee = call->getDirectCallee();
-    if ((callee != NULL) && KnownToCauseGC(ctx_, callee)) {
-      out.setGC();
+    if (callee != NULL) {
+      if (KnownToCauseGC(ctx_, callee)) {
+        out.setGC();
+      }
+
+      clang::CXXMethodDecl* method =
+          llvm::dyn_cast_or_null<clang::CXXMethodDecl>(callee);
+      if (method != NULL && method->isVirtual()) {
+        clang::CXXMemberCallExpr* memcall =
+            llvm::dyn_cast_or_null<clang::CXXMemberCallExpr>(call);
+        if (memcall != NULL) {
+          clang::CXXMethodDecl* target = method->getDevirtualizedMethod(
+              memcall->getImplicitObjectArgument(), false);
+          if (target != NULL) {
+            if (KnownToCauseGC(ctx_, target)) {
+              out.setGC();
+            }
+          } else {
+            if (SuspectedToCauseGC(ctx_, method)) {
+              out.setGC();
+            }
+          }
+        }
+      }
     }
 
     return out;
@@ -1072,45 +1205,88 @@ class FunctionAnalyzer {
     }
   }
 
-  bool IsDerivedFrom(clang::CXXRecordDecl* record,
-                     clang::CXXRecordDecl* base) {
+  bool IsDerivedFrom(const clang::CXXRecordDecl* record,
+                     const clang::CXXRecordDecl* base) {
     return (record == base) || record->isDerivedFrom(base);
   }
 
-  bool IsRawPointerType(clang::QualType qtype) {
-    const clang::PointerType* type =
+  const clang::CXXRecordDecl* GetDefinitionOrNull(
+      const clang::CXXRecordDecl* record) {
+    if (record == NULL) {
+      return NULL;
+    }
+
+    if (!InV8Namespace(record)) return NULL;
+
+    if (!record->hasDefinition()) {
+      return NULL;
+    }
+
+    return record->getDefinition();
+  }
+
+  bool IsRawPointerType(const clang::PointerType* type) {
+    const clang::CXXRecordDecl* record = type->getPointeeCXXRecordDecl();
+
+    const clang::CXXRecordDecl* definition = GetDefinitionOrNull(record);
+    if (!definition) {
+      return false;
+    }
+
+    // TODO(mstarzinger): Unify the common parts of {IsRawPointerType} and
+    // {IsInternalPointerType} once gcmole is up and running again.
+    bool result = (IsDerivedFrom(record, object_decl_) &&
+                   !IsDerivedFrom(record, smi_decl_)) ||
+                  IsDerivedFrom(record, maybe_object_decl_);
+    return result;
+  }
+
+  bool IsInternalPointerType(clang::QualType qtype) {
+    if (qtype.isNull()) {
+      return false;
+    }
+    if (qtype->isNullPtrType()) {
+      return true;
+    }
+
+    const clang::CXXRecordDecl* record = qtype->getAsCXXRecordDecl();
+
+    const clang::CXXRecordDecl* definition = GetDefinitionOrNull(record);
+    if (!definition) {
+      return false;
+    }
+
+    // TODO(mstarzinger): Unify the common parts of {IsRawPointerType} and
+    // {IsInternalPointerType} once gcmole is up and running again.
+    bool result = (IsDerivedFrom(record, object_decl_) &&
+                   !IsDerivedFrom(record, smi_decl_)) ||
+                  IsDerivedFrom(record, maybe_object_decl_);
+    return result;
+  }
+
+  // Returns weather the given type is a raw pointer or a wrapper around
+  // such. For V8 that means Object and MaybeObject instances.
+  bool RepresentsRawPointerType(clang::QualType qtype) {
+    const clang::PointerType* pointer_type =
         llvm::dyn_cast_or_null<clang::PointerType>(qtype.getTypePtrOrNull());
-    if (type == NULL) return false;
-
-    const clang::TagType* pointee =
-        ToTagType(type->getPointeeType().getTypePtr());
-    if (pointee == NULL) return false;
-
-    clang::CXXRecordDecl* record =
-        llvm::dyn_cast_or_null<clang::CXXRecordDecl>(pointee->getDecl());
-    if (record == NULL) return false;
-
-    if (!InV8Namespace(record)) return false;
-
-    if (!record->hasDefinition()) return false;
-
-    record = record->getDefinition();
-
-    return IsDerivedFrom(record, object_decl_) &&
-        !IsDerivedFrom(record, smi_decl_);
+    if (pointer_type != NULL) {
+      return IsRawPointerType(pointer_type);
+    } else {
+      return IsInternalPointerType(qtype);
+    }
   }
 
   Environment VisitDecl(clang::Decl* decl, const Environment& env) {
     if (clang::VarDecl* var = llvm::dyn_cast<clang::VarDecl>(decl)) {
       Environment out = var->hasInit() ? VisitStmt(var->getInit(), env) : env;
 
-      if (IsRawPointerType(var->getType())) {
+      if (RepresentsRawPointerType(var->getType())) {
         out = out.Define(var->getNameAsString());
       }
 
       return out;
     }
-    // TODO: handle other declarations?
+    // TODO(mstarzinger): handle other declarations?
     return env;
   }
 
@@ -1167,8 +1343,8 @@ class FunctionAnalyzer {
 
 
   clang::MangleContext* ctx_;
-  clang::DeclarationName handle_decl_name_;
   clang::CXXRecordDecl* object_decl_;
+  clang::CXXRecordDecl* maybe_object_decl_;
   clang::CXXRecordDecl* smi_decl_;
 
   clang::DiagnosticsEngine& d_;
@@ -1199,22 +1375,33 @@ class ProblemsFinder : public clang::ASTConsumer,
         r.ResolveNamespace("v8").ResolveNamespace("internal").
             Resolve<clang::CXXRecordDecl>("Object");
 
+    clang::CXXRecordDecl* maybe_object_decl =
+        r.ResolveNamespace("v8")
+            .ResolveNamespace("internal")
+            .Resolve<clang::CXXRecordDecl>("MaybeObject");
+
     clang::CXXRecordDecl* smi_decl =
         r.ResolveNamespace("v8").ResolveNamespace("internal").
             Resolve<clang::CXXRecordDecl>("Smi");
 
     if (object_decl != NULL) object_decl = object_decl->getDefinition();
 
+    if (maybe_object_decl != NULL)
+      maybe_object_decl = maybe_object_decl->getDefinition();
+
     if (smi_decl != NULL) smi_decl = smi_decl->getDefinition();
 
-    if (object_decl != NULL && smi_decl != NULL) {
+    if (object_decl != NULL && smi_decl != NULL && maybe_object_decl != NULL) {
       function_analyzer_ = new FunctionAnalyzer(
-          clang::ItaniumMangleContext::create(ctx, d_), r.ResolveName("Handle"),
-          object_decl, smi_decl, d_, sm_, dead_vars_analysis_);
+          clang::ItaniumMangleContext::create(ctx, d_), object_decl,
+          maybe_object_decl, smi_decl, d_, sm_, dead_vars_analysis_);
       TraverseDecl(ctx.getTranslationUnitDecl());
     } else {
       if (object_decl == NULL) {
         llvm::errs() << "Failed to resolve v8::internal::Object\n";
+      }
+      if (maybe_object_decl == NULL) {
+        llvm::errs() << "Failed to resolve v8::internal::MaybeObject\n";
       }
       if (smi_decl == NULL) {
         llvm::errs() << "Failed to resolve v8::internal::Smi\n";
@@ -1239,9 +1426,10 @@ class ProblemsFinder : public clang::ASTConsumer,
 template<typename ConsumerType>
 class Action : public clang::PluginASTAction {
  protected:
-  clang::ASTConsumer *CreateASTConsumer(clang::CompilerInstance &CI,
-                                        llvm::StringRef InFile) {
-    return new ConsumerType(CI.getDiagnostics(), CI.getSourceManager(), args_);
+  virtual std::unique_ptr<clang::ASTConsumer> CreateASTConsumer(
+      clang::CompilerInstance& CI, llvm::StringRef InFile) {
+    return std::unique_ptr<clang::ASTConsumer>(
+        new ConsumerType(CI.getDiagnostics(), CI.getSourceManager(), args_));
   }
 
   bool ParseArgs(const clang::CompilerInstance &CI,

@@ -3,139 +3,160 @@
 // found in the LICENSE file.
 
 #include "src/heap/array-buffer-tracker.h"
+
+#include <vector>
+
+#include "src/heap/array-buffer-collector.h"
+#include "src/heap/array-buffer-tracker-inl.h"
 #include "src/heap/heap.h"
-#include "src/isolate.h"
-#include "src/objects.h"
-#include "src/objects-inl.h"
-#include "src/v8.h"
+#include "src/heap/spaces.h"
+
+#define TRACE_BS(...)                                  \
+  do {                                                 \
+    if (FLAG_trace_backing_store) PrintF(__VA_ARGS__); \
+  } while (false)
 
 namespace v8 {
 namespace internal {
 
-ArrayBufferTracker::~ArrayBufferTracker() {
-  Isolate* isolate = heap()->isolate();
+LocalArrayBufferTracker::~LocalArrayBufferTracker() {
+  CHECK(array_buffers_.empty());
+}
+
+template <typename Callback>
+void LocalArrayBufferTracker::Process(Callback callback) {
+  std::vector<std::shared_ptr<BackingStore>> backing_stores_to_free;
+  TrackingData kept_array_buffers;
+
+  JSArrayBuffer new_buffer;
+  JSArrayBuffer old_buffer;
   size_t freed_memory = 0;
-  for (auto& buffer : live_array_buffers_) {
-    isolate->array_buffer_allocator()->Free(buffer.first, buffer.second);
-    freed_memory += buffer.second;
-  }
-  for (auto& buffer : live_array_buffers_for_scavenge_) {
-    isolate->array_buffer_allocator()->Free(buffer.first, buffer.second);
-    freed_memory += buffer.second;
-  }
-  live_array_buffers_.clear();
-  live_array_buffers_for_scavenge_.clear();
-  not_yet_discovered_array_buffers_.clear();
-  not_yet_discovered_array_buffers_for_scavenge_.clear();
-
-  if (freed_memory > 0) {
-    heap()->update_amount_of_external_allocated_memory(
-        -static_cast<int64_t>(freed_memory));
-  }
-}
-
-
-void ArrayBufferTracker::RegisterNew(JSArrayBuffer* buffer) {
-  void* data = buffer->backing_store();
-  if (!data) return;
-
-  bool in_new_space = heap()->InNewSpace(buffer);
-  size_t length = NumberToSize(heap()->isolate(), buffer->byte_length());
-  if (in_new_space) {
-    live_array_buffers_for_scavenge_[data] = length;
-  } else {
-    live_array_buffers_[data] = length;
-  }
-
-  // We may go over the limit of externally allocated memory here. We call the
-  // api function to trigger a GC in this case.
-  reinterpret_cast<v8::Isolate*>(heap()->isolate())
-      ->AdjustAmountOfExternalAllocatedMemory(length);
-}
-
-
-void ArrayBufferTracker::Unregister(JSArrayBuffer* buffer) {
-  void* data = buffer->backing_store();
-  if (!data) return;
-
-  bool in_new_space = heap()->InNewSpace(buffer);
-  std::map<void*, size_t>* live_buffers =
-      in_new_space ? &live_array_buffers_for_scavenge_ : &live_array_buffers_;
-  std::map<void*, size_t>* not_yet_discovered_buffers =
-      in_new_space ? &not_yet_discovered_array_buffers_for_scavenge_
-                   : &not_yet_discovered_array_buffers_;
-
-  DCHECK(live_buffers->count(data) > 0);
-
-  size_t length = (*live_buffers)[data];
-  live_buffers->erase(data);
-  not_yet_discovered_buffers->erase(data);
-
-  heap()->update_amount_of_external_allocated_memory(
-      -static_cast<int64_t>(length));
-}
-
-
-void ArrayBufferTracker::MarkLive(JSArrayBuffer* buffer) {
-  base::LockGuard<base::Mutex> guard(&mutex_);
-  void* data = buffer->backing_store();
-
-  // ArrayBuffer might be in the middle of being constructed.
-  if (data == heap()->undefined_value()) return;
-  if (heap()->InNewSpace(buffer)) {
-    not_yet_discovered_array_buffers_for_scavenge_.erase(data);
-  } else {
-    not_yet_discovered_array_buffers_.erase(data);
-  }
-}
-
-
-void ArrayBufferTracker::FreeDead(bool from_scavenge) {
-  size_t freed_memory = 0;
-  Isolate* isolate = heap()->isolate();
-  for (auto& buffer : not_yet_discovered_array_buffers_for_scavenge_) {
-    isolate->array_buffer_allocator()->Free(buffer.first, buffer.second);
-    freed_memory += buffer.second;
-    live_array_buffers_for_scavenge_.erase(buffer.first);
-  }
-
-  if (!from_scavenge) {
-    for (auto& buffer : not_yet_discovered_array_buffers_) {
-      isolate->array_buffer_allocator()->Free(buffer.first, buffer.second);
-      freed_memory += buffer.second;
-      live_array_buffers_.erase(buffer.first);
+  for (TrackingData::iterator it = array_buffers_.begin();
+       it != array_buffers_.end(); ++it) {
+    old_buffer = it->first;
+    DCHECK_EQ(page_, Page::FromHeapObject(old_buffer));
+    const CallbackResult result = callback(old_buffer, &new_buffer);
+    if (result == kKeepEntry) {
+      kept_array_buffers.insert(std::move(*it));
+    } else if (result == kUpdateEntry) {
+      DCHECK_EQ(old_buffer.byte_length(), new_buffer.byte_length());
+      DCHECK(!new_buffer.is_null());
+      Page* target_page = Page::FromHeapObject(new_buffer);
+      {
+        base::MutexGuard guard(target_page->mutex());
+        LocalArrayBufferTracker* tracker = target_page->local_tracker();
+        if (tracker == nullptr) {
+          target_page->AllocateLocalTracker();
+          tracker = target_page->local_tracker();
+        }
+        DCHECK_NOT_NULL(tracker);
+        const size_t length = PerIsolateAccountingLength(old_buffer);
+        // We should decrement before adding to avoid potential overflows in
+        // the external memory counters.
+        tracker->AddInternal(new_buffer, std::move(it->second));
+        MemoryChunk::MoveExternalBackingStoreBytes(
+            ExternalBackingStoreType::kArrayBuffer,
+            static_cast<MemoryChunk*>(page_),
+            static_cast<MemoryChunk*>(target_page), length);
+      }
+    } else if (result == kRemoveEntry) {
+      freed_memory += PerIsolateAccountingLength(old_buffer);
+      auto backing_store = std::move(it->second);
+      TRACE_BS("ABT:queue bs=%p mem=%p (length=%zu) cnt=%ld\n",
+               backing_store.get(), backing_store->buffer_start(),
+               backing_store->byte_length(), backing_store.use_count());
+      if (!backing_store->is_shared()) {
+        // Only retain non-shared backing stores. For shared backing stores,
+        // drop the shared_ptr right away, since this should be cheap,
+        // as it only updates a refcount, except that last, which will
+        // destruct it, which is rare.
+        backing_stores_to_free.push_back(backing_store);
+      }
+    } else {
+      UNREACHABLE();
     }
   }
+  if (freed_memory) {
+    page_->DecrementExternalBackingStoreBytes(
+        ExternalBackingStoreType::kArrayBuffer, freed_memory);
+    // TODO(wez): Remove backing-store from external memory accounting.
+    page_->heap()->update_external_memory_concurrently_freed(freed_memory);
+  }
 
-  not_yet_discovered_array_buffers_for_scavenge_ =
-      live_array_buffers_for_scavenge_;
-  if (!from_scavenge) not_yet_discovered_array_buffers_ = live_array_buffers_;
+  array_buffers_.swap(kept_array_buffers);
 
-  // Do not call through the api as this code is triggered while doing a GC.
-  heap()->update_amount_of_external_allocated_memory(
-      -static_cast<int64_t>(freed_memory));
+  // Pass the backing stores that need to be freed to the main thread for
+  // potential later distribution.
+  page_->heap()->array_buffer_collector()->QueueOrFreeGarbageAllocations(
+      std::move(backing_stores_to_free));
 }
 
-
-void ArrayBufferTracker::PrepareDiscoveryInNewSpace() {
-  not_yet_discovered_array_buffers_for_scavenge_ =
-      live_array_buffers_for_scavenge_;
+void ArrayBufferTracker::PrepareToFreeDeadInNewSpace(Heap* heap) {
+  DCHECK_EQ(heap->gc_state(), Heap::HeapState::SCAVENGE);
+  for (Page* page :
+       PageRange(heap->new_space()->from_space().first_page(), nullptr)) {
+    bool empty = ProcessBuffers(page, kUpdateForwardedRemoveOthers);
+    CHECK(empty);
+  }
 }
 
+void ArrayBufferTracker::FreeAll(Page* page) {
+  LocalArrayBufferTracker* tracker = page->local_tracker();
+  if (tracker == nullptr) return;
+  tracker->Free([](JSArrayBuffer buffer) { return true; });
+  if (tracker->IsEmpty()) {
+    page->ReleaseLocalTracker();
+  }
+}
 
-void ArrayBufferTracker::Promote(JSArrayBuffer* buffer) {
-  base::LockGuard<base::Mutex> guard(&mutex_);
+bool ArrayBufferTracker::ProcessBuffers(Page* page, ProcessingMode mode) {
+  LocalArrayBufferTracker* tracker = page->local_tracker();
+  if (tracker == nullptr) return true;
 
-  if (buffer->is_external()) return;
-  void* data = buffer->backing_store();
-  if (!data) return;
-  // ArrayBuffer might be in the middle of being constructed.
-  if (data == heap()->undefined_value()) return;
-  DCHECK(live_array_buffers_for_scavenge_.count(data) > 0);
-  live_array_buffers_[data] = live_array_buffers_for_scavenge_[data];
-  live_array_buffers_for_scavenge_.erase(data);
-  not_yet_discovered_array_buffers_for_scavenge_.erase(data);
+  DCHECK(page->SweepingDone());
+  tracker->Process([mode](JSArrayBuffer old_buffer, JSArrayBuffer* new_buffer) {
+    MapWord map_word = old_buffer.map_word();
+    if (map_word.IsForwardingAddress()) {
+      *new_buffer = JSArrayBuffer::cast(map_word.ToForwardingAddress());
+      return LocalArrayBufferTracker::kUpdateEntry;
+    }
+    return mode == kUpdateForwardedKeepOthers
+               ? LocalArrayBufferTracker::kKeepEntry
+               : LocalArrayBufferTracker::kRemoveEntry;
+  });
+  return tracker->IsEmpty();
+}
+
+bool ArrayBufferTracker::IsTracked(JSArrayBuffer buffer) {
+  Page* page = Page::FromHeapObject(buffer);
+  {
+    base::MutexGuard guard(page->mutex());
+    LocalArrayBufferTracker* tracker = page->local_tracker();
+    if (tracker == nullptr) return false;
+    return tracker->IsTracked(buffer);
+  }
+}
+
+void ArrayBufferTracker::TearDown(Heap* heap) {
+  // ArrayBuffers can only be found in NEW_SPACE and OLD_SPACE.
+  for (Page* p : *heap->old_space()) {
+    FreeAll(p);
+  }
+  NewSpace* new_space = heap->new_space();
+  if (new_space->to_space().is_committed()) {
+    for (Page* p : new_space->to_space()) {
+      FreeAll(p);
+    }
+  }
+#ifdef DEBUG
+  if (new_space->from_space().is_committed()) {
+    for (Page* p : new_space->from_space()) {
+      DCHECK(!p->contains_array_buffers());
+    }
+  }
+#endif  // DEBUG
 }
 
 }  // namespace internal
 }  // namespace v8
+#undef TRACE_BS

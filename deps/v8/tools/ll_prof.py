@@ -27,6 +27,10 @@
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+
+# for py2/py3 compatibility
+from __future__ import print_function
+
 import bisect
 import collections
 import ctypes
@@ -66,20 +70,20 @@ We have a convenience script that handles all of the above for you:
 
 Examples:
   # Print flat profile with annotated disassembly for the 10 top
-  # symbols. Use default log names and include the snapshot log.
-  $ %prog --snapshot --disasm-top=10
+  # symbols. Use default log names.
+  $ %prog --disasm-top=10
 
   # Print flat profile with annotated disassembly for all used symbols.
   # Use default log names and include kernel symbols into analysis.
   $ %prog --disasm-all --kernel
 
   # Print flat profile. Use custom log names.
-  $ %prog --log=foo.log --snapshot-log=snap-foo.log --trace=foo.data --snapshot
+  $ %prog --log=foo.log --trace=foo.data
 """
 
 
 JS_ORIGIN = "js"
-JS_SNAPSHOT_ORIGIN = "js-snapshot"
+
 
 class Code(object):
   """Code object."""
@@ -157,7 +161,7 @@ class Code(object):
     # Print annotated lines.
     address = lines[0][0]
     total_count = 0
-    for i in xrange(len(lines)):
+    for i in range(len(lines)):
       start_offset = lines[i][0] - address
       if i == len(lines) - 1:
         end_offset = self.end_address - self.start_address
@@ -183,10 +187,10 @@ class Code(object):
         # 6 for the percentage number, incl. the '.'
         # 1 for the '%' sign
         # => 15
-        print "%5d | %6.2f%% %x(%d): %s" % (count, percent, offset, offset, lines[i][1])
+        print("%5d | %6.2f%% %x(%d): %s" % (count, percent, offset, offset, lines[i][1]))
       else:
-        print "%s %x(%d): %s" % (" " * 15, offset, offset, lines[i][1])
-    print
+        print("%s %x(%d): %s" % (" " * 15, offset, offset, lines[i][1]))
+    print()
     assert total_count == self.self_ticks, \
         "Lost ticks (%d != %d) in %s" % (total_count, self.self_ticks, self)
 
@@ -199,7 +203,7 @@ class Code(object):
       self.origin)
 
   def _GetDisasmLines(self, arch, options):
-    if self.origin == JS_ORIGIN or self.origin == JS_SNAPSHOT_ORIGIN:
+    if self.origin == JS_ORIGIN:
       inplace = False
       filename = options.log + ".ll"
     else:
@@ -267,9 +271,8 @@ class CodeMap(object):
     pages = 0
     while page_id < limit_id:
       if max_pages >= 0 and pages > max_pages:
-        print >>sys.stderr, \
-            "Warning: page limit (%d) reached for %s [%s]" % (
-            max_pages, code.name, code.origin)
+        print("Warning: page limit (%d) reached for %s [%s]" % (
+            max_pages, code.name, code.origin), file=sys.stderr)
         break
       if page_id in self.pages:
         page = self.pages[page_id]
@@ -309,7 +312,7 @@ class CodeMap(object):
 
   def Print(self):
     for code in self.AllCode():
-      print code
+      print(code)
 
   def Find(self, pc):
     if pc < self.min_address or pc >= self.max_address:
@@ -328,30 +331,6 @@ class CodeInfo(object):
     self.header_size = header_size
 
 
-class SnapshotLogReader(object):
-  """V8 snapshot log reader."""
-
-  _SNAPSHOT_CODE_NAME_RE = re.compile(
-    r"snapshot-code-name,(\d+),\"(.*)\"")
-
-  def __init__(self, log_name):
-    self.log_name = log_name
-
-  def ReadNameMap(self):
-    log = open(self.log_name, "r")
-    try:
-      snapshot_pos_to_name = {}
-      for line in log:
-        match = SnapshotLogReader._SNAPSHOT_CODE_NAME_RE.match(line)
-        if match:
-          pos = int(match.group(1))
-          name = match.group(2)
-          snapshot_pos_to_name[pos] = name
-    finally:
-      log.close()
-    return snapshot_pos_to_name
-
-
 class LogReader(object):
   """V8 low-level (binary) log reader."""
 
@@ -365,17 +344,13 @@ class LogReader(object):
 
   _CODE_CREATE_TAG = "C"
   _CODE_MOVE_TAG = "M"
-  _CODE_DELETE_TAG = "D"
-  _SNAPSHOT_POSITION_TAG = "P"
   _CODE_MOVING_GC_TAG = "G"
 
-  def __init__(self, log_name, code_map, snapshot_pos_to_name):
+  def __init__(self, log_name, code_map):
     self.log_file = open(log_name, "r")
     self.log = mmap.mmap(self.log_file.fileno(), 0, mmap.MAP_PRIVATE)
     self.log_pos = 0
     self.code_map = code_map
-    self.snapshot_pos_to_name = snapshot_pos_to_name
-    self.address_to_snapshot_name = {}
 
     self.arch = self.log[:self.log.find("\0")]
     self.log_pos += len(self.arch) + 1
@@ -395,17 +370,12 @@ class LogReader(object):
     self.code_delete_struct = LogReader._DefineStruct([
         ("address", pointer_type)])
 
-    self.snapshot_position_struct = LogReader._DefineStruct([
-        ("address", pointer_type),
-        ("position", ctypes.c_int32)])
-
   def ReadUpToGC(self):
     while self.log_pos < self.log.size():
       tag = self.log[self.log_pos]
       self.log_pos += 1
 
       if tag == LogReader._CODE_MOVING_GC_TAG:
-        self.address_to_snapshot_name.clear()
         return
 
       if tag == LogReader._CODE_CREATE_TAG:
@@ -413,12 +383,8 @@ class LogReader(object):
         self.log_pos += ctypes.sizeof(event)
         start_address = event.code_address
         end_address = start_address + event.code_size
-        if start_address in self.address_to_snapshot_name:
-          name = self.address_to_snapshot_name[start_address]
-          origin = JS_SNAPSHOT_ORIGIN
-        else:
-          name = self.log[self.log_pos:self.log_pos + event.name_size]
-          origin = JS_ORIGIN
+        name = self.log[self.log_pos:self.log_pos + event.name_size]
+        origin = JS_ORIGIN
         self.log_pos += event.name_size
         origin_offset = self.log_pos
         self.log_pos += event.code_size
@@ -448,7 +414,7 @@ class LogReader(object):
           continue
         code = self.code_map.Find(old_start_address)
         if not code:
-          print >>sys.stderr, "Warning: Not found %x" % old_start_address
+          print("Warning: Not found %x" % old_start_address, file=sys.stderr)
           continue
         assert code.start_address == old_start_address, \
             "Inexact move address %x for %s" % (old_start_address, code)
@@ -457,30 +423,6 @@ class LogReader(object):
         code.start_address = new_start_address
         code.end_address = new_start_address + size
         self.code_map.Add(code)
-        continue
-
-      if tag == LogReader._CODE_DELETE_TAG:
-        event = self.code_delete_struct.from_buffer(self.log, self.log_pos)
-        self.log_pos += ctypes.sizeof(event)
-        old_start_address = event.address
-        code = self.code_map.Find(old_start_address)
-        if not code:
-          print >>sys.stderr, "Warning: Not found %x" % old_start_address
-          continue
-        assert code.start_address == old_start_address, \
-            "Inexact delete address %x for %s" % (old_start_address, code)
-        self.code_map.Remove(code)
-        continue
-
-      if tag == LogReader._SNAPSHOT_POSITION_TAG:
-        event = self.snapshot_position_struct.from_buffer(self.log,
-                                                          self.log_pos)
-        self.log_pos += ctypes.sizeof(event)
-        start_address = event.address
-        snapshot_pos = event.position
-        if snapshot_pos in self.snapshot_pos_to_name:
-          self.address_to_snapshot_name[start_address] = \
-              self.snapshot_pos_to_name[snapshot_pos]
         continue
 
       assert False, "Unknown tag %s" % tag
@@ -652,7 +594,7 @@ class TraceReader(object):
     self.trace = mmap.mmap(self.trace_file.fileno(), 0, mmap.MAP_PRIVATE)
     self.trace_header = TRACE_HEADER_DESC.Read(self.trace, 0)
     if self.trace_header.magic != TraceReader._TRACE_HEADER_MAGIC:
-      print >>sys.stderr, "Warning: unsupported trace header magic"
+      print("Warning: unsupported trace header magic", file=sys.stderr)
     self.offset = self.trace_header.data_offset
     self.limit = self.trace_header.data_offset + self.trace_header.data_size
     assert self.limit <= self.trace.size(), \
@@ -703,7 +645,7 @@ class TraceReader(object):
       return sample
     sample.ips = []
     offset += self.header_size + ctypes.sizeof(sample)
-    for _ in xrange(sample.nr):
+    for _ in range(sample.nr):
       sample.ips.append(
         self.ip_struct.from_buffer(self.trace, offset).value)
       offset += self.ip_size
@@ -847,7 +789,7 @@ class LibraryRepo(object):
 
   def _LoadKernelSymbols(self, code_map):
     if not os.path.exists(KERNEL_ALLSYMS_FILE):
-      print >>sys.stderr, "Warning: %s not found" % KERNEL_ALLSYMS_FILE
+      print("Warning: %s not found" % KERNEL_ALLSYMS_FILE, file=sys.stderr)
       return False
     kallsyms = open(KERNEL_ALLSYMS_FILE, "r")
     code = None
@@ -865,49 +807,42 @@ class LibraryRepo(object):
 
 
 def PrintReport(code_map, library_repo, arch, ticks, options):
-  print "Ticks per symbol:"
+  print("Ticks per symbol:")
   used_code = [code for code in code_map.UsedCode()]
   used_code.sort(key=lambda x: x.self_ticks, reverse=True)
   for i, code in enumerate(used_code):
     code_ticks = code.self_ticks
-    print "%10d %5.1f%% %s [%s]" % (code_ticks, 100. * code_ticks / ticks,
-                                    code.FullName(), code.origin)
+    print("%10d %5.1f%% %s [%s]" % (code_ticks, 100. * code_ticks / ticks,
+                                    code.FullName(), code.origin))
     if options.disasm_all or i < options.disasm_top:
       code.PrintAnnotated(arch, options)
-  print
-  print "Ticks per library:"
+  print()
+  print("Ticks per library:")
   mmap_infos = [m for m in library_repo.infos if m.ticks > 0]
   mmap_infos.sort(key=lambda m: m.ticks, reverse=True)
   for mmap_info in mmap_infos:
     mmap_ticks = mmap_info.ticks
-    print "%10d %5.1f%% %s" % (mmap_ticks, 100. * mmap_ticks / ticks,
-                               mmap_info.unique_name)
+    print("%10d %5.1f%% %s" % (mmap_ticks, 100. * mmap_ticks / ticks,
+                               mmap_info.unique_name))
 
 
 def PrintDot(code_map, options):
-  print "digraph G {"
+  print("digraph G {")
   for code in code_map.UsedCode():
     if code.self_ticks < 10:
       continue
-    print "n%d [shape=box,label=\"%s\"];" % (code.id, code.name)
+    print("n%d [shape=box,label=\"%s\"];" % (code.id, code.name))
     if code.callee_ticks:
       for callee, ticks in code.callee_ticks.iteritems():
-        print "n%d -> n%d [label=\"%d\"];" % (code.id, callee.id, ticks)
-  print "}"
+        print("n%d -> n%d [label=\"%d\"];" % (code.id, callee.id, ticks))
+  print("}")
 
 
 if __name__ == "__main__":
   parser = optparse.OptionParser(USAGE)
-  parser.add_option("--snapshot-log",
-                    default="obj/release/snapshot.log",
-                    help="V8 snapshot log file name [default: %default]")
   parser.add_option("--log",
                     default="v8.log",
                     help="V8 log file name [default: %default]")
-  parser.add_option("--snapshot",
-                    default=False,
-                    action="store_true",
-                    help="process V8 snapshot log [default: %default]")
   parser.add_option("--trace",
                     default="perf.data",
                     help="perf trace file name [default: %default]")
@@ -945,13 +880,8 @@ if __name__ == "__main__":
   options, args = parser.parse_args()
 
   if not options.quiet:
-    if options.snapshot:
-      print "V8 logs: %s, %s, %s.ll" % (options.snapshot_log,
-                                        options.log,
-                                        options.log)
-    else:
-      print "V8 log: %s, %s.ll (no snapshot)" % (options.log, options.log)
-    print "Perf trace file: %s" % options.trace
+    print("V8 log: %s, %s.ll" % (options.log, options.log))
+    print("Perf trace file: %s" % options.trace)
 
   V8_GC_FAKE_MMAP = options.gc_fake_mmap
   HOST_ROOT = options.host_root
@@ -959,7 +889,7 @@ if __name__ == "__main__":
     disasm.OBJDUMP_BIN = options.objdump
     OBJDUMP_BIN = options.objdump
   else:
-    print "Cannot find %s, falling back to default objdump" % options.objdump
+    print("Cannot find %s, falling back to default objdump" % options.objdump)
 
   # Stats.
   events = 0
@@ -972,20 +902,13 @@ if __name__ == "__main__":
   mmap_time = 0
   sample_time = 0
 
-  # Process the snapshot log to fill the snapshot name map.
-  snapshot_name_map = {}
-  if options.snapshot:
-    snapshot_log_reader = SnapshotLogReader(log_name=options.snapshot_log)
-    snapshot_name_map = snapshot_log_reader.ReadNameMap()
-
   # Initialize the log reader.
   code_map = CodeMap()
   log_reader = LogReader(log_name=options.log + ".ll",
-                         code_map=code_map,
-                         snapshot_pos_to_name=snapshot_name_map)
+                         code_map=code_map)
   if not options.quiet:
-    print "Generated code architecture: %s" % log_reader.arch
-    print
+    print("Generated code architecture: %s" % log_reader.arch)
+    print()
     sys.stdout.flush()
 
   # Process the code and trace logs.
@@ -1048,11 +971,11 @@ if __name__ == "__main__":
       def PrintTicks(number, total, description):
         print("%10d %5.1f%% ticks in %s" %
               (number, 100.0*number/total, description))
-      print
-      print "Stats:"
-      print "%10d total trace events" % events
-      print "%10d total ticks" % ticks
-      print "%10d ticks not in symbols" % missed_ticks
+      print()
+      print("Stats:")
+      print("%10d total trace events" % events)
+      print("%10d total ticks" % ticks)
+      print("%10d ticks not in symbols" % missed_ticks)
       unaccounted = "unaccounted ticks"
       if really_missed_ticks > 0:
         unaccounted += " (probably in the kernel, try --kernel)"
@@ -1060,10 +983,10 @@ if __name__ == "__main__":
       PrintTicks(optimized_ticks, ticks, "ticks in optimized code")
       PrintTicks(generated_ticks, ticks, "ticks in other lazily compiled code")
       PrintTicks(v8_internal_ticks, ticks, "ticks in v8::internal::*")
-      print "%10d total symbols" % len([c for c in code_map.AllCode()])
-      print "%10d used symbols" % len([c for c in code_map.UsedCode()])
-      print "%9.2fs library processing time" % mmap_time
-      print "%9.2fs tick processing time" % sample_time
+      print("%10d total symbols" % len([c for c in code_map.AllCode()]))
+      print("%10d used symbols" % len([c for c in code_map.UsedCode()]))
+      print("%9.2fs library processing time" % mmap_time)
+      print("%9.2fs tick processing time" % sample_time)
 
   log_reader.Dispose()
   trace_reader.Dispose()

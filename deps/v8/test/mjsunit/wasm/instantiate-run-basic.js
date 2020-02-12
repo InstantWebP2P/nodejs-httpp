@@ -2,30 +2,32 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// Flags: --expose-wasm
+// Flags: --allow-natives-syntax
 
-load("test/mjsunit/wasm/wasm-constants.js");
+load("test/mjsunit/wasm/wasm-module-builder.js");
 
-var kReturnValue = 97;
+const kReturnValue = 15;
 
-var kBodySize = 2;
-var kNameOffset = 15 + kBodySize + 1;
+function getBuilder() {
+  var builder = new WasmModuleBuilder();
 
-var data = bytes(
-  // -- signatures
-  kDeclSignatures, 1,
-  0, kAstI32,                 // signature: void -> int
-  // -- main function
-  kDeclFunctions, 1,
-  kDeclFunctionName | kDeclFunctionExport,
-  0, 0,                       // signature index
-  kNameOffset, 0, 0, 0,       // name offset
-  kBodySize, 0,               // body size
-  // -- body
-  kExprI8Const,               // --
-  kReturnValue,               // --
-  kDeclEnd,
-  'm', 'a', 'i', 'n', 0       // name
-);
+  builder.addFunction("main", kSig_i_i)
+    .addBody([kExprI32Const, kReturnValue])
+    .exportFunc();
+  return builder;
+}
 
-assertEquals(kReturnValue, _WASMEXP_.instantiateModule(data).main());
+(function BasicTest() {
+  var builder = getBuilder();
+  var main = builder.instantiate().exports.main;
+  assertEquals(kReturnValue, main());
+})();
+
+(function AsyncTest() {
+  var builder = getBuilder();
+  var buffer = builder.toBuffer();
+  assertPromiseResult(
+    WebAssembly.instantiate(buffer)
+      .then(pair => pair.instance.exports.main(), assertUnreachable)
+      .then(result => assertEquals(kReturnValue, result), assertUnreachable));
+})();

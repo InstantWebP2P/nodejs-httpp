@@ -27,31 +27,49 @@
 
 [
 [ALWAYS, {
-  # TODO(jochen): The following test is flaky.
+# TODO(jochen): The following test is flaky.
   'overrides/caching': [PASS, FAIL],
 
-  # BUG(v8:3454).
-  'date-format/parse-MMMdy': [FAIL],
-  'date-format/parse-mdyhms': [FAIL],
-  'number-format/parse-decimal': [FAIL],
-  'number-format/parse-percent': [FAIL],
+  # https://code.google.com/p/v8/issues/detail?id=7481
+  'collator/check-kf-option': [FAIL],
+  'collator/check-kn-option': [FAIL],
+
+  # https://code.google.com/p/v8/issues/detail?id=9312
+  'regress-9312': [FAIL],
 }],  # ALWAYS
 
-##############################################################################
-['system == linux', {
-  # BUG(v8:2899).
-  'collator/default-locale': [PASS, FAIL],
-}],  # 'system == linux'
+['variant == no_wasm_traps', {
+  '*': [SKIP],
+}],  # variant == no_wasm_traps
+
+['system == windows', {
+  # noi18n cannot turn on ICU backend for Date
+  'relative-time-format/default-locale-fr-CA': [SKIP],
+  'relative-time-format/default-locale-pt-BR': [SKIP],
+
+  # Unable to change locale on Windows:
+  'default_locale': [SKIP],
+
+  # Unable to change locale and TZ on Windows:
+  'regress-7770': [SKIP],
+}],  # system == windows'
+
+['system == android', {
+  # Android's ICU data file does not have the Chinese/Japanese dictionary
+  # required for the test to pass.
+  'break-iterator/zh-break': [SKIP],
+  # Unable to change locale on Android:
+  'relative-time-format/default-locale-fr-CA': [SKIP],
+  'relative-time-format/default-locale-pt-BR': [SKIP],
+  'default_locale': [SKIP],
+  # Unable to change locale and TZ on Android:
+  'regress-7770': [SKIP],
+  # 'bn' locale is not included in Android.
+  'relative-time-format/resolved-options-nu-extended': [FAIL],
+}],  # 'system == android'
 
 ##############################################################################
-['system == macos', {
-  # BUG(v8:4459).
-  'collator/default-locale': [FAIL],
-}],  # 'system == macos'
-
-##############################################################################
-['arch == arm or arch == arm64', {
-  # BUG(v8:4459).
-  'collator/default-locale': [PASS, FAIL],
-}],  # 'arch == arm or arch == arm64'
+['variant == jitless and not embedded_builtins', {
+  '*': [SKIP],
+}], # variant == jitless and not embedded_builtins
 ]

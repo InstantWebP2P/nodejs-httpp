@@ -1,7 +1,7 @@
 #include "node.h"
 #include "v8.h"
 
-#include "../../../src/util.h"
+#include <assert.h>
 
 using v8::Function;
 using v8::FunctionCallbackInfo;
@@ -13,19 +13,20 @@ using v8::Value;
 namespace {
 
 void MakeCallback(const FunctionCallbackInfo<Value>& args) {
-  CHECK(args[0]->IsObject());
-  CHECK(args[1]->IsFunction());
+  assert(args[0]->IsObject());
+  assert(args[1]->IsFunction());
   Isolate* isolate = args.GetIsolate();
   Local<Object> recv = args[0].As<Object>();
   Local<Function> method = args[1].As<Function>();
 
-  node::MakeCallback(isolate, recv, method, 0, nullptr);
+  node::MakeCallback(isolate, recv, method, 0, nullptr,
+                     node::async_context{0, 0});
 }
 
-void Initialize(Local<Object> target) {
-  NODE_SET_METHOD(target, "makeCallback", MakeCallback);
+void Initialize(Local<Object> exports) {
+  NODE_SET_METHOD(exports, "makeCallback", MakeCallback);
 }
 
-}  // namespace anonymous
+}  // anonymous namespace
 
-NODE_MODULE(binding, Initialize)
+NODE_MODULE(NODE_GYP_MODULE_NAME, Initialize)

@@ -27,7 +27,46 @@
 
 [
 [ALWAYS, {
-  # All tests in the bug directory are expected to fail.
-  'bugs/*': [FAIL],
+  # We don't parse RegExps at scanning time, so we can't fail on octal
+  # escapes (we need to parse to distinguish octal escapes from valid
+  # back-references).
+  'strict-octal-regexp': [SKIP],
+
+  # Modules which are only meant to be imported from by other tests, not to be
+  # tested standalone.
+  'fail/modules-skip*': [SKIP],
 }],  # ALWAYS
+
+# Liftoff is currently only sufficiently implemented on x64 and ia32.
+# TODO(clemensb): Implement on all other platforms (crbug.com/v8/6600).
+['arch != x64 and arch != ia32', {
+  'wasm-trace-memory-liftoff': [SKIP],
+}], # arch != x64 and arch != ia32
+
+['variant == code_serializer', {
+  # TODO(yangguo): Code serializer output is incompatible with all message
+  # tests.
+  '*': [SKIP],
+}],  # variant == code_serializer
+
+['no_i18n == True', {
+  'fail/list-format*': [SKIP],
+}],  # no_i18n == True
+
+##############################################################################
+['lite_mode or variant == jitless', {
+  # TODO(v8:7777): Re-enable once wasm is supported in jitless mode.
+  'mjsunit/fail/assert-promise-result-wasm-compile-fail': [SKIP],
+  'fail/wasm-*': [SKIP],
+  'wasm-*': [SKIP],
+
+  # Test output requires --validate-asm, which is disabled in jitless mode.
+  'asm-*': [SKIP],
+}], # lite_mode or variant == jitless
+
+##############################################################################
+['variant == jitless and not embedded_builtins', {
+  '*': [SKIP],
+}], # variant == jitless and not embedded_builtins
+
 ]

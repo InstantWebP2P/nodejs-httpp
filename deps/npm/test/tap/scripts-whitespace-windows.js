@@ -2,15 +2,13 @@ var fs = require('graceful-fs')
 var path = require('path')
 
 var mkdirp = require('mkdirp')
-var osenv = require('osenv')
-var rimraf = require('rimraf')
 var test = require('tap').test
 
 var common = require('../common-tap')
 
-var pkg = path.resolve(__dirname, 'scripts-whitespace-windows')
+var pkg = common.pkg
 var tmp = path.resolve(pkg, 'tmp')
-var cache = path.resolve(pkg, 'cache')
+var cache = common.cache
 var dep = path.resolve(pkg, 'dep')
 
 var EXEC_OPTS = { cwd: pkg }
@@ -21,7 +19,7 @@ var json = {
   description: 'a test',
   repository: 'git://github.com/robertkowalski/bogus',
   scripts: {
-    foo: 'foo --title \"Analysis of\" --recurse -d report src'
+    foo: 'foo --title "Analysis of" --recurse -d report src'
   },
   dependencies: {
     'scripts-whitespace-windows-dep': '0.0.1'
@@ -35,8 +33,6 @@ var dependency = {
   bin: [ 'bin/foo' ]
 }
 
-var extend = Object.assign || require('util')._extend
-
 var foo = function () { /*
 #!/usr/bin/env node
 
@@ -45,7 +41,6 @@ if (process.argv.length === 8)
 */ }.toString().split('\n').slice(1, -1).join('\n')
 
 test('setup', function (t) {
-  cleanup()
   mkdirp.sync(tmp)
   fs.writeFileSync(
     path.join(pkg, 'package.json'),
@@ -65,7 +60,7 @@ test('setup', function (t) {
 
   common.npm(['i', dep], {
     cwd: pkg,
-    env: extend({
+    env: Object.assign({
       npm_config_cache: cache,
       npm_config_tmp: tmp,
       npm_config_prefix: pkg,
@@ -91,13 +86,3 @@ test('test', function (t) {
     t.end()
   })
 })
-
-test('cleanup', function (t) {
-  cleanup()
-  t.end()
-})
-
-function cleanup () {
-  process.chdir(osenv.tmpdir())
-  rimraf.sync(pkg)
-}

@@ -1,4 +1,5 @@
 'use strict'
+var Bluebird = require('bluebird')
 var test = require('tap').test
 var path = require('path')
 var mkdirp = require('mkdirp')
@@ -6,7 +7,7 @@ var rimraf = require('rimraf')
 var fs = require('graceful-fs')
 var common = require('../common-tap')
 
-var base = path.resolve(__dirname, path.basename(__filename, '.js'))
+var base = common.pkg
 var modA = path.resolve(base, 'modA')
 var modB = path.resolve(base, 'modB')
 var modC = path.resolve(base, 'modC')
@@ -18,7 +19,7 @@ var json = {
   'name': 'test-tree-style',
   'version': '1.0.0',
   'dependencies': {
-    'modA': modA
+    'modA': modA + '-1.0.0.tgz'
   }
 }
 
@@ -26,7 +27,7 @@ var modAJson = {
   'name': 'modA',
   'version': '1.0.0',
   'dependencies': {
-    'modB': modB
+    'modB': modB + '-1.0.0.tgz'
   }
 }
 
@@ -34,7 +35,7 @@ var modBJson = {
   'name': 'modB',
   'version': '1.0.0',
   'dependencies': {
-    'modC': modC
+    'modC': modC + '-1.0.0.tgz'
   }
 }
 
@@ -71,7 +72,17 @@ function cleanup () {
 
 test('setup', function (t) {
   setup()
-  t.end()
+  return Bluebird.try(() => {
+    return common.npm(['pack', 'file:modC'], {cwd: base})
+  }).spread((code) => {
+    t.is(code, 0, 'pack modC')
+    return common.npm(['pack', 'file:modB'], {cwd: base})
+  }).spread((code) => {
+    t.is(code, 0, 'pack modB')
+    return common.npm(['pack', 'file:modA'], {cwd: base})
+  }).spread((code) => {
+    t.is(code, 0, 'pack modA')
+  })
 })
 
 function exists (t, filepath, msg) {

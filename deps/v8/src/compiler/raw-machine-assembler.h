@@ -5,14 +5,22 @@
 #ifndef V8_COMPILER_RAW_MACHINE_ASSEMBLER_H_
 #define V8_COMPILER_RAW_MACHINE_ASSEMBLER_H_
 
-#include "src/assembler.h"
+#include <initializer_list>
+
+#include "src/base/type-traits.h"
+#include "src/codegen/assembler.h"
+#include "src/common/globals.h"
+#include "src/compiler/access-builder.h"
 #include "src/compiler/common-operator.h"
 #include "src/compiler/graph.h"
 #include "src/compiler/linkage.h"
 #include "src/compiler/machine-operator.h"
 #include "src/compiler/node.h"
 #include "src/compiler/operator.h"
-#include "src/factory.h"
+#include "src/compiler/simplified-operator.h"
+#include "src/compiler/write-barrier-kind.h"
+#include "src/execution/isolate.h"
+#include "src/heap/factory.h"
 
 namespace v8 {
 namespace internal {
@@ -21,7 +29,7 @@ namespace compiler {
 class BasicBlock;
 class RawMachineLabel;
 class Schedule;
-
+class SourcePositionTable;
 
 // The RawMachineAssembler produces a low-level IR graph. All nodes are wired
 // into a graph and also placed into a schedule immediately, hence subsequent
@@ -34,38 +42,45 @@ class Schedule;
 // Also note that the generated graph is only valid together with the generated
 // schedule, using one without the other is invalid as the graph is inherently
 // non-schedulable due to missing control and effect dependencies.
-class RawMachineAssembler {
+class V8_EXPORT_PRIVATE RawMachineAssembler {
  public:
   RawMachineAssembler(
       Isolate* isolate, Graph* graph, CallDescriptor* call_descriptor,
       MachineRepresentation word = MachineType::PointerRepresentation(),
       MachineOperatorBuilder::Flags flags =
-          MachineOperatorBuilder::Flag::kNoFlags);
-  ~RawMachineAssembler() {}
+          MachineOperatorBuilder::Flag::kNoFlags,
+      MachineOperatorBuilder::AlignmentRequirements alignment_requirements =
+          MachineOperatorBuilder::AlignmentRequirements::
+              FullUnalignedAccessSupport(),
+      PoisoningMitigationLevel poisoning_level =
+          PoisoningMitigationLevel::kPoisonCriticalOnly);
+  ~RawMachineAssembler() = default;
 
   Isolate* isolate() const { return isolate_; }
   Graph* graph() const { return graph_; }
   Zone* zone() const { return graph()->zone(); }
   MachineOperatorBuilder* machine() { return &machine_; }
   CommonOperatorBuilder* common() { return &common_; }
+  SimplifiedOperatorBuilder* simplified() { return &simplified_; }
   CallDescriptor* call_descriptor() const { return call_descriptor_; }
+  PoisoningMitigationLevel poisoning_level() const { return poisoning_level_; }
 
-  // Finalizes the schedule and exports it to be used for code generation. Note
-  // that this RawMachineAssembler becomes invalid after export.
-  Schedule* Export();
+  // Only used for tests: Finalizes the schedule and exports it to be used for
+  // code generation. Note that this RawMachineAssembler becomes invalid after
+  // export.
+  Schedule* ExportForTest();
+  // Finalizes the schedule and transforms it into a graph that's suitable for
+  // it to be used for Turbofan optimization and re-scheduling. Note that this
+  // RawMachineAssembler becomes invalid after export.
+  Graph* ExportForOptimization();
 
   // ===========================================================================
   // The following utility methods create new nodes with specific operators and
   // place them into the current basic block. They don't perform control flow,
   // hence will not switch the current basic block.
 
-  Node* NullConstant() {
-    return HeapConstant(isolate()->factory()->null_value());
-  }
-
-  Node* UndefinedConstant() {
-    return HeapConstant(isolate()->factory()->undefined_value());
-  }
+  Node* NullConstant();
+  Node* UndefinedConstant();
 
   // Constants.
   Node* PointerConstant(void* value) {
@@ -73,14 +88,15 @@ class RawMachineAssembler {
   }
   Node* IntPtrConstant(intptr_t value) {
     // TODO(dcarney): mark generated code as unserializable if value != 0.
-    return kPointerSize == 8 ? Int64Constant(value)
-                             : Int32Constant(static_cast<int>(value));
+    return kSystemPointerSize == 8 ? Int64Constant(value)
+                                   : Int32Constant(static_cast<int>(value));
   }
+  Node* RelocatableIntPtrConstant(intptr_t value, RelocInfo::Mode rmode);
   Node* Int32Constant(int32_t value) {
     return AddNode(common()->Int32Constant(value));
   }
-  Node* StackSlot(MachineRepresentation rep) {
-    return AddNode(machine()->StackSlot(rep));
+  Node* StackSlot(MachineRepresentation rep, int alignment = 0) {
+    return AddNode(machine()->StackSlot(rep, alignment));
   }
   Node* Int64Constant(int64_t value) {
     return AddNode(common()->Int64Constant(value));
@@ -97,12 +113,14 @@ class RawMachineAssembler {
   Node* HeapConstant(Handle<HeapObject> object) {
     return AddNode(common()->HeapConstant(object));
   }
-  Node* BooleanConstant(bool value) {
-    Handle<Object> object = isolate()->factory()->ToBoolean(value);
-    return HeapConstant(Handle<HeapObject>::cast(object));
-  }
   Node* ExternalConstant(ExternalReference address) {
     return AddNode(common()->ExternalConstant(address));
+  }
+  Node* RelocatableInt32Constant(int32_t value, RelocInfo::Mode rmode) {
+    return AddNode(common()->RelocatableInt32Constant(value, rmode));
+  }
+  Node* RelocatableInt64Constant(int64_t value, RelocInfo::Mode rmode) {
+    return AddNode(common()->RelocatableInt64Constant(value, rmode));
   }
 
   Node* Projection(int index, Node* a) {
@@ -110,11 +128,87 @@ class RawMachineAssembler {
   }
 
   // Memory Operations.
-  Node* Load(MachineType rep, Node* base) {
-    return Load(rep, base, IntPtrConstant(0));
+  std::pair<MachineType, const Operator*> InsertDecompressionIfNeeded(
+      MachineType type) {
+    const Operator* decompress_op = nullptr;
+    if (COMPRESS_POINTERS_BOOL && FLAG_turbo_decompression_elimination) {
+      switch (type.representation()) {
+        case MachineRepresentation::kTaggedPointer:
+          type = MachineType::CompressedPointer();
+          decompress_op = machine()->ChangeCompressedPointerToTaggedPointer();
+          break;
+        case MachineRepresentation::kTaggedSigned:
+          type = MachineType::CompressedSigned();
+          decompress_op = machine()->ChangeCompressedSignedToTaggedSigned();
+          break;
+        case MachineRepresentation::kTagged:
+          type = MachineType::AnyCompressed();
+          decompress_op = machine()->ChangeCompressedToTagged();
+          break;
+        default:
+          break;
+      }
+    }
+    return std::make_pair(type, decompress_op);
   }
-  Node* Load(MachineType rep, Node* base, Node* index) {
-    return AddNode(machine()->Load(rep), base, index);
+  Node* Load(MachineType type, Node* base,
+             LoadSensitivity needs_poisoning = LoadSensitivity::kSafe) {
+    return Load(type, base, IntPtrConstant(0), needs_poisoning);
+  }
+  Node* Load(MachineType type, Node* base, Node* index,
+             LoadSensitivity needs_poisoning = LoadSensitivity::kSafe) {
+    const Operator* decompress_op;
+    std::tie(type, decompress_op) = InsertDecompressionIfNeeded(type);
+    const Operator* op = machine()->Load(type);
+    CHECK_NE(PoisoningMitigationLevel::kPoisonAll, poisoning_level_);
+    if (needs_poisoning == LoadSensitivity::kCritical &&
+        poisoning_level_ == PoisoningMitigationLevel::kPoisonCriticalOnly) {
+      op = machine()->PoisonedLoad(type);
+    }
+
+    Node* load = AddNode(op, base, index);
+    if (decompress_op != nullptr) {
+      load = AddNode(decompress_op, load);
+    }
+    return load;
+  }
+  Node* LoadFromObject(
+      MachineType type, Node* base, Node* offset,
+      LoadSensitivity needs_poisoning = LoadSensitivity::kSafe) {
+    const Operator* decompress_op;
+    std::tie(type, decompress_op) = InsertDecompressionIfNeeded(type);
+    CHECK_EQ(needs_poisoning, LoadSensitivity::kSafe);
+    ObjectAccess access = {type, WriteBarrierKind::kNoWriteBarrier};
+    Node* load = AddNode(simplified()->LoadFromObject(access), base, offset);
+    if (decompress_op != nullptr) {
+      load = AddNode(decompress_op, load);
+    }
+    return load;
+  }
+
+  std::pair<MachineRepresentation, Node*> InsertCompressionIfNeeded(
+      MachineRepresentation rep, Node* value) {
+    if (COMPRESS_POINTERS_BOOL && FLAG_turbo_decompression_elimination) {
+      switch (rep) {
+        case MachineRepresentation::kTaggedPointer:
+          rep = MachineRepresentation::kCompressedPointer;
+          value = AddNode(machine()->ChangeTaggedPointerToCompressedPointer(),
+                          value);
+          break;
+        case MachineRepresentation::kTaggedSigned:
+          rep = MachineRepresentation::kCompressedSigned;
+          value =
+              AddNode(machine()->ChangeTaggedSignedToCompressedSigned(), value);
+          break;
+        case MachineRepresentation::kTagged:
+          rep = MachineRepresentation::kCompressed;
+          value = AddNode(machine()->ChangeTaggedToCompressed(), value);
+          break;
+        default:
+          break;
+      }
+    }
+    return std::make_pair(rep, value);
   }
   Node* Store(MachineRepresentation rep, Node* base, Node* value,
               WriteBarrierKind write_barrier) {
@@ -122,8 +216,147 @@ class RawMachineAssembler {
   }
   Node* Store(MachineRepresentation rep, Node* base, Node* index, Node* value,
               WriteBarrierKind write_barrier) {
+    std::tie(rep, value) = InsertCompressionIfNeeded(rep, value);
     return AddNode(machine()->Store(StoreRepresentation(rep, write_barrier)),
                    base, index, value);
+  }
+  void StoreToObject(MachineRepresentation rep, Node* object, Node* offset,
+                     Node* value, WriteBarrierKind write_barrier) {
+    std::tie(rep, value) = InsertCompressionIfNeeded(rep, value);
+    ObjectAccess access = {MachineType::TypeForRepresentation(rep),
+                           write_barrier};
+    AddNode(simplified()->StoreToObject(access), object, offset, value);
+  }
+  void OptimizedStoreField(MachineRepresentation rep, Node* object, int offset,
+                           Node* value, WriteBarrierKind write_barrier) {
+    std::tie(rep, value) = InsertCompressionIfNeeded(rep, value);
+    AddNode(simplified()->StoreField(FieldAccess(
+                BaseTaggedness::kTaggedBase, offset, MaybeHandle<Name>(),
+                MaybeHandle<Map>(), Type::Any(),
+                MachineType::TypeForRepresentation(rep), write_barrier)),
+            object, value);
+  }
+  void OptimizedStoreMap(Node* object, Node* value) {
+    if (COMPRESS_POINTERS_BOOL && FLAG_turbo_decompression_elimination) {
+      DCHECK(AccessBuilder::ForMap().machine_type.IsCompressedPointer());
+      value =
+          AddNode(machine()->ChangeTaggedPointerToCompressedPointer(), value);
+    }
+    AddNode(simplified()->StoreField(AccessBuilder::ForMap()), object, value);
+  }
+  Node* Retain(Node* value) { return AddNode(common()->Retain(), value); }
+
+  Node* OptimizedAllocate(Node* size, AllocationType allocation,
+                          AllowLargeObjects allow_large_objects);
+
+  // Unaligned memory operations
+  Node* UnalignedLoad(MachineType type, Node* base) {
+    return UnalignedLoad(type, base, IntPtrConstant(0));
+  }
+  Node* UnalignedLoad(MachineType type, Node* base, Node* index) {
+    MachineRepresentation rep = type.representation();
+    // Tagged or compressed should never be unaligned
+    DCHECK(!(IsAnyTagged(rep) || IsAnyCompressed(rep)));
+    if (machine()->UnalignedLoadSupported(rep)) {
+      return AddNode(machine()->Load(type), base, index);
+    } else {
+      return AddNode(machine()->UnalignedLoad(type), base, index);
+    }
+  }
+  Node* UnalignedStore(MachineRepresentation rep, Node* base, Node* value) {
+    return UnalignedStore(rep, base, IntPtrConstant(0), value);
+  }
+  Node* UnalignedStore(MachineRepresentation rep, Node* base, Node* index,
+                       Node* value) {
+    // Tagged or compressed should never be unaligned
+    DCHECK(!(IsAnyTagged(rep) || IsAnyCompressed(rep)));
+    if (machine()->UnalignedStoreSupported(rep)) {
+      return AddNode(machine()->Store(StoreRepresentation(
+                         rep, WriteBarrierKind::kNoWriteBarrier)),
+                     base, index, value);
+    } else {
+      return AddNode(
+          machine()->UnalignedStore(UnalignedStoreRepresentation(rep)), base,
+          index, value);
+    }
+  }
+
+  // Atomic memory operations.
+  Node* AtomicLoad(MachineType type, Node* base, Node* index) {
+    if (type.representation() == MachineRepresentation::kWord64) {
+      if (machine()->Is64()) {
+        return AddNode(machine()->Word64AtomicLoad(type), base, index);
+      } else {
+        return AddNode(machine()->Word32AtomicPairLoad(), base, index);
+      }
+    }
+    return AddNode(machine()->Word32AtomicLoad(type), base, index);
+  }
+
+#if defined(V8_TARGET_BIG_ENDIAN)
+#define VALUE_HALVES value_high, value
+#else
+#define VALUE_HALVES value, value_high
+#endif
+
+  Node* AtomicStore(MachineRepresentation rep, Node* base, Node* index,
+                    Node* value, Node* value_high) {
+    if (rep == MachineRepresentation::kWord64) {
+      if (machine()->Is64()) {
+        DCHECK_NULL(value_high);
+        return AddNode(machine()->Word64AtomicStore(rep), base, index, value);
+      } else {
+        return AddNode(machine()->Word32AtomicPairStore(), base, index,
+                       VALUE_HALVES);
+      }
+    }
+    DCHECK_NULL(value_high);
+    return AddNode(machine()->Word32AtomicStore(rep), base, index, value);
+  }
+#define ATOMIC_FUNCTION(name)                                                \
+  Node* Atomic##name(MachineType type, Node* base, Node* index, Node* value, \
+                     Node* value_high) {                                     \
+    if (type.representation() == MachineRepresentation::kWord64) {           \
+      if (machine()->Is64()) {                                               \
+        DCHECK_NULL(value_high);                                             \
+        return AddNode(machine()->Word64Atomic##name(type), base, index,     \
+                       value);                                               \
+      } else {                                                               \
+        return AddNode(machine()->Word32AtomicPair##name(), base, index,     \
+                       VALUE_HALVES);                                        \
+      }                                                                      \
+    }                                                                        \
+    DCHECK_NULL(value_high);                                                 \
+    return AddNode(machine()->Word32Atomic##name(type), base, index, value); \
+  }
+  ATOMIC_FUNCTION(Exchange)
+  ATOMIC_FUNCTION(Add)
+  ATOMIC_FUNCTION(Sub)
+  ATOMIC_FUNCTION(And)
+  ATOMIC_FUNCTION(Or)
+  ATOMIC_FUNCTION(Xor)
+#undef ATOMIC_FUNCTION
+#undef VALUE_HALVES
+
+  Node* AtomicCompareExchange(MachineType type, Node* base, Node* index,
+                              Node* old_value, Node* old_value_high,
+                              Node* new_value, Node* new_value_high) {
+    if (type.representation() == MachineRepresentation::kWord64) {
+      if (machine()->Is64()) {
+        DCHECK_NULL(old_value_high);
+        DCHECK_NULL(new_value_high);
+        return AddNode(machine()->Word64AtomicCompareExchange(type), base,
+                       index, old_value, new_value);
+      } else {
+        return AddNode(machine()->Word32AtomicPairCompareExchange(), base,
+                       index, old_value, old_value_high, new_value,
+                       new_value_high);
+      }
+    }
+    DCHECK_NULL(old_value_high);
+    DCHECK_NULL(new_value_high);
+    return AddNode(machine()->Word32AtomicCompareExchange(type), base, index,
+                   old_value, new_value);
   }
 
   // Arithmetic Operations.
@@ -154,7 +387,7 @@ class RawMachineAssembler {
   }
   Node* WordNot(Node* a) {
     if (machine()->Is32()) {
-      return Word32Not(a);
+      return Word32BitwiseNot(a);
     } else {
       return Word64Not(a);
     }
@@ -188,7 +421,7 @@ class RawMachineAssembler {
   Node* Word32NotEqual(Node* a, Node* b) {
     return Word32BinaryNot(Word32Equal(a, b));
   }
-  Node* Word32Not(Node* a) { return Word32Xor(a, Int32Constant(-1)); }
+  Node* Word32BitwiseNot(Node* a) { return Word32Xor(a, Int32Constant(-1)); }
   Node* Word32BinaryNot(Node* a) { return Word32Equal(a, Int32Constant(0)); }
 
   Node* Word64And(Node* a, Node* b) {
@@ -238,6 +471,9 @@ class RawMachineAssembler {
   }
   Node* Int32MulHigh(Node* a, Node* b) {
     return AddNode(machine()->Int32MulHigh(), a, b);
+  }
+  Node* Int32MulWithOverflow(Node* a, Node* b) {
+    return AddNode(machine()->Int32MulWithOverflow(), a, b);
   }
   Node* Int32Div(Node* a, Node* b) {
     return AddNode(machine()->Int32Div(), a, b);
@@ -324,36 +560,74 @@ class RawMachineAssembler {
   Node* Uint64Mod(Node* a, Node* b) {
     return AddNode(machine()->Uint64Mod(), a, b);
   }
-
-#define INTPTR_BINOP(prefix, name)                     \
-  Node* IntPtr##name(Node* a, Node* b) {               \
-    return kPointerSize == 8 ? prefix##64##name(a, b)  \
-                             : prefix##32##name(a, b); \
+  Node* Int32PairAdd(Node* a_low, Node* a_high, Node* b_low, Node* b_high) {
+    return AddNode(machine()->Int32PairAdd(), a_low, a_high, b_low, b_high);
+  }
+  Node* Int32PairSub(Node* a_low, Node* a_high, Node* b_low, Node* b_high) {
+    return AddNode(machine()->Int32PairSub(), a_low, a_high, b_low, b_high);
+  }
+  Node* Int32PairMul(Node* a_low, Node* a_high, Node* b_low, Node* b_high) {
+    return AddNode(machine()->Int32PairMul(), a_low, a_high, b_low, b_high);
+  }
+  Node* Word32PairShl(Node* low_word, Node* high_word, Node* shift) {
+    return AddNode(machine()->Word32PairShl(), low_word, high_word, shift);
+  }
+  Node* Word32PairShr(Node* low_word, Node* high_word, Node* shift) {
+    return AddNode(machine()->Word32PairShr(), low_word, high_word, shift);
+  }
+  Node* Word32PairSar(Node* low_word, Node* high_word, Node* shift) {
+    return AddNode(machine()->Word32PairSar(), low_word, high_word, shift);
+  }
+  Node* StackPointerGreaterThan(Node* value) {
+    return AddNode(machine()->StackPointerGreaterThan(), value);
   }
 
-  INTPTR_BINOP(Int, Add);
-  INTPTR_BINOP(Int, Sub);
-  INTPTR_BINOP(Int, LessThan);
-  INTPTR_BINOP(Int, LessThanOrEqual);
-  INTPTR_BINOP(Word, Equal);
-  INTPTR_BINOP(Word, NotEqual);
-  INTPTR_BINOP(Int, GreaterThanOrEqual);
-  INTPTR_BINOP(Int, GreaterThan);
+#define INTPTR_BINOP(prefix, name)                           \
+  Node* IntPtr##name(Node* a, Node* b) {                     \
+    return kSystemPointerSize == 8 ? prefix##64##name(a, b)  \
+                                   : prefix##32##name(a, b); \
+  }
+
+  INTPTR_BINOP(Int, Add)
+  INTPTR_BINOP(Int, AddWithOverflow)
+  INTPTR_BINOP(Int, Sub)
+  INTPTR_BINOP(Int, SubWithOverflow)
+  INTPTR_BINOP(Int, Mul)
+  INTPTR_BINOP(Int, Div)
+  INTPTR_BINOP(Int, LessThan)
+  INTPTR_BINOP(Int, LessThanOrEqual)
+  INTPTR_BINOP(Word, Equal)
+  INTPTR_BINOP(Word, NotEqual)
+  INTPTR_BINOP(Int, GreaterThanOrEqual)
+  INTPTR_BINOP(Int, GreaterThan)
 
 #undef INTPTR_BINOP
 
-#define UINTPTR_BINOP(prefix, name)                    \
-  Node* UintPtr##name(Node* a, Node* b) {              \
-    return kPointerSize == 8 ? prefix##64##name(a, b)  \
-                             : prefix##32##name(a, b); \
+#define UINTPTR_BINOP(prefix, name)                          \
+  Node* UintPtr##name(Node* a, Node* b) {                    \
+    return kSystemPointerSize == 8 ? prefix##64##name(a, b)  \
+                                   : prefix##32##name(a, b); \
   }
 
-  UINTPTR_BINOP(Uint, LessThan);
-  UINTPTR_BINOP(Uint, LessThanOrEqual);
-  UINTPTR_BINOP(Uint, GreaterThanOrEqual);
-  UINTPTR_BINOP(Uint, GreaterThan);
+  UINTPTR_BINOP(Uint, LessThan)
+  UINTPTR_BINOP(Uint, LessThanOrEqual)
+  UINTPTR_BINOP(Uint, GreaterThanOrEqual)
+  UINTPTR_BINOP(Uint, GreaterThan)
 
 #undef UINTPTR_BINOP
+
+  Node* Int32AbsWithOverflow(Node* a) {
+    return AddNode(machine()->Int32AbsWithOverflow().op(), a);
+  }
+
+  Node* Int64AbsWithOverflow(Node* a) {
+    return AddNode(machine()->Int64AbsWithOverflow().op(), a);
+  }
+
+  Node* IntPtrAbsWithOverflow(Node* a) {
+    return kSystemPointerSize == 8 ? Int64AbsWithOverflow(a)
+                                   : Int32AbsWithOverflow(a);
+  }
 
   Node* Float32Add(Node* a, Node* b) {
     return AddNode(machine()->Float32Add(), a, b);
@@ -367,13 +641,8 @@ class RawMachineAssembler {
   Node* Float32Div(Node* a, Node* b) {
     return AddNode(machine()->Float32Div(), a, b);
   }
-  Node* Float32Max(Node* a, Node* b) {
-    return AddNode(machine()->Float32Max().op(), a, b);
-  }
-  Node* Float32Min(Node* a, Node* b) {
-    return AddNode(machine()->Float32Min().op(), a, b);
-  }
   Node* Float32Abs(Node* a) { return AddNode(machine()->Float32Abs(), a); }
+  Node* Float32Neg(Node* a) { return AddNode(machine()->Float32Neg(), a); }
   Node* Float32Sqrt(Node* a) { return AddNode(machine()->Float32Sqrt(), a); }
   Node* Float32Equal(Node* a, Node* b) {
     return AddNode(machine()->Float32Equal(), a, b);
@@ -391,7 +660,12 @@ class RawMachineAssembler {
   Node* Float32GreaterThanOrEqual(Node* a, Node* b) {
     return Float32LessThanOrEqual(b, a);
   }
-
+  Node* Float32Max(Node* a, Node* b) {
+    return AddNode(machine()->Float32Max(), a, b);
+  }
+  Node* Float32Min(Node* a, Node* b) {
+    return AddNode(machine()->Float32Min(), a, b);
+  }
   Node* Float64Add(Node* a, Node* b) {
     return AddNode(machine()->Float64Add(), a, b);
   }
@@ -408,13 +682,39 @@ class RawMachineAssembler {
     return AddNode(machine()->Float64Mod(), a, b);
   }
   Node* Float64Max(Node* a, Node* b) {
-    return AddNode(machine()->Float64Max().op(), a, b);
+    return AddNode(machine()->Float64Max(), a, b);
   }
   Node* Float64Min(Node* a, Node* b) {
-    return AddNode(machine()->Float64Min().op(), a, b);
+    return AddNode(machine()->Float64Min(), a, b);
   }
   Node* Float64Abs(Node* a) { return AddNode(machine()->Float64Abs(), a); }
+  Node* Float64Neg(Node* a) { return AddNode(machine()->Float64Neg(), a); }
+  Node* Float64Acos(Node* a) { return AddNode(machine()->Float64Acos(), a); }
+  Node* Float64Acosh(Node* a) { return AddNode(machine()->Float64Acosh(), a); }
+  Node* Float64Asin(Node* a) { return AddNode(machine()->Float64Asin(), a); }
+  Node* Float64Asinh(Node* a) { return AddNode(machine()->Float64Asinh(), a); }
+  Node* Float64Atan(Node* a) { return AddNode(machine()->Float64Atan(), a); }
+  Node* Float64Atanh(Node* a) { return AddNode(machine()->Float64Atanh(), a); }
+  Node* Float64Atan2(Node* a, Node* b) {
+    return AddNode(machine()->Float64Atan2(), a, b);
+  }
+  Node* Float64Cbrt(Node* a) { return AddNode(machine()->Float64Cbrt(), a); }
+  Node* Float64Cos(Node* a) { return AddNode(machine()->Float64Cos(), a); }
+  Node* Float64Cosh(Node* a) { return AddNode(machine()->Float64Cosh(), a); }
+  Node* Float64Exp(Node* a) { return AddNode(machine()->Float64Exp(), a); }
+  Node* Float64Expm1(Node* a) { return AddNode(machine()->Float64Expm1(), a); }
+  Node* Float64Log(Node* a) { return AddNode(machine()->Float64Log(), a); }
+  Node* Float64Log1p(Node* a) { return AddNode(machine()->Float64Log1p(), a); }
+  Node* Float64Log10(Node* a) { return AddNode(machine()->Float64Log10(), a); }
+  Node* Float64Log2(Node* a) { return AddNode(machine()->Float64Log2(), a); }
+  Node* Float64Pow(Node* a, Node* b) {
+    return AddNode(machine()->Float64Pow(), a, b);
+  }
+  Node* Float64Sin(Node* a) { return AddNode(machine()->Float64Sin(), a); }
+  Node* Float64Sinh(Node* a) { return AddNode(machine()->Float64Sinh(), a); }
   Node* Float64Sqrt(Node* a) { return AddNode(machine()->Float64Sqrt(), a); }
+  Node* Float64Tan(Node* a) { return AddNode(machine()->Float64Tan(), a); }
+  Node* Float64Tanh(Node* a) { return AddNode(machine()->Float64Tanh(), a); }
   Node* Float64Equal(Node* a, Node* b) {
     return AddNode(machine()->Float64Equal(), a, b);
   }
@@ -433,11 +733,32 @@ class RawMachineAssembler {
   }
 
   // Conversions.
+  Node* BitcastTaggedToWord(Node* a) {
+      return AddNode(machine()->BitcastTaggedToWord(), a);
+  }
+  Node* BitcastTaggedToWordForTagAndSmiBits(Node* a) {
+    return AddNode(machine()->BitcastTaggedToWordForTagAndSmiBits(), a);
+  }
+  Node* BitcastMaybeObjectToWord(Node* a) {
+      return AddNode(machine()->BitcastMaybeObjectToWord(), a);
+  }
+  Node* BitcastWordToTagged(Node* a) {
+    return AddNode(machine()->BitcastWordToTagged(), a);
+  }
+  Node* BitcastWordToTaggedSigned(Node* a) {
+      return AddNode(machine()->BitcastWordToTaggedSigned(), a);
+  }
+  Node* TruncateFloat64ToWord32(Node* a) {
+    return AddNode(machine()->TruncateFloat64ToWord32(), a);
+  }
   Node* ChangeFloat32ToFloat64(Node* a) {
     return AddNode(machine()->ChangeFloat32ToFloat64(), a);
   }
   Node* ChangeInt32ToFloat64(Node* a) {
     return AddNode(machine()->ChangeInt32ToFloat64(), a);
+  }
+  Node* ChangeInt64ToFloat64(Node* a) {
+    return AddNode(machine()->ChangeInt64ToFloat64(), a);
   }
   Node* ChangeUint32ToFloat64(Node* a) {
     return AddNode(machine()->ChangeUint32ToFloat64(), a);
@@ -445,8 +766,17 @@ class RawMachineAssembler {
   Node* ChangeFloat64ToInt32(Node* a) {
     return AddNode(machine()->ChangeFloat64ToInt32(), a);
   }
+  Node* ChangeFloat64ToInt64(Node* a) {
+    return AddNode(machine()->ChangeFloat64ToInt64(), a);
+  }
   Node* ChangeFloat64ToUint32(Node* a) {
     return AddNode(machine()->ChangeFloat64ToUint32(), a);
+  }
+  Node* ChangeFloat64ToUint64(Node* a) {
+    return AddNode(machine()->ChangeFloat64ToUint64(), a);
+  }
+  Node* TruncateFloat64ToUint32(Node* a) {
+    return AddNode(machine()->TruncateFloat64ToUint32(), a);
   }
   Node* TruncateFloat32ToInt32(Node* a) {
     return AddNode(machine()->TruncateFloat32ToInt32(), a);
@@ -457,21 +787,11 @@ class RawMachineAssembler {
   Node* TryTruncateFloat32ToInt64(Node* a) {
     return AddNode(machine()->TryTruncateFloat32ToInt64(), a);
   }
-  Node* TruncateFloat64ToInt64(Node* a) {
-    // TODO(ahaas): Remove this function as soon as it is not used anymore in
-    // WebAssembly.
-    return AddNode(machine()->TryTruncateFloat64ToInt64(), a);
-  }
   Node* TryTruncateFloat64ToInt64(Node* a) {
     return AddNode(machine()->TryTruncateFloat64ToInt64(), a);
   }
   Node* TryTruncateFloat32ToUint64(Node* a) {
     return AddNode(machine()->TryTruncateFloat32ToUint64(), a);
-  }
-  Node* TruncateFloat64ToUint64(Node* a) {
-    // TODO(ahaas): Remove this function as soon as it is not used anymore in
-    // WebAssembly.
-    return AddNode(machine()->TryTruncateFloat64ToUint64(), a);
   }
   Node* TryTruncateFloat64ToUint64(Node* a) {
     return AddNode(machine()->TryTruncateFloat64ToUint64(), a);
@@ -482,14 +802,32 @@ class RawMachineAssembler {
   Node* ChangeUint32ToUint64(Node* a) {
     return AddNode(machine()->ChangeUint32ToUint64(), a);
   }
+  Node* ChangeTaggedToCompressed(Node* a) {
+    return AddNode(machine()->ChangeTaggedToCompressed(), a);
+  }
+  Node* ChangeTaggedPointerToCompressedPointer(Node* a) {
+    return AddNode(machine()->ChangeTaggedPointerToCompressedPointer(), a);
+  }
+  Node* ChangeTaggedSignedToCompressedSigned(Node* a) {
+    return AddNode(machine()->ChangeTaggedSignedToCompressedSigned(), a);
+  }
+  Node* ChangeCompressedToTagged(Node* a) {
+    return AddNode(machine()->ChangeCompressedToTagged(), a);
+  }
+  Node* ChangeCompressedPointerToTaggedPointer(Node* a) {
+    return AddNode(machine()->ChangeCompressedPointerToTaggedPointer(), a);
+  }
+  Node* ChangeCompressedSignedToTaggedSigned(Node* a) {
+    return AddNode(machine()->ChangeCompressedSignedToTaggedSigned(), a);
+  }
   Node* TruncateFloat64ToFloat32(Node* a) {
     return AddNode(machine()->TruncateFloat64ToFloat32(), a);
   }
-  Node* TruncateFloat64ToInt32(TruncationMode mode, Node* a) {
-    return AddNode(machine()->TruncateFloat64ToInt32(mode), a);
-  }
   Node* TruncateInt64ToInt32(Node* a) {
     return AddNode(machine()->TruncateInt64ToInt32(), a);
+  }
+  Node* RoundFloat64ToInt32(Node* a) {
+    return AddNode(machine()->RoundFloat64ToInt32(), a);
   }
   Node* RoundInt32ToFloat32(Node* a) {
     return AddNode(machine()->RoundInt32ToFloat32(), a);
@@ -548,6 +886,12 @@ class RawMachineAssembler {
   Node* Float64RoundTiesEven(Node* a) {
     return AddNode(machine()->Float64RoundTiesEven().op(), a);
   }
+  Node* Word32ReverseBytes(Node* a) {
+    return AddNode(machine()->Word32ReverseBytes(), a);
+  }
+  Node* Word64ReverseBytes(Node* a) {
+    return AddNode(machine()->Word64ReverseBytes(), a);
+  }
 
   // Float64 bit operations.
   Node* Float64ExtractLowWord32(Node* a) {
@@ -562,78 +906,115 @@ class RawMachineAssembler {
   Node* Float64InsertHighWord32(Node* a, Node* b) {
     return AddNode(machine()->Float64InsertHighWord32(), a, b);
   }
+  Node* Float64SilenceNaN(Node* a) {
+    return AddNode(machine()->Float64SilenceNaN(), a);
+  }
 
   // Stack operations.
-  Node* LoadStackPointer() { return AddNode(machine()->LoadStackPointer()); }
   Node* LoadFramePointer() { return AddNode(machine()->LoadFramePointer()); }
   Node* LoadParentFramePointer() {
     return AddNode(machine()->LoadParentFramePointer());
   }
 
   // Parameters.
+  Node* TargetParameter();
   Node* Parameter(size_t index);
 
   // Pointer utilities.
-  Node* LoadFromPointer(void* address, MachineType rep, int32_t offset = 0) {
-    return Load(rep, PointerConstant(address), Int32Constant(offset));
+  Node* LoadFromPointer(void* address, MachineType type, int32_t offset = 0) {
+    return Load(type, PointerConstant(address), Int32Constant(offset));
   }
   Node* StoreToPointer(void* address, MachineRepresentation rep, Node* node) {
     return Store(rep, PointerConstant(address), node, kNoWriteBarrier);
+  }
+  Node* UnalignedLoadFromPointer(void* address, MachineType type,
+                                 int32_t offset = 0) {
+    return UnalignedLoad(type, PointerConstant(address), Int32Constant(offset));
+  }
+  Node* UnalignedStoreToPointer(void* address, MachineRepresentation rep,
+                                Node* node) {
+    return UnalignedStore(rep, PointerConstant(address), node);
   }
   Node* StringConstant(const char* string) {
     return HeapConstant(isolate()->factory()->InternalizeUtf8String(string));
   }
 
-  // Call a given call descriptor and the given arguments.
-  Node* CallN(CallDescriptor* desc, Node* function, Node** args);
-  // Call a given call descriptor and the given arguments and frame-state.
-  Node* CallNWithFrameState(CallDescriptor* desc, Node* function, Node** args,
-                            Node* frame_state);
-  // Call to a runtime function with zero arguments.
-  Node* CallRuntime0(Runtime::FunctionId function, Node* context);
-  // Call to a runtime function with one arguments.
-  Node* CallRuntime1(Runtime::FunctionId function, Node* arg0, Node* context);
-  // Call to a runtime function with two arguments.
-  Node* CallRuntime2(Runtime::FunctionId function, Node* arg1, Node* arg2,
-                     Node* context);
-  // Call to a runtime function with three arguments.
-  Node* CallRuntime3(Runtime::FunctionId function, Node* arg1, Node* arg2,
-                     Node* arg3, Node* context);
-  // Call to a runtime function with four arguments.
-  Node* CallRuntime4(Runtime::FunctionId function, Node* arg1, Node* arg2,
-                     Node* arg3, Node* arg4, Node* context);
-  // Call to a C function with zero arguments.
-  Node* CallCFunction0(MachineType return_type, Node* function);
-  // Call to a C function with one parameter.
-  Node* CallCFunction1(MachineType return_type, MachineType arg0_type,
-                       Node* function, Node* arg0);
-  // Call to a C function with two arguments.
-  Node* CallCFunction2(MachineType return_type, MachineType arg0_type,
-                       MachineType arg1_type, Node* function, Node* arg0,
-                       Node* arg1);
-  // Call to a C function with eight arguments.
-  Node* CallCFunction8(MachineType return_type, MachineType arg0_type,
-                       MachineType arg1_type, MachineType arg2_type,
-                       MachineType arg3_type, MachineType arg4_type,
-                       MachineType arg5_type, MachineType arg6_type,
-                       MachineType arg7_type, Node* function, Node* arg0,
-                       Node* arg1, Node* arg2, Node* arg3, Node* arg4,
-                       Node* arg5, Node* arg6, Node* arg7);
+  Node* TaggedPoisonOnSpeculation(Node* value) {
+    if (poisoning_level_ != PoisoningMitigationLevel::kDontPoison) {
+      return AddNode(machine()->TaggedPoisonOnSpeculation(), value);
+    }
+    return value;
+  }
 
-  // Tail call the given call descriptor and the given arguments.
-  Node* TailCallN(CallDescriptor* call_descriptor, Node* function, Node** args);
-  // Tail call to a runtime function with one argument.
-  Node* TailCallRuntime1(Runtime::FunctionId function, Node* arg0,
-                         Node* context);
-  // Tail call to a runtime function with two arguments.
-  Node* TailCallRuntime2(Runtime::FunctionId function, Node* arg1, Node* arg2,
-                         Node* context);
-  // Tail call to a runtime function with three arguments.
-  Node* TailCallRuntime3(Runtime::FunctionId function, Node* arg1, Node* arg2,
-                         Node* arg3, Node* context);
-  // Tail call to a runtime function with four arguments.
-  Node* TailCallRuntime4(Runtime::FunctionId function, Node* arg1, Node* arg2,
-                         Node* arg3, Node* arg4, Node* context);
+  Node* WordPoisonOnSpeculation(Node* value) {
+    if (poisoning_level_ != PoisoningMitigationLevel::kDontPoison) {
+      return AddNode(machine()->WordPoisonOnSpeculation(), value);
+    }
+    return value;
+  }
+
+  // Call a given call descriptor and the given arguments.
+  // The call target is passed as part of the {inputs} array.
+  Node* CallN(CallDescriptor* call_descriptor, int input_count,
+              Node* const* inputs);
+
+  // Call a given call descriptor and the given arguments and frame-state.
+  // The call target and frame state are passed as part of the {inputs} array.
+  Node* CallNWithFrameState(CallDescriptor* call_descriptor, int input_count,
+                            Node* const* inputs);
+
+  // Tail call a given call descriptor and the given arguments.
+  // The call target is passed as part of the {inputs} array.
+  void TailCallN(CallDescriptor* call_descriptor, int input_count,
+                 Node* const* inputs);
+
+  // Type representing C function argument with type info.
+  using CFunctionArg = std::pair<MachineType, Node*>;
+
+  // Call to a C function.
+  template <class... CArgs>
+  Node* CallCFunction(Node* function, MachineType return_type, CArgs... cargs) {
+    static_assert(v8::internal::conjunction<
+                      std::is_convertible<CArgs, CFunctionArg>...>::value,
+                  "invalid argument types");
+    return CallCFunction(function, return_type, {cargs...});
+  }
+
+  Node* CallCFunction(Node* function, MachineType return_type,
+                      std::initializer_list<CFunctionArg> args);
+
+  // Call to a C function without a function discriptor on AIX.
+  template <class... CArgs>
+  Node* CallCFunctionWithoutFunctionDescriptor(Node* function,
+                                               MachineType return_type,
+                                               CArgs... cargs) {
+    static_assert(v8::internal::conjunction<
+                      std::is_convertible<CArgs, CFunctionArg>...>::value,
+                  "invalid argument types");
+    return CallCFunctionWithoutFunctionDescriptor(function, return_type,
+                                                  {cargs...});
+  }
+
+  Node* CallCFunctionWithoutFunctionDescriptor(
+      Node* function, MachineType return_type,
+      std::initializer_list<CFunctionArg> args);
+
+  // Call to a C function, while saving/restoring caller registers.
+  template <class... CArgs>
+  Node* CallCFunctionWithCallerSavedRegisters(Node* function,
+                                              MachineType return_type,
+                                              SaveFPRegsMode mode,
+                                              CArgs... cargs) {
+    static_assert(v8::internal::conjunction<
+                      std::is_convertible<CArgs, CFunctionArg>...>::value,
+                  "invalid argument types");
+    return CallCFunctionWithCallerSavedRegisters(function, return_type, mode,
+                                                 {cargs...});
+  }
+
+  Node* CallCFunctionWithCallerSavedRegisters(
+      Node* function, MachineType return_type, SaveFPRegsMode mode,
+      std::initializer_list<CFunctionArg> args);
 
   // ===========================================================================
   // The following utility methods deal with control flow, hence might switch
@@ -643,13 +1024,37 @@ class RawMachineAssembler {
   void Goto(RawMachineLabel* label);
   void Branch(Node* condition, RawMachineLabel* true_val,
               RawMachineLabel* false_val);
-  void Switch(Node* index, RawMachineLabel* default_label, int32_t* case_values,
-              RawMachineLabel** case_labels, size_t case_count);
+  void Switch(Node* index, RawMachineLabel* default_label,
+              const int32_t* case_values, RawMachineLabel** case_labels,
+              size_t case_count);
   void Return(Node* value);
   void Return(Node* v1, Node* v2);
   void Return(Node* v1, Node* v2, Node* v3);
+  void Return(Node* v1, Node* v2, Node* v3, Node* v4);
+  void Return(int count, Node* v[]);
+  void PopAndReturn(Node* pop, Node* value);
+  void PopAndReturn(Node* pop, Node* v1, Node* v2);
+  void PopAndReturn(Node* pop, Node* v1, Node* v2, Node* v3);
+  void PopAndReturn(Node* pop, Node* v1, Node* v2, Node* v3, Node* v4);
   void Bind(RawMachineLabel* label);
   void Deoptimize(Node* state);
+  void AbortCSAAssert(Node* message);
+  void DebugBreak();
+  void Unreachable();
+  void Comment(const std::string& msg);
+  void StaticAssert(Node* value);
+
+#if DEBUG
+  void Bind(RawMachineLabel* label, AssemblerDebugInfo info);
+  void SetInitialDebugInformation(AssemblerDebugInfo info);
+  void PrintCurrentBlock(std::ostream& os);
+#endif  // DEBUG
+  bool InsideBlock();
+
+  // Add success / exception successor blocks and ends the current block ending
+  // in a potentially throwing call node.
+  void Continuations(Node* call, RawMachineLabel* if_success,
+                     RawMachineLabel* if_exception);
 
   // Variables.
   Node* Phi(MachineRepresentation rep, Node* n1, Node* n2) {
@@ -681,40 +1086,64 @@ class RawMachineAssembler {
     return AddNode(op, sizeof...(args) + 1, buffer);
   }
 
+  void SetSourcePosition(const char* file, int line);
+  SourcePositionTable* source_positions() { return source_positions_; }
+
  private:
   Node* MakeNode(const Operator* op, int input_count, Node* const* inputs);
   BasicBlock* Use(RawMachineLabel* label);
   BasicBlock* EnsureBlock(RawMachineLabel* label);
   BasicBlock* CurrentBlock();
 
+  // A post-processing pass to add effect and control edges so that the graph
+  // can be optimized and re-scheduled.
+  // TODO(tebbi): Move this to a separate class.
+  void MakeReschedulable();
+  Node* CreateNodeFromPredecessors(const std::vector<BasicBlock*>& predecessors,
+                                   const std::vector<Node*>& sidetable,
+                                   const Operator* op,
+                                   const std::vector<Node*>& additional_inputs);
+  void MakePhiBinary(Node* phi, int split_point, Node* left_control,
+                     Node* right_control);
+  void MarkControlDeferred(Node* control_input);
+
   Schedule* schedule() { return schedule_; }
-  size_t parameter_count() const { return machine_sig()->parameter_count(); }
-  const MachineSignature* machine_sig() const {
-    return call_descriptor_->GetMachineSignature();
-  }
+  size_t parameter_count() const { return call_descriptor_->ParameterCount(); }
+
+  static void OptimizeControlFlow(Schedule* schedule, Graph* graph,
+                                  CommonOperatorBuilder* common);
 
   Isolate* isolate_;
   Graph* graph_;
   Schedule* schedule_;
+  SourcePositionTable* source_positions_;
   MachineOperatorBuilder machine_;
   CommonOperatorBuilder common_;
+  SimplifiedOperatorBuilder simplified_;
   CallDescriptor* call_descriptor_;
+  Node* target_parameter_;
   NodeVector parameters_;
   BasicBlock* current_block_;
+  PoisoningMitigationLevel poisoning_level_;
 
   DISALLOW_COPY_AND_ASSIGN(RawMachineAssembler);
 };
 
-
-class RawMachineLabel final {
+class V8_EXPORT_PRIVATE RawMachineLabel final {
  public:
-  RawMachineLabel();
+  enum Type { kDeferred, kNonDeferred };
+
+  explicit RawMachineLabel(Type type = kNonDeferred)
+      : deferred_(type == kDeferred) {}
   ~RawMachineLabel();
 
+  BasicBlock* block() const { return block_; }
+
  private:
-  BasicBlock* block_;
-  bool used_;
-  bool bound_;
+  BasicBlock* block_ = nullptr;
+  bool used_ = false;
+  bool bound_ = false;
+  bool deferred_;
   friend class RawMachineAssembler;
   DISALLOW_COPY_AND_ASSIGN(RawMachineLabel);
 };

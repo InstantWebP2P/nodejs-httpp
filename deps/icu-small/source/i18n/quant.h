@@ -1,3 +1,5 @@
+// © 2016 and later: Unicode, Inc. and others.
+// License & terms of use: http://www.unicode.org/copyright.html
 /*
  **********************************************************************
  * Copyright (C) 2001-2011, International Business Machines Corporation
@@ -43,7 +45,7 @@ class Quantifier : public UnicodeFunctor, public UnicodeMatcher {
      * Implement UnicodeFunctor
      * @return a copy of the object.
      */
-    virtual UnicodeFunctor* clone() const;
+    virtual Quantifier* clone() const;
 
     /**
      * Implement UnicodeMatcher

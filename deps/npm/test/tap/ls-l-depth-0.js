@@ -1,15 +1,13 @@
-var cat = require('graceful-fs').writeFileSync
+var writeFileSync = require('graceful-fs').writeFileSync
 var resolve = require('path').resolve
 
 var mkdirp = require('mkdirp')
-var mr = require('npm-registry-mock')
-var rimraf = require('rimraf')
+var Bluebird = require('bluebird')
+var mr = Bluebird.promisify(require('npm-registry-mock'))
 var test = require('tap').test
-var tmpdir = require('osenv').tmpdir
-
 var common = require('../common-tap.js')
 
-var pkg = resolve(__dirname, 'ls-l-depth-0')
+var pkg = common.pkg
 var dep = resolve(pkg, 'deps', 'glock')
 var modules = resolve(pkg, 'node_modules')
 
@@ -21,9 +19,8 @@ var expected =
   '    an inexplicably hostile sample package\n' +
   '    git+https://github.com/npm/glo.ck.git\n' +
   '    https://glo.ck\n' +
+  '    file:glock-1.8.7.tgz\n' +
   '\n'
-
-var server
 
 var EXEC_OPTS = { cwd: pkg }
 
@@ -39,12 +36,19 @@ var fixture = {
   }
 }
 
-test('setup', function (t) {
-  setup()
-  mr({ port: common.port }, function (er, s) {
-    server = s
+var deppack
 
-    t.end()
+test('setup', function (t) {
+  mkdirp.sync(modules)
+  mkdirp.sync(dep)
+
+  writeFileSync(resolve(dep, 'package.json'), JSON.stringify(fixture))
+  return mr({ port: common.port }).then((s) => {
+    t.parent.teardown(() => s.close())
+    return common.npm(['pack', dep], EXEC_OPTS)
+  }).spread((code, stdout) => {
+    t.is(code, 0, 'pack')
+    deppack = stdout.trim()
   })
 })
 
@@ -53,19 +57,20 @@ test('#6311: npm ll --depth=0 duplicates listing', function (t) {
     [
       '--loglevel', 'silent',
       '--registry', common.registry,
-      '--unicode=true',
-      'install', dep
+      '--parseable',
+      'install', deppack
     ],
     EXEC_OPTS,
     function (err, code, stdout, stderr) {
-      t.ifError(err, 'npm install ran without error')
+      if (err) throw err
       t.notOk(code, 'npm install exited cleanly')
-      t.notOk(stderr, 'npm install ran silently')
-      t.equal(
+      t.is(stderr, '', 'npm install ran silently')
+      t.match(
         stdout.trim(),
-        resolve(__dirname, 'ls-l-depth-0') +
-          '\n└─┬ glock@1.8.7 ' +
-          '\n  └── underscore@1.5.1',
+        new RegExp(
+          '^add\tunderscore\t1[.]5[.]1\tnode_modules[\\\\/]underscore\t\t[\n]' +
+          'add\tglock\t1[.]8[.]7\tnode_modules[\\\\/]glock$'
+        ),
         'got expected install output'
       )
 
@@ -78,9 +83,9 @@ test('#6311: npm ll --depth=0 duplicates listing', function (t) {
         ],
         EXEC_OPTS,
         function (err, code, stdout, stderr) {
-          t.ifError(err, 'npm ll ran without error')
+          if (err) throw err
           t.is(code, 0, 'npm ll exited cleanly')
-          t.notOk(stderr, 'npm ll ran silently')
+          t.is(stderr, '', 'npm ll ran silently')
           t.equal(
             stdout,
             expected,
@@ -93,24 +98,3 @@ test('#6311: npm ll --depth=0 duplicates listing', function (t) {
     }
   )
 })
-
-test('cleanup', function (t) {
-  cleanup()
-  server.close()
-
-  t.end()
-})
-
-function cleanup () {
-  process.chdir(tmpdir())
-  rimraf.sync(pkg)
-}
-
-function setup () {
-  cleanup()
-
-  mkdirp.sync(modules)
-  mkdirp.sync(dep)
-
-  cat(resolve(dep, 'package.json'), JSON.stringify(fixture))
-}

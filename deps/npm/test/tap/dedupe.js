@@ -10,7 +10,7 @@ var test = require('tap').test
 var common = require('../common-tap.js')
 var server
 
-var pkg = path.join(__dirname, 'dedupe')
+var pkg = common.pkg
 
 var EXEC_OPTS = { cwd: pkg }
 
@@ -60,6 +60,7 @@ test('setup', function (t) {
 test('dedupe finds the common module and moves it up one level', function (t) {
   common.npm([
     '--registry', common.registry,
+    '--no-save',
     'install', '.'
   ],
   EXEC_OPTS,
