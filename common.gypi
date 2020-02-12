@@ -197,19 +197,20 @@
         'defines': ['_DARWIN_USE_64_BIT_INODE=1'],
         'xcode_settings': {
           'ALWAYS_SEARCH_USER_PATHS': 'NO',
-          'GCC_CW_ASM_SYNTAX': 'NO',                # No -fasm-blocks
-          'GCC_DYNAMIC_NO_PIC': 'NO',               # No -mdynamic-no-pic
-                                                    # (Equivalent to -fPIC)
-          'GCC_ENABLE_CPP_EXCEPTIONS': 'YES',        # -fno-exceptions
-          'GCC_ENABLE_CPP_RTTI': 'YES',              # -fno-rtti
-          'GCC_ENABLE_PASCAL_STRINGS': 'NO',        # No -mpascal-strings
-          'GCC_THREADSAFE_STATICS': 'NO',           # -fno-threadsafe-statics
+          'GCC_CW_ASM_SYNTAX': 'NO',               # No -fasm-blocks
+          'GCC_DYNAMIC_NO_PIC': 'NO',              # No -mdynamic-no-pic
+                                                   # (Equivalent to -fPIC)
+          'GCC_ENABLE_CPP_EXCEPTIONS': 'YES',      # -fno-exceptions
+          'GCC_ENABLE_CPP_RTTI': 'YES',            # -fno-rtti
+          'GCC_ENABLE_PASCAL_STRINGS': 'NO',       # No -mpascal-strings
+          'GCC_THREADSAFE_STATICS': 'NO',          # -fno-threadsafe-statics
           'GCC_VERSION': '4.2',
-          'PREBINDING': 'NO',                       # No -Wl,-prebind
-          'MACOSX_DEPLOYMENT_TARGET': '10.5',       # -mmacosx-version-min=10.5
+          'PREBINDING': 'NO',                      # No -Wl,-prebind
+          'MACOSX_DEPLOYMENT_TARGET': '10.9',      # -mmacosx-version-min=10.9
           'USE_HEADERMAP': 'NO',
           'OTHER_CFLAGS': [
             '-fno-strict-aliasing',
+            '-stdlib=libc++',
           ],
           'WARNING_CFLAGS': [
             '-Wall',
