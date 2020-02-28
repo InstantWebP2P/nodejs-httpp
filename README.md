@@ -68,6 +68,13 @@ Unix/Macintosh:
     make
     make install
 
+Linux build with Docker:
+
+    `
+    ./appenv ./configure
+    ./appenv make 
+    `    
+
 Cross compile for Raspberry Pi:
 
     setup toolchain env first, then
