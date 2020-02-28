@@ -1,0 +1,22 @@
+#
+# node-httpp images Dockerfile
+#
+# https://github.com/InstantWebP2P/node-httpp
+#
+
+# Pull base image.
+FROM ubuntu:16.04
+
+# Install.
+
+# Add files.
+COPY . /
+
+# Set environment variables.
+ENV HOME /root
+
+# Define working directory.
+WORKDIR /data
+
+# Define default command.
+CMD ["node"]
