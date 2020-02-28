@@ -70,8 +70,13 @@ Unix/Macintosh:
 
 Linux build with Docker:
 
-    ./appenv ./configure
+    ./appenv ./configure --prefix=/appins
     ./appenv make 
+    ./appenv make install
+
+Linux image packeage with Docker:
+
+    ./appimg
 
 Cross compile for Raspberry Pi:
 
