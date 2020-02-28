@@ -1,5 +1,0 @@
-#!/usr/bin/env bash
-
-# package app 
-echo "Package app files ..."
-docker image build --compress -t httpp:16.04 -f ./Dockerfile.img ./appins

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# check build docker image
+# check docker image for building
 if [ "$(docker images -q httpp-bld:16.04 2> /dev/null)" == "" ]; then
   echo "Build Docker image as httpp-bld:16.04"
   docker image build --compress -t httpp-bld:16.04 -f ./Dockerfile.bld .
@@ -10,6 +10,7 @@ fi
 mkdir -p appins 
 
 # execute commands 
-echo "$@ ..."
-docker run -v `pwd`/appins:/appins -v `pwd`:`pwd` -w `pwd` -i -t httpp-bld:16.04 $@
-
+if [ $# -ne 0 ]; then
+  echo "$@ ..."
+  docker run -v `pwd`/appins:/appins -v `pwd`:`pwd` -w `pwd` -i -t httpp-bld:16.04 $@
+fi
