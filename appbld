@@ -15,9 +15,4 @@ if [ $# -ne 0 ]; then
   docker run -v `pwd`/appins:/appins -v `pwd`:`pwd` -w `pwd` -i -t \
   --rm --network host \
   httpp-bld:16.04 $@
-else
-  echo "Enter shell ..."
-  docker run -v `pwd`/appins:/appins -v `pwd`:`pwd` -w `pwd` -i -t \
-  --rm --network host \
-  httpp-bld:16.04
 fi
