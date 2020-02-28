@@ -68,15 +68,15 @@ Unix/Macintosh:
     make
     make install
 
-Linux build with Docker:
+Linux building with Docker:
 
-    ./appenv ./configure --prefix=/appins
-    ./appenv make 
-    ./appenv make install
+    ./appbld ./configure --prefix=/appins
+    ./appbld make 
+    ./appbld make install
 
-Linux image packeage with Docker:
+Linux packaging with Docker:
 
-    ./appimg
+    ./apppkg
 
 Cross compile for Raspberry Pi:
 
