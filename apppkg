@@ -14,7 +14,7 @@ if [ $# -ne 0 ]; then
   httpp:16.04 $@
 else
   echo "Enter Node.js repl ..."
-  docker run -v `pwd`:`pwd` -w `pwd` -i -t \
+  docker run                         -i -t \
   --rm --network host \
   httpp:16.04
 fi

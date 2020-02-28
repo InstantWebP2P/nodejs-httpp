@@ -23,7 +23,7 @@ RUN \
   npm i npm@3.10.10 -g
 
 # Define working directory.
-WORKDIR /data
+WORKDIR /appins
 
 # Define default command.
 CMD ["node"]
