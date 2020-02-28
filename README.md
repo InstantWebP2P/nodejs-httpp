@@ -71,7 +71,7 @@ Unix/Macintosh:
 Linux building with Docker:
 
     ./appbld ./configure --prefix=/appins
-    ./appbld make 
+    ./appbld make -j 6
     ./appbld make install
 
 Linux packaging with Docker:
