@@ -13,4 +13,7 @@ mkdir -p appins
 if [ $# -ne 0 ]; then
   echo "$@ ..."
   docker run -v `pwd`/appins:/appins -v `pwd`:`pwd` -w `pwd` -i -t httpp-bld:16.04 $@
+else
+  echo "Enter shell ..."
+  docker run -v `pwd`/appins:/appins -v `pwd`:`pwd` -w `pwd` -i -t httpp-bld:16.04
 fi

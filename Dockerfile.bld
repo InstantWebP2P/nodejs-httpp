@@ -21,4 +21,4 @@ ENV HOME /root
 WORKDIR /data
 
 # Define default command.
-CMD ["sh"]
+CMD ["bash"]
