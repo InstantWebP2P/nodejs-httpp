@@ -9,8 +9,12 @@ fi
 # execute commands 
 if [ $# -ne 0 ]; then
   echo "$@ ..."
-  docker run -v `pwd`:`pwd` -w `pwd` -i -t httpp:16.04 $@
+  docker run -v `pwd`:`pwd` -w `pwd` -i -t \
+  --rm --network host \
+  httpp:16.04 $@
 else
   echo "Enter Node.js repl ..."
-  docker run -v `pwd`:`pwd` -w `pwd` -i -t httpp:16.04
+  docker run -v `pwd`:`pwd` -w `pwd` -i -t \
+  --rm --network host \
+  httpp:16.04
 fi
