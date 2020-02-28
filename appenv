@@ -8,5 +8,5 @@ fi
 
 # execute commands 
 echo "$@ ..."
-docker run -v `pwd`:`pwd` -w `pwd` -t httpp:16.04 $@
+docker run -v `pwd`:`pwd` -w `pwd` -i -t httpp:16.04 $@
 
