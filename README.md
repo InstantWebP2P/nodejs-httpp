@@ -70,10 +70,8 @@ Unix/Macintosh:
 
 Linux build with Docker:
 
-    `
     ./appenv ./configure
     ./appenv make 
-    `    
 
 Cross compile for Raspberry Pi:
 
