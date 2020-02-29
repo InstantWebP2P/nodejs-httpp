@@ -208,7 +208,7 @@
       }],      
       [ 'OS=="android" or OS=="linux" or OS=="freebsd" or OS=="openbsd" or OS=="solaris"', {
         'cflags': [ '-Wall' ],
-        'cflags_cc': [ '-frtti', '-fexceptions', '-std=gnu++1y' ],
+        'cflags_cc': [ '-frtti', '-fexceptions', '-std=gnu++11' ],
         'ldflags': [ '-rdynamic' ],
         'conditions': [
           [ 'target_arch=="ia32"', {
@@ -272,7 +272,7 @@
           ['clang==1', {
             'xcode_settings': {
               'GCC_VERSION': 'com.apple.compilers.llvm.clang.1_0',
-              'CLANG_CXX_LANGUAGE_STANDARD': 'gnu++1y',  # -std=gnu++1y
+              'CLANG_CXX_LANGUAGE_STANDARD': 'gnu++11',  # -std=gnu++11
               'CLANG_CXX_LIBRARY': 'libc++',
             },
           }],
