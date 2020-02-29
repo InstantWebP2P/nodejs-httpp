@@ -11,8 +11,6 @@ It consists of four modules: udt.js, httpp.js, udts.js, httpps.js, that keeps th
 * Replace net with udt, http with httpp, tls with udts, https with httpps, when require net/http/tls/httpps modules	
 * Do the rest as http
 
-To build it manually, clone the repository and checkout v0.8-httpp branch firstly, then do steps as below.
-
 [Discussion group](https://groups.google.com/d/forum/iwebpp)
 
 [Wiki page](https://github.com/InstantWebP2P/node-httpp/wiki/An-introduction-to-node-httpp)
