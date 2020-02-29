@@ -101,6 +101,15 @@ Windows:
 
     vcbuild.bat
 
+### Must to upgrade NPM to 3.10.10 right now
+
+`
+
+  npm config set strict-ssl false -g
+  npm i npm@3.10.10 -g
+
+`
+
 ### To run the tests:
 
 Unix/Macintosh:
