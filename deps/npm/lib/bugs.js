@@ -1,43 +1,32 @@
-
 module.exports = bugs
 
-bugs.usage = "npm bugs <pkgname>"
+var npm = require('./npm.js')
+var log = require('npmlog')
+var opener = require('opener')
+var fetchPackageMetadata = require('./fetch-package-metadata.js')
+var usage = require('./utils/usage')
 
-var npm = require("./npm.js")
-  , registry = npm.registry
-  , log = require("npmlog")
-  , opener = require("opener")
+bugs.usage = usage(
+  'bugs',
+  'npm bugs [<pkgname>]'
+)
 
 bugs.completion = function (opts, cb) {
-  if (opts.conf.argv.remain.length > 2) return cb()
-  registry.get("/-/short", 60000, function (er, list) {
-    return cb(null, list || [])
-  })
+  // FIXME: there used to be registry completion here, but it stopped making
+  // sense somewhere around 50,000 packages on the registry
+  cb()
 }
 
 function bugs (args, cb) {
-  if (!args.length) return cb(bugs.usage)
-  var n = args[0].split("@").shift()
-  registry.get(n + "/latest", 3600, function (er, d) {
+  var n = args.length ? args[0] : '.'
+  fetchPackageMetadata(n, '.', function (er, d) {
     if (er) return cb(er)
-    var bugs = d.bugs
-      , repo = d.repository || d.repositories
-      , url
-    if (bugs) {
-      url = (typeof bugs === "string") ? bugs : bugs.url
-    } else if (repo) {
-      if (Array.isArray(repo)) repo = repo.shift()
-      if (repo.hasOwnProperty("url")) repo = repo.url
-      log.verbose("repository", repo)
-      if (repo && repo.match(/^(https?:\/\/|git(:\/\/|@))github.com/)) {
-        url = repo.replace(/^git(@|:\/\/)/, "https://")
-                  .replace(/^https?:\/\/github.com:/, "https://github.com/")
-                  .replace(/\.git$/, '')+"/issues"
-      }
-    }
+
+    var url = d.bugs && ((typeof d.bugs === 'string') ? d.bugs : d.bugs.url)
     if (!url) {
-      url = "https://npmjs.org/package/" + d.name
+      url = 'https://www.npmjs.org/package/' + d.name
     }
-    opener(url, { command: npm.config.get("browser") }, cb)
+    log.silly('bugs', 'url', url)
+    opener(url, { command: npm.config.get('browser') }, cb)
   })
 }

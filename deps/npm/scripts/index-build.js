@@ -1,63 +1,58 @@
 #!/usr/bin/env node
-var fs = require("fs")
-  , path = require("path")
-  , cli = path.resolve(__dirname, "..", "doc", "cli")
-  , clidocs = null
-  , api = path.resolve(__dirname, "..", "doc", "api")
-  , apidocs = null
-  , readme = path.resolve(__dirname, "..", "README.md")
+var fs = require('fs')
+var path = require('path')
+var root = path.resolve(__dirname, '..')
+var glob = require('glob')
+var conversion = { 'cli': 1, 'api': 3, 'files': 5, 'misc': 7 }
 
-fs.readdir(cli, done("cli"))
-fs.readdir(api, done("api"))
-
-function done (which) { return function (er, docs) {
+glob(root + '/{README.md,doc/*/*.md}', function (er, files) {
   if (er) throw er
-  docs.sort()
-  if (which === "api") apidocs = docs
-  else clidocs = docs
 
-  if (apidocs && clidocs) next()
-}}
+  output(files.map(function (f) {
+    var b = path.basename(f)
+    if (b === 'README.md') return [0, b]
+    if (b === 'index.md') return null
+    var s = conversion[path.basename(path.dirname(f))]
+    return [s, f]
+  }).filter(function (f) {
+    return f
+  }).sort(function (a, b) {
+    return (a[0] === b[0])
+            ? (path.basename(a[1]) === 'npm.md' ? -1
+            : path.basename(b[1]) === 'npm.md' ? 1
+            : a[1] > b[1] ? 1 : -1)
+            : a[0] - b[0]
+  }))
+})
 
-function filter (d) {
-  return d !== "index.md"
-       && d.charAt(0) !== "."
-       && d.match(/\.md$/)
+function output (files) {
+  console.log(
+    'npm-index(7) -- Index of all npm documentation\n' +
+    '==============================================\n')
+
+  writeLines(files, 0)
+  writeLines(files, 1, 'Command Line Documentation', 'Using npm on the command line')
+  writeLines(files, 3, 'API Documentation', 'Using npm in your Node programs')
+  writeLines(files, 5, 'Files', 'File system structures npm uses')
+  writeLines(files, 7, 'Misc', 'Various other bits and bobs')
 }
 
-function next () {
-  console.log(
-    "npm-index(1) -- Index of all npm documentation\n" +
-    "==============================================\n")
-
-  apidocs = apidocs.filter(filter).map(function (d) {
-    return [3, path.resolve(api, d)]
-  })
-
-  clidocs = clidocs.filter(filter).map(function (d) {
-    return [1, path.resolve(cli, d)]
-  })
-
-  writeLine([1, readme])
-
-  console.log("# Command Line Documentation")
-
-  clidocs.forEach(writeLine)
-
-  console.log("# API Documentation")
-  apidocs.forEach(writeLine)
+function writeLines (files, sxn, heading, desc) {
+  if (heading) {
+    console.log('## %s\n\n%s\n', heading, desc)
+  }
+  files.filter(function (f) {
+    return f[0] === sxn
+  }).forEach(writeLine)
 }
 
 function writeLine (sd) {
-  var sxn = sd[0]
-    , doc = sd[1]
-    , d = path.basename(doc, ".md")
-    , s = fs.lstatSync(doc)
+  var sxn = sd[0] || 1
+  var doc = sd[1]
+  var d = path.basename(doc, '.md')
 
-  if (s.isSymbolicLink()) return
+  var content = fs.readFileSync(doc, 'utf8').split('\n')[0].split('-- ')[1]
 
-  var content = fs.readFileSync(doc, "utf8").split("\n")[0].split("--")[1]
-
-  console.log("## npm-%s(%d)\n", d, sxn)
-  console.log(content + "\n")
+  console.log('### %s(%d)\n', d, sxn)
+  console.log(content + '\n')
 }
