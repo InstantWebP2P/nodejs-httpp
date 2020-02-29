@@ -99,7 +99,7 @@ Windows:
 
     vcbuild.bat
 
-### Must to upgrade NPM to 3.10.10 right now
+### Must to stuck NPM at v3.10.10 right now
     
     npm config set strict-ssl false -g
     npm i npm@3.10.10 -g
