@@ -208,7 +208,7 @@
       }],      
       [ 'OS=="android" or OS=="linux" or OS=="freebsd" or OS=="openbsd" or OS=="solaris"', {
         'cflags': [ '-Wall' ],
-        'cflags_cc': [ '-frtti', '-fexceptions', '-std=gnu++1y' ],
+        'cflags_cc': [ '-frtti', '-fexceptions' ],
         'ldflags': [ '-rdynamic' ],
         'conditions': [
           [ 'target_arch=="ia32"', {
@@ -244,7 +244,7 @@
           'GCC_THREADSAFE_STATICS': 'NO',          # -fno-threadsafe-statics
           'GCC_VERSION': '4.2',
           'PREBINDING': 'NO',                      # No -Wl,-prebind
-          'MACOSX_DEPLOYMENT_TARGET': '10.10',     # -mmacosx-version-min=10.10
+          'MACOSX_DEPLOYMENT_TARGET': '10.9',      # -mmacosx-version-min=10.9
           'USE_HEADERMAP': 'NO',
           'OTHER_CFLAGS': [
             '-fno-strict-aliasing',
@@ -268,13 +268,6 @@
           }],
           ['target_arch=="x64"', {
             'xcode_settings': {'ARCHS': ['x86_64'], 'OTHER_CFLAGS': ['-DX64']},
-          }],
-          ['clang==1', {
-            'xcode_settings': {
-              'GCC_VERSION': 'com.apple.compilers.llvm.clang.1_0',
-              'CLANG_CXX_LANGUAGE_STANDARD': 'gnu++1y',  # -std=gnu++1y
-              'CLANG_CXX_LIBRARY': 'libc++',
-            },
           }],
         ],
       }],
