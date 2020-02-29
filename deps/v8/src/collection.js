@@ -1,250 +1,518 @@
-// Copyright 2011 the V8 project authors. All rights reserved.
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are
-// met:
-//
-//     * Redistributions of source code must retain the above copyright
-//       notice, this list of conditions and the following disclaimer.
-//     * Redistributions in binary form must reproduce the above
-//       copyright notice, this list of conditions and the following
-//       disclaimer in the documentation and/or other materials provided
-//       with the distribution.
-//     * Neither the name of Google Inc. nor the names of its
-//       contributors may be used to endorse or promote products derived
-//       from this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-// "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-// LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-// A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-// OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-// LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-// DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-// THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+// Copyright 2012 the V8 project authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
 
+var $getHash;
+var $getExistingHash;
+var $mapSet;
+var $mapHas;
+var $mapDelete;
+var $setAdd;
+var $setHas;
+var $setDelete;
+var $mapFromArray;
+var $setFromArray;
+
+(function(global, utils) {
 "use strict";
 
-var $Set = global.Set;
-var $Map = global.Map;
-var $WeakMap = global.WeakMap;
+%CheckIsBootstrapping();
 
-//-------------------------------------------------------------------
+// -------------------------------------------------------------------
+// Imports
 
-// Global sentinel to be used instead of undefined keys, which are not
-// supported internally but required for Harmony sets and maps.
-var undefined_sentinel = {};
+var GlobalMap = global.Map;
+var GlobalObject = global.Object;
+var GlobalSet = global.Set;
+var IntRandom;
+
+utils.Import(function(from) {
+  IntRandom = from.IntRandom;
+});
+
+var NumberIsNaN;
+
+utils.Import(function(from) {
+  NumberIsNaN = from.NumberIsNaN;
+});
+
+// -------------------------------------------------------------------
+
+function HashToEntry(table, hash, numBuckets) {
+  var bucket = ORDERED_HASH_TABLE_HASH_TO_BUCKET(hash, numBuckets);
+  return ORDERED_HASH_TABLE_BUCKET_AT(table, bucket);
+}
+%SetForceInlineFlag(HashToEntry);
 
 
-function SetConstructor() {
-  if (%_IsConstructCall()) {
-    %SetInitialize(this);
-  } else {
-    return new $Set();
+function SetFindEntry(table, numBuckets, key, hash) {
+  var entry = HashToEntry(table, hash, numBuckets);
+  if (entry === NOT_FOUND) return entry;
+  var candidate = ORDERED_HASH_SET_KEY_AT(table, entry, numBuckets);
+  if (key === candidate) return entry;
+  var keyIsNaN = NumberIsNaN(key);
+  while (true) {
+    if (keyIsNaN && NumberIsNaN(candidate)) {
+      return entry;
+    }
+    entry = ORDERED_HASH_SET_CHAIN_AT(table, entry, numBuckets);
+    if (entry === NOT_FOUND) return entry;
+    candidate = ORDERED_HASH_SET_KEY_AT(table, entry, numBuckets);
+    if (key === candidate) return entry;
+  }
+  return NOT_FOUND;
+}
+%SetForceInlineFlag(SetFindEntry);
+
+
+function MapFindEntry(table, numBuckets, key, hash) {
+  var entry = HashToEntry(table, hash, numBuckets);
+  if (entry === NOT_FOUND) return entry;
+  var candidate = ORDERED_HASH_MAP_KEY_AT(table, entry, numBuckets);
+  if (key === candidate) return entry;
+  var keyIsNaN = NumberIsNaN(key);
+  while (true) {
+    if (keyIsNaN && NumberIsNaN(candidate)) {
+      return entry;
+    }
+    entry = ORDERED_HASH_MAP_CHAIN_AT(table, entry, numBuckets);
+    if (entry === NOT_FOUND) return entry;
+    candidate = ORDERED_HASH_MAP_KEY_AT(table, entry, numBuckets);
+    if (key === candidate) return entry;
+  }
+  return NOT_FOUND;
+}
+%SetForceInlineFlag(MapFindEntry);
+
+
+function ComputeIntegerHash(key, seed) {
+  var hash = key;
+  hash = hash ^ seed;
+  hash = ~hash + (hash << 15);  // hash = (hash << 15) - hash - 1;
+  hash = hash ^ (hash >>> 12);
+  hash = hash + (hash << 2);
+  hash = hash ^ (hash >>> 4);
+  hash = (hash * 2057) | 0;  // hash = (hash + (hash << 3)) + (hash << 11);
+  hash = hash ^ (hash >>> 16);
+  return hash & 0x3fffffff;
+}
+%SetForceInlineFlag(ComputeIntegerHash);
+
+var hashCodeSymbol = GLOBAL_PRIVATE("hash_code_symbol");
+
+function GetExistingHash(key) {
+  if (%_IsSmi(key)) {
+    return ComputeIntegerHash(key, 0);
+  }
+  if (IS_STRING(key)) {
+    var field = %_StringGetRawHashField(key);
+    if ((field & 1 /* Name::kHashNotComputedMask */) === 0) {
+      return field >>> 2 /* Name::kHashShift */;
+    }
+  } else if (IS_SPEC_OBJECT(key) && !%_IsJSProxy(key) && !IS_GLOBAL(key)) {
+    var hash = GET_PRIVATE(key, hashCodeSymbol);
+    return hash;
+  }
+  return %GenericHash(key);
+}
+%SetForceInlineFlag(GetExistingHash);
+
+
+function GetHash(key) {
+  var hash = GetExistingHash(key);
+  if (IS_UNDEFINED(hash)) {
+    hash = IntRandom() | 0;
+    if (hash === 0) hash = 1;
+    SET_PRIVATE(key, hashCodeSymbol, hash);
+  }
+  return hash;
+}
+%SetForceInlineFlag(GetHash);
+
+
+// -------------------------------------------------------------------
+// Harmony Set
+
+function SetConstructor(iterable) {
+  if (!%_IsConstructCall()) {
+    throw MakeTypeError(kConstructorNotFunction, "Set");
+  }
+
+  %_SetInitialize(this);
+
+  if (!IS_NULL_OR_UNDEFINED(iterable)) {
+    var adder = this.add;
+    if (!IS_SPEC_FUNCTION(adder)) {
+      throw MakeTypeError(kPropertyNotFunction, 'add', this);
+    }
+
+    for (var value of iterable) {
+      %_CallFunction(this, value, adder);
+    }
   }
 }
 
 
 function SetAdd(key) {
   if (!IS_SET(this)) {
-    throw MakeTypeError('incompatible_method_receiver',
-                        ['Set.prototype.add', this]);
+    throw MakeTypeError(kIncompatibleMethodReceiver, 'Set.prototype.add', this);
   }
-  if (IS_UNDEFINED(key)) {
-    key = undefined_sentinel;
+  // Normalize -0 to +0 as required by the spec.
+  // Even though we use SameValueZero as the comparison for the keys we don't
+  // want to ever store -0 as the key since the key is directly exposed when
+  // doing iteration.
+  if (key === 0) {
+    key = 0;
   }
-  return %SetAdd(this, key);
+  var table = %_JSCollectionGetTable(this);
+  var numBuckets = ORDERED_HASH_TABLE_BUCKET_COUNT(table);
+  var hash = GetHash(key);
+  if (SetFindEntry(table, numBuckets, key, hash) !== NOT_FOUND) return this;
+
+  var nof = ORDERED_HASH_TABLE_ELEMENT_COUNT(table);
+  var nod = ORDERED_HASH_TABLE_DELETED_COUNT(table);
+  var capacity = numBuckets << 1;
+  if ((nof + nod) >= capacity) {
+    // Need to grow, bail out to runtime.
+    %SetGrow(this);
+    // Re-load state from the grown backing store.
+    table = %_JSCollectionGetTable(this);
+    numBuckets = ORDERED_HASH_TABLE_BUCKET_COUNT(table);
+    nof = ORDERED_HASH_TABLE_ELEMENT_COUNT(table);
+    nod = ORDERED_HASH_TABLE_DELETED_COUNT(table);
+  }
+  var entry = nof + nod;
+  var index = ORDERED_HASH_SET_ENTRY_TO_INDEX(entry, numBuckets);
+  var bucket = ORDERED_HASH_TABLE_HASH_TO_BUCKET(hash, numBuckets);
+  var chainEntry = ORDERED_HASH_TABLE_BUCKET_AT(table, bucket);
+  ORDERED_HASH_TABLE_SET_BUCKET_AT(table, bucket, entry);
+  ORDERED_HASH_TABLE_SET_ELEMENT_COUNT(table, nof + 1);
+  FIXED_ARRAY_SET(table, index, key);
+  FIXED_ARRAY_SET_SMI(table, index + 1, chainEntry);
+  return this;
 }
 
 
 function SetHas(key) {
   if (!IS_SET(this)) {
-    throw MakeTypeError('incompatible_method_receiver',
-                        ['Set.prototype.has', this]);
+    throw MakeTypeError(kIncompatibleMethodReceiver, 'Set.prototype.has', this);
   }
-  if (IS_UNDEFINED(key)) {
-    key = undefined_sentinel;
-  }
-  return %SetHas(this, key);
+  var table = %_JSCollectionGetTable(this);
+  var numBuckets = ORDERED_HASH_TABLE_BUCKET_COUNT(table);
+  var hash = GetExistingHash(key);
+  if (IS_UNDEFINED(hash)) return false;
+  return SetFindEntry(table, numBuckets, key, hash) !== NOT_FOUND;
 }
 
 
 function SetDelete(key) {
   if (!IS_SET(this)) {
-    throw MakeTypeError('incompatible_method_receiver',
-                        ['Set.prototype.delete', this]);
+    throw MakeTypeError(kIncompatibleMethodReceiver,
+                        'Set.prototype.delete', this);
   }
-  if (IS_UNDEFINED(key)) {
-    key = undefined_sentinel;
-  }
-  return %SetDelete(this, key);
+  var table = %_JSCollectionGetTable(this);
+  var numBuckets = ORDERED_HASH_TABLE_BUCKET_COUNT(table);
+  var hash = GetExistingHash(key);
+  if (IS_UNDEFINED(hash)) return false;
+  var entry = SetFindEntry(table, numBuckets, key, hash);
+  if (entry === NOT_FOUND) return false;
+
+  var nof = ORDERED_HASH_TABLE_ELEMENT_COUNT(table) - 1;
+  var nod = ORDERED_HASH_TABLE_DELETED_COUNT(table) + 1;
+  var index = ORDERED_HASH_SET_ENTRY_TO_INDEX(entry, numBuckets);
+  FIXED_ARRAY_SET(table, index, %_TheHole());
+  ORDERED_HASH_TABLE_SET_ELEMENT_COUNT(table, nof);
+  ORDERED_HASH_TABLE_SET_DELETED_COUNT(table, nod);
+  if (nof < (numBuckets >>> 1)) %SetShrink(this);
+  return true;
 }
 
 
-function MapConstructor() {
-  if (%_IsConstructCall()) {
-    %MapInitialize(this);
-  } else {
-    return new $Map();
+function SetGetSize() {
+  if (!IS_SET(this)) {
+    throw MakeTypeError(kIncompatibleMethodReceiver,
+                        'Set.prototype.size', this);
+  }
+  var table = %_JSCollectionGetTable(this);
+  return ORDERED_HASH_TABLE_ELEMENT_COUNT(table);
+}
+
+
+function SetClearJS() {
+  if (!IS_SET(this)) {
+    throw MakeTypeError(kIncompatibleMethodReceiver,
+                        'Set.prototype.clear', this);
+  }
+  %_SetClear(this);
+}
+
+
+function SetForEach(f, receiver) {
+  if (!IS_SET(this)) {
+    throw MakeTypeError(kIncompatibleMethodReceiver,
+                        'Set.prototype.forEach', this);
+  }
+
+  if (!IS_SPEC_FUNCTION(f)) throw MakeTypeError(kCalledNonCallable, f);
+  var needs_wrapper = false;
+  if (IS_NULL(receiver)) {
+    if (%IsSloppyModeFunction(f)) receiver = UNDEFINED;
+  } else if (!IS_UNDEFINED(receiver)) {
+    needs_wrapper = SHOULD_CREATE_WRAPPER(f, receiver);
+  }
+
+  var iterator = new SetIterator(this, ITERATOR_KIND_VALUES);
+  var key;
+  var stepping = DEBUG_IS_ACTIVE && %DebugCallbackSupportsStepping(f);
+  var value_array = [UNDEFINED];
+  while (%SetIteratorNext(iterator, value_array)) {
+    if (stepping) %DebugPrepareStepInIfStepping(f);
+    key = value_array[0];
+    var new_receiver = needs_wrapper ? $toObject(receiver) : receiver;
+    %_CallFunction(new_receiver, key, key, this, f);
+  }
+}
+
+// -------------------------------------------------------------------
+
+%SetCode(GlobalSet, SetConstructor);
+%FunctionSetLength(GlobalSet, 0);
+%FunctionSetPrototype(GlobalSet, new GlobalObject());
+%AddNamedProperty(GlobalSet.prototype, "constructor", GlobalSet, DONT_ENUM);
+%AddNamedProperty(GlobalSet.prototype, symbolToStringTag, "Set",
+                  DONT_ENUM | READ_ONLY);
+
+%FunctionSetLength(SetForEach, 1);
+
+// Set up the non-enumerable functions on the Set prototype object.
+utils.InstallGetter(GlobalSet.prototype, "size", SetGetSize);
+utils.InstallFunctions(GlobalSet.prototype, DONT_ENUM, [
+  "add", SetAdd,
+  "has", SetHas,
+  "delete", SetDelete,
+  "clear", SetClearJS,
+  "forEach", SetForEach
+]);
+
+
+// -------------------------------------------------------------------
+// Harmony Map
+
+function MapConstructor(iterable) {
+  if (!%_IsConstructCall()) {
+    throw MakeTypeError(kConstructorNotFunction, "Map");
+  }
+
+  %_MapInitialize(this);
+
+  if (!IS_NULL_OR_UNDEFINED(iterable)) {
+    var adder = this.set;
+    if (!IS_SPEC_FUNCTION(adder)) {
+      throw MakeTypeError(kPropertyNotFunction, 'set', this);
+    }
+
+    for (var nextItem of iterable) {
+      if (!IS_SPEC_OBJECT(nextItem)) {
+        throw MakeTypeError(kIteratorValueNotAnObject, nextItem);
+      }
+      %_CallFunction(this, nextItem[0], nextItem[1], adder);
+    }
   }
 }
 
 
 function MapGet(key) {
   if (!IS_MAP(this)) {
-    throw MakeTypeError('incompatible_method_receiver',
-                        ['Map.prototype.get', this]);
+    throw MakeTypeError(kIncompatibleMethodReceiver,
+                        'Map.prototype.get', this);
   }
-  if (IS_UNDEFINED(key)) {
-    key = undefined_sentinel;
-  }
-  return %MapGet(this, key);
+  var table = %_JSCollectionGetTable(this);
+  var numBuckets = ORDERED_HASH_TABLE_BUCKET_COUNT(table);
+  var hash = GetExistingHash(key);
+  if (IS_UNDEFINED(hash)) return UNDEFINED;
+  var entry = MapFindEntry(table, numBuckets, key, hash);
+  if (entry === NOT_FOUND) return UNDEFINED;
+  return ORDERED_HASH_MAP_VALUE_AT(table, entry, numBuckets);
 }
 
 
 function MapSet(key, value) {
   if (!IS_MAP(this)) {
-    throw MakeTypeError('incompatible_method_receiver',
-                        ['Map.prototype.set', this]);
+    throw MakeTypeError(kIncompatibleMethodReceiver,
+                        'Map.prototype.set', this);
   }
-  if (IS_UNDEFINED(key)) {
-    key = undefined_sentinel;
+  // Normalize -0 to +0 as required by the spec.
+  // Even though we use SameValueZero as the comparison for the keys we don't
+  // want to ever store -0 as the key since the key is directly exposed when
+  // doing iteration.
+  if (key === 0) {
+    key = 0;
   }
-  return %MapSet(this, key, value);
+
+  var table = %_JSCollectionGetTable(this);
+  var numBuckets = ORDERED_HASH_TABLE_BUCKET_COUNT(table);
+  var hash = GetHash(key);
+  var entry = MapFindEntry(table, numBuckets, key, hash);
+  if (entry !== NOT_FOUND) {
+    var existingIndex = ORDERED_HASH_MAP_ENTRY_TO_INDEX(entry, numBuckets);
+    FIXED_ARRAY_SET(table, existingIndex + 1, value);
+    return this;
+  }
+
+  var nof = ORDERED_HASH_TABLE_ELEMENT_COUNT(table);
+  var nod = ORDERED_HASH_TABLE_DELETED_COUNT(table);
+  var capacity = numBuckets << 1;
+  if ((nof + nod) >= capacity) {
+    // Need to grow, bail out to runtime.
+    %MapGrow(this);
+    // Re-load state from the grown backing store.
+    table = %_JSCollectionGetTable(this);
+    numBuckets = ORDERED_HASH_TABLE_BUCKET_COUNT(table);
+    nof = ORDERED_HASH_TABLE_ELEMENT_COUNT(table);
+    nod = ORDERED_HASH_TABLE_DELETED_COUNT(table);
+  }
+  entry = nof + nod;
+  var index = ORDERED_HASH_MAP_ENTRY_TO_INDEX(entry, numBuckets);
+  var bucket = ORDERED_HASH_TABLE_HASH_TO_BUCKET(hash, numBuckets);
+  var chainEntry = ORDERED_HASH_TABLE_BUCKET_AT(table, bucket);
+  ORDERED_HASH_TABLE_SET_BUCKET_AT(table, bucket, entry);
+  ORDERED_HASH_TABLE_SET_ELEMENT_COUNT(table, nof + 1);
+  FIXED_ARRAY_SET(table, index, key);
+  FIXED_ARRAY_SET(table, index + 1, value);
+  FIXED_ARRAY_SET(table, index + 2, chainEntry);
+  return this;
 }
 
 
 function MapHas(key) {
   if (!IS_MAP(this)) {
-    throw MakeTypeError('incompatible_method_receiver',
-                        ['Map.prototype.has', this]);
+    throw MakeTypeError(kIncompatibleMethodReceiver,
+                        'Map.prototype.has', this);
   }
-  if (IS_UNDEFINED(key)) {
-    key = undefined_sentinel;
-  }
-  return !IS_UNDEFINED(%MapGet(this, key));
+  var table = %_JSCollectionGetTable(this);
+  var numBuckets = ORDERED_HASH_TABLE_BUCKET_COUNT(table);
+  var hash = GetHash(key);
+  return MapFindEntry(table, numBuckets, key, hash) !== NOT_FOUND;
 }
 
 
 function MapDelete(key) {
   if (!IS_MAP(this)) {
-    throw MakeTypeError('incompatible_method_receiver',
-                        ['Map.prototype.delete', this]);
+    throw MakeTypeError(kIncompatibleMethodReceiver,
+                        'Map.prototype.delete', this);
   }
-  if (IS_UNDEFINED(key)) {
-    key = undefined_sentinel;
-  }
-  if (!IS_UNDEFINED(%MapGet(this, key))) {
-    %MapSet(this, key, void 0);
-    return true;
-  } else {
-    return false;
-  }
+  var table = %_JSCollectionGetTable(this);
+  var numBuckets = ORDERED_HASH_TABLE_BUCKET_COUNT(table);
+  var hash = GetHash(key);
+  var entry = MapFindEntry(table, numBuckets, key, hash);
+  if (entry === NOT_FOUND) return false;
+
+  var nof = ORDERED_HASH_TABLE_ELEMENT_COUNT(table) - 1;
+  var nod = ORDERED_HASH_TABLE_DELETED_COUNT(table) + 1;
+  var index = ORDERED_HASH_MAP_ENTRY_TO_INDEX(entry, numBuckets);
+  FIXED_ARRAY_SET(table, index, %_TheHole());
+  FIXED_ARRAY_SET(table, index + 1, %_TheHole());
+  ORDERED_HASH_TABLE_SET_ELEMENT_COUNT(table, nof);
+  ORDERED_HASH_TABLE_SET_DELETED_COUNT(table, nod);
+  if (nof < (numBuckets >>> 1)) %MapShrink(this);
+  return true;
 }
 
 
-function WeakMapConstructor() {
-  if (%_IsConstructCall()) {
-    %WeakMapInitialize(this);
-  } else {
-    return new $WeakMap();
+function MapGetSize() {
+  if (!IS_MAP(this)) {
+    throw MakeTypeError(kIncompatibleMethodReceiver,
+                        'Map.prototype.size', this);
   }
+  var table = %_JSCollectionGetTable(this);
+  return ORDERED_HASH_TABLE_ELEMENT_COUNT(table);
 }
 
 
-function WeakMapGet(key) {
-  if (!IS_WEAKMAP(this)) {
-    throw MakeTypeError('incompatible_method_receiver',
-                        ['WeakMap.prototype.get', this]);
+function MapClearJS() {
+  if (!IS_MAP(this)) {
+    throw MakeTypeError(kIncompatibleMethodReceiver,
+                        'Map.prototype.clear', this);
   }
-  if (!IS_SPEC_OBJECT(key)) {
-    throw %MakeTypeError('invalid_weakmap_key', [this, key]);
-  }
-  return %WeakMapGet(this, key);
+  %_MapClear(this);
 }
 
 
-function WeakMapSet(key, value) {
-  if (!IS_WEAKMAP(this)) {
-    throw MakeTypeError('incompatible_method_receiver',
-                        ['WeakMap.prototype.set', this]);
+function MapForEach(f, receiver) {
+  if (!IS_MAP(this)) {
+    throw MakeTypeError(kIncompatibleMethodReceiver,
+                        'Map.prototype.forEach', this);
   }
-  if (!IS_SPEC_OBJECT(key)) {
-    throw %MakeTypeError('invalid_weakmap_key', [this, key]);
-  }
-  return %WeakMapSet(this, key, value);
-}
 
+  if (!IS_SPEC_FUNCTION(f)) throw MakeTypeError(kCalledNonCallable, f);
+  var needs_wrapper = false;
+  if (IS_NULL(receiver)) {
+    if (%IsSloppyModeFunction(f)) receiver = UNDEFINED;
+  } else if (!IS_UNDEFINED(receiver)) {
+    needs_wrapper = SHOULD_CREATE_WRAPPER(f, receiver);
+  }
 
-function WeakMapHas(key) {
-  if (!IS_WEAKMAP(this)) {
-    throw MakeTypeError('incompatible_method_receiver',
-                        ['WeakMap.prototype.has', this]);
-  }
-  if (!IS_SPEC_OBJECT(key)) {
-    throw %MakeTypeError('invalid_weakmap_key', [this, key]);
-  }
-  return !IS_UNDEFINED(%WeakMapGet(this, key));
-}
-
-
-function WeakMapDelete(key) {
-  if (!IS_WEAKMAP(this)) {
-    throw MakeTypeError('incompatible_method_receiver',
-                        ['WeakMap.prototype.delete', this]);
-  }
-  if (!IS_SPEC_OBJECT(key)) {
-    throw %MakeTypeError('invalid_weakmap_key', [this, key]);
-  }
-  if (!IS_UNDEFINED(%WeakMapGet(this, key))) {
-    %WeakMapSet(this, key, void 0);
-    return true;
-  } else {
-    return false;
+  var iterator = new MapIterator(this, ITERATOR_KIND_ENTRIES);
+  var stepping = DEBUG_IS_ACTIVE && %DebugCallbackSupportsStepping(f);
+  var value_array = [UNDEFINED, UNDEFINED];
+  while (%MapIteratorNext(iterator, value_array)) {
+    if (stepping) %DebugPrepareStepInIfStepping(f);
+    var new_receiver = needs_wrapper ? $toObject(receiver) : receiver;
+    %_CallFunction(new_receiver, value_array[1], value_array[0], this, f);
   }
 }
 
 // -------------------------------------------------------------------
 
-(function () {
-  %CheckIsBootstrapping();
+%SetCode(GlobalMap, MapConstructor);
+%FunctionSetLength(GlobalMap, 0);
+%FunctionSetPrototype(GlobalMap, new GlobalObject());
+%AddNamedProperty(GlobalMap.prototype, "constructor", GlobalMap, DONT_ENUM);
+%AddNamedProperty(
+    GlobalMap.prototype, symbolToStringTag, "Map", DONT_ENUM | READ_ONLY);
 
-  // Set up the Set and Map constructor function.
-  %SetCode($Set, SetConstructor);
-  %SetCode($Map, MapConstructor);
+%FunctionSetLength(MapForEach, 1);
 
-  // Set up the constructor property on the Set and Map prototype object.
-  %SetProperty($Set.prototype, "constructor", $Set, DONT_ENUM);
-  %SetProperty($Map.prototype, "constructor", $Map, DONT_ENUM);
+// Set up the non-enumerable functions on the Map prototype object.
+utils.InstallGetter(GlobalMap.prototype, "size", MapGetSize);
+utils.InstallFunctions(GlobalMap.prototype, DONT_ENUM, [
+  "get", MapGet,
+  "set", MapSet,
+  "has", MapHas,
+  "delete", MapDelete,
+  "clear", MapClearJS,
+  "forEach", MapForEach
+]);
 
-  // Set up the non-enumerable functions on the Set prototype object.
-  InstallFunctions($Set.prototype, DONT_ENUM, $Array(
-    "add", SetAdd,
-    "has", SetHas,
-    "delete", SetDelete
-  ));
+// Expose to the global scope.
+$getHash = GetHash;
+$getExistingHash = GetExistingHash;
+$mapGet = MapGet;
+$mapSet = MapSet;
+$mapHas = MapHas;
+$mapDelete = MapDelete;
+$setAdd = SetAdd;
+$setHas = SetHas;
+$setDelete = SetDelete;
 
-  // Set up the non-enumerable functions on the Map prototype object.
-  InstallFunctions($Map.prototype, DONT_ENUM, $Array(
-    "get", MapGet,
-    "set", MapSet,
-    "has", MapHas,
-    "delete", MapDelete
-  ));
+$mapFromArray = function(array) {
+  var map = new GlobalMap;
+  var length = array.length;
+  for (var i = 0; i < length; i += 2) {
+    var key = array[i];
+    var value = array[i + 1];
+    %_CallFunction(map, key, value, MapSet);
+  }
+  return map;
+};
 
-  // Set up the WeakMap constructor function.
-  %SetCode($WeakMap, WeakMapConstructor);
+$setFromArray = function(array) {
+  var set = new GlobalSet;
+  var length = array.length;
+  for (var i = 0; i < length; ++i) {
+    %_CallFunction(set, array[i], SetAdd);
+  }
+  return set;
+};
 
-  // Set up the constructor property on the WeakMap prototype object.
-  %SetProperty($WeakMap.prototype, "constructor", $WeakMap, DONT_ENUM);
-
-  // Set up the non-enumerable functions on the WeakMap prototype object.
-  InstallFunctions($WeakMap.prototype, DONT_ENUM, $Array(
-    "get", WeakMapGet,
-    "set", WeakMapSet,
-    "has", WeakMapHas,
-    "delete", WeakMapDelete
-  ));
-})();
+})

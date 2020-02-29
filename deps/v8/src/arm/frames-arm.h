@@ -1,29 +1,6 @@
 // Copyright 2012 the V8 project authors. All rights reserved.
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are
-// met:
-//
-//     * Redistributions of source code must retain the above copyright
-//       notice, this list of conditions and the following disclaimer.
-//     * Redistributions in binary form must reproduce the above
-//       copyright notice, this list of conditions and the following
-//       disclaimer in the documentation and/or other materials provided
-//       with the distribution.
-//     * Neither the name of Google Inc. nor the names of its
-//       contributors may be used to endorse or promote products derived
-//       from this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-// "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-// LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-// A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-// OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-// LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-// DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-// THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
 
 #ifndef V8_ARM_FRAMES_ARM_H_
 #define V8_ARM_FRAMES_ARM_H_
@@ -52,8 +29,6 @@ const RegList kJSCallerSaved =
 
 const int kNumJSCallerSaved = 4;
 
-typedef Object* JSCallerSavedBuffer[kNumJSCallerSaved];
-
 // Return the code of the n-th caller-saved register available to JavaScript
 // e.g. JSCallerSavedReg(0) returns r0.code() == 0
 int JSCallerSavedCode(int n);
@@ -64,8 +39,8 @@ const RegList kCalleeSaved =
   1 <<  4 |  //  r4 v1
   1 <<  5 |  //  r5 v2
   1 <<  6 |  //  r6 v3
-  1 <<  7 |  //  r7 v4
-  1 <<  8 |  //  r8 v5 (cp in JavaScript code)
+  1 <<  7 |  //  r7 v4 (cp in JavaScript code)
+  1 <<  8 |  //  r8 v5 (pp in JavaScript code)
   kR9Available <<  9 |  //  r9 v6
   1 << 10 |  // r10 v7
   1 << 11;   // r11 v8 (fp in JavaScript code)
@@ -91,37 +66,43 @@ const int kNumDoubleCalleeSaved = 8;
 // TODO(regis): Only 8 registers may actually be sufficient. Revisit.
 const int kNumSafepointRegisters = 16;
 
+// The embedded constant pool pointer (r8/pp) is not included in the safepoint
+// since it is not tagged.  This register is preserved in the stack frame where
+// its value will be updated if GC code movement occurs.  Including it in the
+// safepoint (where it will not be relocated) would cause a stale value to be
+// restored.
+const RegList kConstantPointerRegMask =
+    FLAG_enable_embedded_constant_pool ? (1 << 8) : 0;
+const int kNumConstantPoolPointerReg =
+    FLAG_enable_embedded_constant_pool ? 1 : 0;
+
 // Define the list of registers actually saved at safepoints.
 // Note that the number of saved registers may be smaller than the reserved
 // space, i.e. kNumSafepointSavedRegisters <= kNumSafepointRegisters.
-const RegList kSafepointSavedRegisters = kJSCallerSaved | kCalleeSaved;
-const int kNumSafepointSavedRegisters = kNumJSCallerSaved + kNumCalleeSaved;
+const RegList kSafepointSavedRegisters =
+    kJSCallerSaved | (kCalleeSaved & ~kConstantPointerRegMask);
+const int kNumSafepointSavedRegisters =
+    kNumJSCallerSaved + kNumCalleeSaved - kNumConstantPoolPointerReg;
 
 // ----------------------------------------------------
 
 
-class StackHandlerConstants : public AllStatic {
- public:
-  static const int kNextOffset     = 0 * kPointerSize;
-  static const int kCodeOffset     = 1 * kPointerSize;
-  static const int kStateOffset    = 2 * kPointerSize;
-  static const int kContextOffset  = 3 * kPointerSize;
-  static const int kFPOffset       = 4 * kPointerSize;
-
-  static const int kSize = kFPOffset + kPointerSize;
-};
-
-
 class EntryFrameConstants : public AllStatic {
  public:
-  static const int kCallerFPOffset      = -3 * kPointerSize;
+  static const int kCallerFPOffset =
+      -(StandardFrameConstants::kFixedFrameSizeFromFp + kPointerSize);
 };
 
 
 class ExitFrameConstants : public AllStatic {
  public:
-  static const int kCodeOffset = -2 * kPointerSize;
-  static const int kSPOffset = -1 * kPointerSize;
+  static const int kFrameSize =
+      FLAG_enable_embedded_constant_pool ? 3 * kPointerSize : 2 * kPointerSize;
+
+  static const int kConstantPoolOffset =
+      FLAG_enable_embedded_constant_pool ? -3 * kPointerSize : 0;
+  static const int kCodeOffset         = -2 * kPointerSize;
+  static const int kSPOffset           = -1 * kPointerSize;
 
   // The caller fields are below the frame pointer on the stack.
   static const int kCallerFPOffset = 0 * kPointerSize;
@@ -131,20 +112,6 @@ class ExitFrameConstants : public AllStatic {
   // FP-relative displacement of the caller's SP.  It points just
   // below the saved PC.
   static const int kCallerSPDisplacement = 2 * kPointerSize;
-};
-
-
-class StandardFrameConstants : public AllStatic {
- public:
-  // Fixed part of the frame consists of return address, caller fp,
-  // context and function.
-  static const int kFixedFrameSize    =  4 * kPointerSize;
-  static const int kExpressionsOffset = -3 * kPointerSize;
-  static const int kMarkerOffset      = -2 * kPointerSize;
-  static const int kContextOffset     = -1 * kPointerSize;
-  static const int kCallerFPOffset    =  0 * kPointerSize;
-  static const int kCallerPCOffset    =  1 * kPointerSize;
-  static const int kCallerSPOffset    =  2 * kPointerSize;
 };
 
 
@@ -158,20 +125,6 @@ class JavaScriptFrameConstants : public AllStatic {
   // Caller SP-relative.
   static const int kParam0Offset   = -2 * kPointerSize;
   static const int kReceiverOffset = -1 * kPointerSize;
-};
-
-
-class ArgumentsAdaptorFrameConstants : public AllStatic {
- public:
-  static const int kLengthOffset = StandardFrameConstants::kExpressionsOffset;
-  static const int kFrameSize =
-      StandardFrameConstants::kFixedFrameSize + kPointerSize;
-};
-
-
-class InternalFrameConstants : public AllStatic {
- public:
-  static const int kCodeOffset = StandardFrameConstants::kExpressionsOffset;
 };
 
 

@@ -1,4 +1,4 @@
-// Copyright 2009 the V8 project authors. All rights reserved.
+// Copyright 2012 the V8 project authors. All rights reserved.
 // Redistribution and use in source and binary forms, with or without
 // modification, are permitted provided that the following conditions are
 // met:
@@ -37,6 +37,18 @@ function processArguments(args) {
   }
 }
 
+function initSourceMapSupport() {
+  // Pull dev tools source maps  into our name space.
+  SourceMap = WebInspector.SourceMap;
+
+  // Overwrite the load function to load scripts synchronously.
+  SourceMap.load = function(sourceMapURL) {
+    var content = readFile(sourceMapURL);
+    var sourceMapObject = (JSON.parse(content));
+    return new SourceMap(sourceMapURL, sourceMapObject);
+  };
+}
+
 var entriesProviders = {
   'unix': UnixCppEntriesProvider,
   'windows': WindowsCppEntriesProvider,
@@ -44,17 +56,27 @@ var entriesProviders = {
 };
 
 var params = processArguments(arguments);
+var sourceMap = null;
+if (params.sourceMap) {
+  initSourceMapSupport();
+  sourceMap = SourceMap.load(params.sourceMap);
+}
 var snapshotLogProcessor;
 if (params.snapshotLogFileName) {
   snapshotLogProcessor = new SnapshotLogProcessor();
   snapshotLogProcessor.processLogFile(params.snapshotLogFileName);
 }
 var tickProcessor = new TickProcessor(
-  new (entriesProviders[params.platform])(params.nm),
+  new (entriesProviders[params.platform])(params.nm, params.targetRootFS),
   params.separateIc,
   params.callGraphSize,
   params.ignoreUnknown,
   params.stateFilter,
-  snapshotLogProcessor);
+  snapshotLogProcessor,
+  params.distortion,
+  params.range,
+  sourceMap,
+  params.timedRange,
+  params.pairwiseTimedRange);
 tickProcessor.processLogFile(params.logFileName);
 tickProcessor.printStatistics();

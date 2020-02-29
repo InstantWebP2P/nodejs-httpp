@@ -137,9 +137,23 @@
         'ARCH="<(target_arch)"',
         'PLATFORM="<(OS)"',
         'NODE_TAG="<(node_tag)"',
+        # Warn when using deprecated V8 APIs.
+        'V8_DEPRECATION_WARNINGS=1',
       ],
 
       'conditions': [
+        [ 'v8_enable_i18n_support==1', {
+          'defines': [ 'NODE_HAVE_I18N_SUPPORT=1' ],
+          'dependencies': [
+            '<(icu_gyp_path):icui18n',
+            '<(icu_gyp_path):icuuc',
+          ],
+          'conditions': [
+            [ 'icu_small=="true"', {
+              'defines': [ 'NODE_HAVE_SMALL_ICU=1' ],
+          }]],
+        }],
+        
         [ 'node_use_openssl=="true"', {
           'defines': [ 'HAVE_OPENSSL=1' ],
           'sources': [ 'src/node_crypto.cc' ],

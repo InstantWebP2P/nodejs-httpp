@@ -1,5 +1,7 @@
 {
   'variables': {
+    'asan%': 0,
+    'werror': '',                    # Turn off -Werror in V8 build.
     'visibility%': 'hidden',         # V8's visibility setting
     'target_arch%': 'ia32',          # set v8's target architecture
     'host_arch%': 'ia32',            # set v8's host architecture
@@ -7,18 +9,45 @@
     'library%': 'static_library',    # allow override to 'shared_library' for DLL/.so builds
     'component%': 'static_library',  # NB. these names match with what V8 expects
     'msvs_multi_core_compile': '0',  # we do enable multicore compiles, but not using the V8 way
-    'gcc_version%': 'unknown',
-    'clang%': 0,
+    'python%': 'python', 
+    
+    'node_tag%': '',
+    'uv_library%': 'static_library',
+    
+    # Default to -O0 for debug builds.
+    'v8_optimized_debug%': 0,
 
-    # Turn on optimizations that may trigger compiler bugs.
-    # Use at your own risk. Do *NOT* report bugs if this option is enabled.
-    'node_unsafe_optimizations%': 0,
+    # Enable disassembler for `--print-code` v8 options
+    'v8_enable_disassembler': 1,
 
-    # Enable V8's post-mortem debugging only on unix flavors.
+    # Don't bake anything extra into the snapshot.
+    'v8_use_external_startup_data%': 0,
+
     'conditions': [
-      ['OS != "win"', {
-        'v8_postmortem_support': 'true'
-      }]
+      ['OS == "win"', {
+        'os_posix': 0,
+        'v8_postmortem_support%': 'false',
+      }, {
+        'os_posix': 1,
+        'v8_postmortem_support%': 'true',
+      }],
+      ['GENERATOR == "ninja" or OS== "mac"', {
+        'OBJ_DIR': '<(PRODUCT_DIR)/obj',
+        'V8_BASE': '<(PRODUCT_DIR)/libv8_base.a',
+      }, {
+        'OBJ_DIR': '<(PRODUCT_DIR)/obj.target',
+        'V8_BASE': '<(PRODUCT_DIR)/obj.target/deps/v8/tools/gyp/libv8_base.a',
+      }],
+      #['openssl_fips != ""', {
+      #  'OPENSSL_PRODUCT': 'libcrypto.a',
+      #}, {
+      #  'OPENSSL_PRODUCT': 'libopenssl.a',
+      #}],
+      ['OS=="mac"', {
+        'clang%': 1,
+      }, {
+        'clang%': 0,
+      }],
     ],
   },
 
@@ -26,6 +55,9 @@
     'default_configuration': 'Release',
     'configurations': {
       'Debug': {
+        'variables': {
+          'v8_enable_handle_zapping': 1,
+        },
         'defines': [ 'DEBUG', '_DEBUG' ],
         'cflags': [ '-g', '-O0' ],
         'conditions': [
@@ -47,6 +79,10 @@
         },
       },
       'Release': {
+        'variables': {
+          'v8_enable_handle_zapping': 0,
+        },
+        'cflags': [ '-O3', '-ffunction-sections', '-fdata-sections' ],
         'conditions': [
           ['target_arch=="x64"', {
             'msvs_configuration_platform': 'x64',
@@ -62,6 +98,8 @@
               # some gcc/binutils combos generate bad code when
               # -ffunction-sections is enabled. Let's hope for the best.
               ['OS=="solaris"', {
+                # pull in V8's postmortem metadata
+                'ldflags': [ '-Wl,-z,allextract' ],
                 'cflags': [ '-ffunction-sections', '-fdata-sections' ],
               }, {
                 'cflags!': [ '-ffunction-sections', '-fdata-sections' ],
