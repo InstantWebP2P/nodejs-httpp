@@ -67,24 +67,22 @@ def _V8PresubmitChecks(input_api, output_api):
         input_api.PresubmitLocalPath(), 'tools'))
   from presubmit import CppLintProcessor
   from presubmit import SourceProcessor
-  from presubmit import CheckRuntimeVsNativesNameClashes
-  from presubmit import CheckExternalReferenceRegistration
-  from presubmit import CheckAuthorizedAuthor
+  from presubmit import StatusFilesProcessor
 
   results = []
-  if not CppLintProcessor().Run(input_api.PresubmitLocalPath()):
+  if not CppLintProcessor().RunOnFiles(
+      input_api.AffectedFiles(include_deletes=False)):
     results.append(output_api.PresubmitError("C++ lint check failed"))
-  if not SourceProcessor().Run(input_api.PresubmitLocalPath()):
+  if not SourceProcessor().RunOnFiles(
+      input_api.AffectedFiles(include_deletes=False)):
     results.append(output_api.PresubmitError(
         "Copyright header, trailing whitespaces and two empty lines " \
         "between declarations check failed"))
-  if not CheckRuntimeVsNativesNameClashes(input_api.PresubmitLocalPath()):
-    results.append(output_api.PresubmitError(
-        "Runtime/natives name clash check failed"))
-  if not CheckExternalReferenceRegistration(input_api.PresubmitLocalPath()):
-    results.append(output_api.PresubmitError(
-        "External references registration check failed"))
-  results.extend(CheckAuthorizedAuthor(input_api, output_api))
+  if not StatusFilesProcessor().RunOnFiles(
+      input_api.AffectedFiles(include_deletes=True)):
+    results.append(output_api.PresubmitError("Status file check failed"))
+  results.extend(input_api.canned_checks.CheckAuthorizedAuthor(
+      input_api, output_api))
   return results
 
 
@@ -141,6 +139,39 @@ def _CheckUnwantedDependencies(input_api, output_api):
   return results
 
 
+def _CheckNoInlineHeaderIncludesInNormalHeaders(input_api, output_api):
+  """Attempts to prevent inclusion of inline headers into normal header
+  files. This tries to establish a layering where inline headers can be
+  included by other inline headers or compilation units only."""
+  file_inclusion_pattern = r'(?!.+-inl\.h).+\.h'
+  include_directive_pattern = input_api.re.compile(r'#include ".+-inl.h"')
+  include_warning = (
+    'You might be including an inline header (e.g. foo-inl.h) within a\n'
+    'normal header (e.g. bar.h) file.  Can you avoid introducing the\n'
+    '#include?  The commit queue will not block on this warning.')
+
+  def FilterFile(affected_file):
+    black_list = (_EXCLUDED_PATHS +
+                  input_api.DEFAULT_BLACK_LIST)
+    return input_api.FilterSourceFile(
+      affected_file,
+      white_list=(file_inclusion_pattern, ),
+      black_list=black_list)
+
+  problems = []
+  for f in input_api.AffectedSourceFiles(FilterFile):
+    local_path = f.LocalPath()
+    for line_number, line in f.ChangedContents():
+      if (include_directive_pattern.search(line)):
+        problems.append(
+          '%s:%d\n    %s' % (local_path, line_number, line.strip()))
+
+  if problems:
+    return [output_api.PresubmitPromptOrNotify(include_warning, problems)]
+  else:
+    return []
+
+
 def _CheckNoProductionCodeUsingTestOnlyFunctions(input_api, output_api):
   """Attempts to prevent use of functions intended only for testing in
   non-testing code. For now this is just a best-effort implementation
@@ -184,6 +215,38 @@ def _CheckNoProductionCodeUsingTestOnlyFunctions(input_api, output_api):
     return []
 
 
+def _CheckMissingFiles(input_api, output_api):
+  """Runs verify_source_deps.py to ensure no files were added that are not in
+  GN.
+  """
+  # We need to wait until we have an input_api object and use this
+  # roundabout construct to import checkdeps because this file is
+  # eval-ed and thus doesn't have __file__.
+  original_sys_path = sys.path
+  try:
+    sys.path = sys.path + [input_api.os_path.join(
+        input_api.PresubmitLocalPath(), 'tools')]
+    from verify_source_deps import missing_gn_files, missing_gyp_files
+  finally:
+    # Restore sys.path to what it was before.
+    sys.path = original_sys_path
+
+  gn_files = missing_gn_files()
+  gyp_files = missing_gyp_files()
+  results = []
+  if gn_files:
+    results.append(output_api.PresubmitError(
+        "You added one or more source files but didn't update the\n"
+        "corresponding BUILD.gn files:\n",
+        gn_files))
+  if gyp_files:
+    results.append(output_api.PresubmitError(
+        "You added one or more source files but didn't update the\n"
+        "corresponding gyp files:\n",
+        gyp_files))
+  return results
+
+
 def _CommonChecks(input_api, output_api):
   """Checks common to both upload and commit."""
   results = []
@@ -191,10 +254,15 @@ def _CommonChecks(input_api, output_api):
       input_api, output_api, source_file_filter=None))
   results.extend(input_api.canned_checks.CheckPatchFormatted(
       input_api, output_api))
+  results.extend(input_api.canned_checks.CheckGenderNeutral(
+      input_api, output_api))
   results.extend(_V8PresubmitChecks(input_api, output_api))
   results.extend(_CheckUnwantedDependencies(input_api, output_api))
   results.extend(
       _CheckNoProductionCodeUsingTestOnlyFunctions(input_api, output_api))
+  results.extend(
+      _CheckNoInlineHeaderIncludesInNormalHeaders(input_api, output_api))
+  results.extend(_CheckMissingFiles(input_api, output_api))
   return results
 
 
@@ -202,35 +270,21 @@ def _SkipTreeCheck(input_api, output_api):
   """Check the env var whether we want to skip tree check.
      Only skip if include/v8-version.h has been updated."""
   src_version = 'include/v8-version.h'
-  FilterFile = lambda file: file.LocalPath() == src_version
   if not input_api.AffectedSourceFiles(
       lambda file: file.LocalPath() == src_version):
     return False
   return input_api.environ.get('PRESUBMIT_TREE_CHECK') == 'skip'
 
 
-def _CheckChangeLogFlag(input_api, output_api):
-  """Checks usage of LOG= flag in the commit message."""
-  results = []
-  if input_api.change.BUG and not 'LOG' in input_api.change.tags:
-    results.append(output_api.PresubmitError(
-        'An issue reference (BUG=) requires a change log flag (LOG=). '
-        'Use LOG=Y for including this commit message in the change log. '
-        'Use LOG=N or leave blank otherwise.'))
-  return results
-
-
 def CheckChangeOnUpload(input_api, output_api):
   results = []
   results.extend(_CommonChecks(input_api, output_api))
-  results.extend(_CheckChangeLogFlag(input_api, output_api))
   return results
 
 
 def CheckChangeOnCommit(input_api, output_api):
   results = []
   results.extend(_CommonChecks(input_api, output_api))
-  results.extend(_CheckChangeLogFlag(input_api, output_api))
   results.extend(input_api.canned_checks.CheckChangeHasDescription(
       input_api, output_api))
   if not _SkipTreeCheck(input_api, output_api):
@@ -238,28 +292,3 @@ def CheckChangeOnCommit(input_api, output_api):
         input_api, output_api,
         json_url='http://v8-status.appspot.com/current?format=json'))
   return results
-
-
-def GetPreferredTryMasters(project, change):
-  return {
-    'tryserver.v8': {
-      'v8_linux_rel': set(['defaulttests']),
-      'v8_linux_dbg': set(['defaulttests']),
-      'v8_linux_nodcheck_rel': set(['defaulttests']),
-      'v8_linux_gcc_compile_rel': set(['defaulttests']),
-      'v8_linux64_rel': set(['defaulttests']),
-      'v8_linux64_asan_rel': set(['defaulttests']),
-      'v8_linux64_avx2_rel': set(['defaulttests']),
-      'v8_win_rel': set(['defaulttests']),
-      'v8_win_compile_dbg': set(['defaulttests']),
-      'v8_win_nosnap_shared_compile_rel': set(['defaulttests']),
-      'v8_win64_rel': set(['defaulttests']),
-      'v8_mac_rel': set(['defaulttests']),
-      'v8_linux_arm_rel': set(['defaulttests']),
-      'v8_linux_arm64_rel': set(['defaulttests']),
-      'v8_linux_mipsel_compile_rel': set(['defaulttests']),
-      'v8_linux_mips64el_compile_rel': set(['defaulttests']),
-      'v8_android_arm_compile_rel': set(['defaulttests']),
-      'v8_linux_chromium_gn_rel': set(['defaulttests']),
-    },
-  }

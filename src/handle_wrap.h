@@ -49,9 +49,9 @@ namespace node {
 class HandleWrap {
   public:
     static void Initialize(v8::Handle<v8::Object> target);
-    static v8::Handle<v8::Value> Close(const v8::Arguments& args);
-    static v8::Handle<v8::Value> Ref(const v8::Arguments& args);
-    static v8::Handle<v8::Value> Unref(const v8::Arguments& args);
+    static v8::Handle<v8::Value> Close(const v8::internal::Arguments& args);
+    static v8::Handle<v8::Value> Ref(const v8::internal::Arguments& args);
+    static v8::Handle<v8::Value> Unref(const v8::internal::Arguments& args);
 
   protected:
     HandleWrap(v8::Handle<v8::Object> object, uv_handle_t* handle);
@@ -62,7 +62,7 @@ class HandleWrap {
     v8::Persistent<v8::Object> object_;
 
   private:
-    friend v8::Handle<v8::Value> GetActiveHandles(const v8::Arguments&);
+    friend v8::Handle<v8::Value> GetActiveHandles(const v8::internal::Arguments&);
     static void OnClose(uv_handle_t* handle);
     ngx_queue_t handle_wrap_queue_;
     // Using double underscore due to handle_ member in tcp_wrap. Probably

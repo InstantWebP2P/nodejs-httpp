@@ -25,6 +25,7 @@
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+import re
 
 kSmiTag = 0
 kSmiTagSize = 1
@@ -166,7 +167,7 @@ class FindAnywhere (gdb.Command):
           "find 0x%s, 0x%s, %s" % (startAddr, endAddr, value),
           to_string = True)
       if result.find("not found") == -1:
-        print result
+        print(result)
     except:
       pass
 

@@ -7,6 +7,7 @@
 #include "src/api.h"
 #include "src/base/lazy-instance.h"
 #include "src/elements.h"
+#include "src/objects-inl.h"
 #include "src/objects.h"
 
 namespace v8 {
@@ -15,26 +16,17 @@ namespace internal {
 
 int ElementsKindToShiftSize(ElementsKind elements_kind) {
   switch (elements_kind) {
-    case EXTERNAL_INT8_ELEMENTS:
-    case EXTERNAL_UINT8_CLAMPED_ELEMENTS:
-    case EXTERNAL_UINT8_ELEMENTS:
     case UINT8_ELEMENTS:
     case INT8_ELEMENTS:
     case UINT8_CLAMPED_ELEMENTS:
       return 0;
-    case EXTERNAL_INT16_ELEMENTS:
-    case EXTERNAL_UINT16_ELEMENTS:
     case UINT16_ELEMENTS:
     case INT16_ELEMENTS:
       return 1;
-    case EXTERNAL_INT32_ELEMENTS:
-    case EXTERNAL_UINT32_ELEMENTS:
-    case EXTERNAL_FLOAT32_ELEMENTS:
     case UINT32_ELEMENTS:
     case INT32_ELEMENTS:
     case FLOAT32_ELEMENTS:
       return 2;
-    case EXTERNAL_FLOAT64_ELEMENTS:
     case FAST_DOUBLE_ELEMENTS:
     case FAST_HOLEY_DOUBLE_ELEMENTS:
     case FLOAT64_ELEMENTS:
@@ -46,7 +38,12 @@ int ElementsKindToShiftSize(ElementsKind elements_kind) {
     case DICTIONARY_ELEMENTS:
     case FAST_SLOPPY_ARGUMENTS_ELEMENTS:
     case SLOW_SLOPPY_ARGUMENTS_ELEMENTS:
+    case FAST_STRING_WRAPPER_ELEMENTS:
+    case SLOW_STRING_WRAPPER_ELEMENTS:
       return kPointerSizeLog2;
+    case NO_ELEMENTS:
+      UNREACHABLE();
+      return 0;
   }
   UNREACHABLE();
   return 0;
@@ -56,10 +53,8 @@ int ElementsKindToShiftSize(ElementsKind elements_kind) {
 int GetDefaultHeaderSizeForElementsKind(ElementsKind elements_kind) {
   STATIC_ASSERT(FixedArray::kHeaderSize == FixedDoubleArray::kHeaderSize);
 
-  if (IsExternalArrayElementsKind(elements_kind)) {
+  if (IsFixedTypedArrayElementsKind(elements_kind)) {
     return 0;
-  } else if (IsFixedTypedArrayElementsKind(elements_kind)) {
-    return FixedTypedArrayBase::kDataOffset - kHeapObjectTag;
   } else {
     return FixedArray::kHeaderSize - kHeapObjectTag;
   }
@@ -121,23 +116,8 @@ int GetSequenceIndexFromFastElementsKind(ElementsKind elements_kind) {
 
 
 ElementsKind GetNextTransitionElementsKind(ElementsKind kind) {
-  switch (kind) {
-#define FIXED_TYPED_ARRAY_CASE(Type, type, TYPE, ctype, size) \
-    case TYPE##_ELEMENTS: return EXTERNAL_##TYPE##_ELEMENTS;
-
-    TYPED_ARRAYS(FIXED_TYPED_ARRAY_CASE)
-#undef FIXED_TYPED_ARRAY_CASE
-    default: {
-      int index = GetSequenceIndexFromFastElementsKind(kind);
-      return GetFastElementsKindFromSequenceIndex(index + 1);
-    }
-  }
-}
-
-
-static bool IsTypedArrayElementsKind(ElementsKind elements_kind) {
-  return IsFixedTypedArrayElementsKind(elements_kind) ||
-      IsExternalArrayElementsKind(elements_kind);
+  int index = GetSequenceIndexFromFastElementsKind(kind);
+  return GetFastElementsKindFromSequenceIndex(index + 1);
 }
 
 
@@ -148,18 +128,9 @@ static inline bool IsFastTransitionTarget(ElementsKind elements_kind) {
 
 bool IsMoreGeneralElementsKindTransition(ElementsKind from_kind,
                                          ElementsKind to_kind) {
-  if (IsTypedArrayElementsKind(from_kind) ||
-      IsTypedArrayElementsKind(to_kind)) {
-    switch (from_kind) {
-#define FIXED_TYPED_ARRAY_CASE(Type, type, TYPE, ctype, size) \
-      case TYPE##_ELEMENTS:                                   \
-        return to_kind == EXTERNAL_##TYPE##_ELEMENTS;
-
-      TYPED_ARRAYS(FIXED_TYPED_ARRAY_CASE);
-#undef FIXED_TYPED_ARRAY_CASE
-      default:
-        return false;
-    }
+  if (IsFixedTypedArrayElementsKind(from_kind) ||
+      IsFixedTypedArrayElementsKind(to_kind)) {
+    return false;
   }
   if (IsFastElementsKind(from_kind) && IsFastTransitionTarget(to_kind)) {
     switch (from_kind) {

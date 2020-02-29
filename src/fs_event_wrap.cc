@@ -34,9 +34,9 @@ static Persistent<String> onchange_sym;
 class FSEventWrap: public HandleWrap {
 public:
   static void Initialize(Handle<Object> target);
-  static Handle<Value> New(const Arguments& args);
-  static Handle<Value> Start(const Arguments& args);
-  static Handle<Value> Close(const Arguments& args);
+  static Handle<Value> New(const internal::Arguments& args);
+  static Handle<Value> Start(const internal::Arguments& args);
+  static Handle<Value> Close(const internal::Arguments& args);
 
 private:
   FSEventWrap(Handle<Object> object);
@@ -65,9 +65,9 @@ FSEventWrap::~FSEventWrap() {
 void FSEventWrap::Initialize(Handle<Object> target) {
   HandleWrap::Initialize(target);
 
-  HandleScope scope;
+  ////HandleScope scope;
 
-  Local<FunctionTemplate> t = FunctionTemplate::New(New);
+  Local<FunctionTemplate> t = FunctionTemplate::New(Isolate::GetCurrent(), New);
   t->InstanceTemplate()->SetInternalFieldCount(1);
   t->SetClassName(String::NewSymbol("FSEvent"));
 
@@ -75,12 +75,12 @@ void FSEventWrap::Initialize(Handle<Object> target) {
   NODE_SET_PROTOTYPE_METHOD(t, "close", Close);
 
   target->Set(String::NewSymbol("FSEvent"),
-              Persistent<FunctionTemplate>::New(t)->GetFunction());
+              Persistent<FunctionTemplate>::New(Isolate::GetCurrent(), t)->GetFunction());
 }
 
 
-Handle<Value> FSEventWrap::New(const Arguments& args) {
-  HandleScope scope;
+Handle<Value> FSEventWrap::New(const internal::Arguments& args) {
+  ////HandleScope scope;
 
   assert(args.IsConstructCall());
   new FSEventWrap(args.This());
@@ -89,8 +89,8 @@ Handle<Value> FSEventWrap::New(const Arguments& args) {
 }
 
 
-Handle<Value> FSEventWrap::Start(const Arguments& args) {
-  HandleScope scope;
+Handle<Value> FSEventWrap::Start(const internal::Arguments& args) {
+  ////HandleScope scope;
 
   UNWRAP(FSEventWrap)
 
@@ -117,7 +117,7 @@ Handle<Value> FSEventWrap::Start(const Arguments& args) {
 
 void FSEventWrap::OnEvent(uv_fs_event_t* handle, const char* filename,
     int events, int status) {
-  HandleScope scope;
+  //HandleScope scope;
   Local<String> eventStr;
 
   FSEventWrap* wrap = reinterpret_cast<FSEventWrap*>(handle->data);
@@ -164,8 +164,8 @@ void FSEventWrap::OnEvent(uv_fs_event_t* handle, const char* filename,
 }
 
 
-Handle<Value> FSEventWrap::Close(const Arguments& args) {
-  HandleScope scope;
+Handle<Value> FSEventWrap::Close(const internal::Arguments& args) {
+  ////HandleScope scope;
 
   // Unwrap manually here. The UNWRAP() macro asserts that wrap != NULL.
   // That usually indicates an error but not here: double closes are possible

@@ -46,9 +46,8 @@ inline void MemoryBarrier() {
 
 
 int localtime_s(tm* out_tm, const time_t* time) {
-  tm* posix_local_time_struct = localtime(time);
+  tm* posix_local_time_struct = localtime_r(time, out_tm);
   if (posix_local_time_struct == NULL) return 1;
-  *out_tm = *posix_local_time_struct;
   return 0;
 }
 
@@ -574,6 +573,7 @@ bool OS::Remove(const char* path) {
   return (DeleteFileA(path) != 0);
 }
 
+char OS::DirectorySeparator() { return '\\'; }
 
 bool OS::isDirectorySeparator(const char ch) {
   return ch == '/' || ch == '\\';
@@ -751,9 +751,19 @@ void* OS::GetRandomMmapAddr() {
 
 static void* RandomizedVirtualAlloc(size_t size, int action, int protection) {
   LPVOID base = NULL;
+  static BOOL use_aslr = -1;
+#ifdef V8_HOST_ARCH_32_BIT
+  // Don't bother randomizing on 32-bit hosts, because they lack the room and
+  // don't have viable ASLR anyway.
+  if (use_aslr == -1 && !IsWow64Process(GetCurrentProcess(), &use_aslr))
+    use_aslr = FALSE;
+#else
+  use_aslr = TRUE;
+#endif
 
-  if (protection == PAGE_EXECUTE_READWRITE || protection == PAGE_NOACCESS) {
-    // For exectutable pages try and randomize the allocation address
+  if (use_aslr &&
+      (protection == PAGE_EXECUTE_READWRITE || protection == PAGE_NOACCESS)) {
+    // For executable pages try and randomize the allocation address
     for (size_t attempts = 0; base == NULL && attempts < 3; ++attempts) {
       base = VirtualAlloc(OS::GetRandomMmapAddr(), size, action, protection);
     }
@@ -787,6 +797,9 @@ void* OS::Allocate(const size_t requested,
   return mbase;
 }
 
+void* OS::AllocateGuarded(const size_t requested) {
+  return VirtualAlloc(nullptr, requested, MEM_RESERVE, PAGE_NOACCESS);
+}
 
 void OS::Free(void* address, const size_t size) {
   // TODO(1240712): VirtualFree has a return value which is ignored here.
@@ -811,6 +824,10 @@ void OS::Guard(void* address, const size_t size) {
   VirtualProtect(address, size, PAGE_NOACCESS, &oldprotect);
 }
 
+void OS::Unprotect(void* address, const size_t size) {
+  LPVOID result = VirtualAlloc(address, size, MEM_COMMIT, PAGE_READWRITE);
+  DCHECK_IMPLIES(result != nullptr, GetLastError() == 0);
+}
 
 void OS::Sleep(TimeDelta interval) {
   ::Sleep(static_cast<DWORD>(interval.InMilliseconds()));
@@ -823,6 +840,9 @@ void OS::Abort() {
   }
   // Make the MSVCRT do a silent abort.
   raise(SIGABRT);
+
+  // Make sure function doesn't return.
+  abort();
 }
 
 
@@ -1133,9 +1153,9 @@ static std::vector<OS::SharedLibraryAddress> LoadSymbols(
     WideCharToMultiByte(CP_UTF8, 0, module_entry.szExePath, -1, &lib_name[0],
                         lib_name_length, NULL, NULL);
     result.push_back(OS::SharedLibraryAddress(
-        lib_name, reinterpret_cast<unsigned int>(module_entry.modBaseAddr),
-        reinterpret_cast<unsigned int>(module_entry.modBaseAddr +
-                                       module_entry.modBaseSize)));
+        lib_name, reinterpret_cast<uintptr_t>(module_entry.modBaseAddr),
+        reinterpret_cast<uintptr_t>(module_entry.modBaseAddr +
+                                    module_entry.modBaseSize)));
     cont = _Module32NextW(snapshot, &module_entry);
   }
   CloseHandle(snapshot);
@@ -1276,6 +1296,10 @@ bool VirtualMemory::UncommitRegion(void* base, size_t size) {
   return VirtualFree(base, size, MEM_DECOMMIT) != 0;
 }
 
+bool VirtualMemory::ReleasePartialRegion(void* base, size_t size,
+                                         void* free_start, size_t free_size) {
+  return VirtualFree(free_start, free_size, MEM_DECOMMIT) != 0;
+}
 
 bool VirtualMemory::ReleaseRegion(void* base, size_t size) {
   return VirtualFree(base, 0, MEM_RELEASE) != 0;

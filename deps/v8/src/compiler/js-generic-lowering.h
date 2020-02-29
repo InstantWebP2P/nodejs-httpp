@@ -24,7 +24,7 @@ class Linkage;
 // Lowers JS-level operators to runtime and IC calls in the "generic" case.
 class JSGenericLowering final : public Reducer {
  public:
-  JSGenericLowering(bool is_typing_enabled, JSGraph* jsgraph);
+  explicit JSGenericLowering(JSGraph* jsgraph);
   ~JSGenericLowering() final;
 
   Reduction Reduce(Node* node) final;
@@ -36,9 +36,10 @@ class JSGenericLowering final : public Reducer {
 #undef DECLARE_LOWER
 
   // Helpers to replace existing nodes with a generic call.
-  void ReplaceWithCompareIC(Node* node, Token::Value token);
   void ReplaceWithStubCall(Node* node, Callable c, CallDescriptor::Flags flags);
-  void ReplaceWithBuiltinCall(Node* node, Builtins::JavaScript id, int args);
+  void ReplaceWithStubCall(Node* node, Callable c, CallDescriptor::Flags flags,
+                           Operator::Properties properties,
+                           int result_size = 1);
   void ReplaceWithRuntimeCall(Node* node, Runtime::FunctionId f, int args = -1);
 
   Zone* zone() const;
@@ -49,7 +50,6 @@ class JSGenericLowering final : public Reducer {
   MachineOperatorBuilder* machine() const;
 
  private:
-  bool const is_typing_enabled_;
   JSGraph* const jsgraph_;
 };
 

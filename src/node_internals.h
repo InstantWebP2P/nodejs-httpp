@@ -62,25 +62,29 @@ inline static int snprintf(char* buf, unsigned int len, const char* fmt, ...) {
 # define ROUND_UP(a, b) ((a) % (b) ? ((a) + (b)) - ((a) % (b)) : (a))
 #endif
 
-// this would have been a template function were it not for the fact that g++
-// sometimes fails to resolve it...
-#define THROW_ERROR(fun)                                                      \
-  do {                                                                        \
-    v8::HandleScope scope;                                                    \
-    return v8::ThrowException(fun(v8::String::New(errmsg)));                  \
-  }                                                                           \
-  while (0)
+inline static v8::Isolate *isolate()
+{
+  return v8::Isolate::GetCurrent();
+}
+
+inline static v8::Handle<v8::Value> ThrowErrors(
+    v8::Local<v8::Value> (*fun)(v8::Local<v8::String>),
+    const char *errmsg)
+{
+  v8::HandleScope handle_scope(isolate());
+  return isolate()->ThrowException(fun(v8::String::NewFromUtf8(isolate(), errmsg)));
+}
 
 inline static v8::Handle<v8::Value> ThrowError(const char* errmsg) {
-  THROW_ERROR(v8::Exception::Error);
+  return ThrowErrors(v8::Exception::Error, errmsg);
 }
 
 inline static v8::Handle<v8::Value> ThrowTypeError(const char* errmsg) {
-  THROW_ERROR(v8::Exception::TypeError);
+  return ThrowErrors(v8::Exception::TypeError, errmsg);
 }
 
 inline static v8::Handle<v8::Value> ThrowRangeError(const char* errmsg) {
-  THROW_ERROR(v8::Exception::RangeError);
+  return ThrowErrors(v8::Exception::RangeError, errmsg);
 }
 
 #define UNWRAP(type)                                                        \

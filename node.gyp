@@ -203,7 +203,7 @@
             'deps/v8/include/v8.h',
             'deps/v8/include/v8-debug.h',
           ],
-          'dependencies': [ 'deps/v8/tools/gyp/v8.gyp:v8' ],
+          'dependencies': [ 'deps/v8/src/v8.gyp:v8' ],
         }],
 
         [ 'node_shared_zlib=="false"', {

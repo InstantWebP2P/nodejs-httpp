@@ -16,16 +16,6 @@ void ArrayNativeCode(MacroAssembler* masm,
 
 class StringHelper : public AllStatic {
  public:
-  // Generate code for copying characters using the rep movs instruction.
-  // Copies ecx characters from esi to edi. Copying of overlapping regions is
-  // not supported.
-  static void GenerateCopyCharacters(MacroAssembler* masm,
-                                     Register dest,
-                                     Register src,
-                                     Register count,
-                                     Register scratch,
-                                     String::Encoding encoding);
-
   // Compares two flat one byte strings and returns result in eax.
   static void GenerateCompareFlatOneByteStrings(MacroAssembler* masm,
                                                 Register left, Register right,
@@ -67,14 +57,6 @@ class NameDictionaryLookupStub: public PlatformCodeStub {
                                      Register properties,
                                      Handle<Name> name,
                                      Register r0);
-
-  static void GeneratePositiveLookup(MacroAssembler* masm,
-                                     Label* miss,
-                                     Label* done,
-                                     Register elements,
-                                     Register name,
-                                     Register r0,
-                                     Register r1);
 
   bool SometimesSetsUpAFrame() override { return false; }
 
@@ -188,7 +170,7 @@ class RecordWriteStub: public PlatformCodeStub {
         break;
     }
     DCHECK(GetMode(stub) == mode);
-    CpuFeatures::FlushICache(stub->instruction_start(), 7);
+    Assembler::FlushICache(stub->GetIsolate(), stub->instruction_start(), 7);
   }
 
   DEFINE_NULL_CALL_INTERFACE_DESCRIPTOR();
@@ -274,32 +256,12 @@ class RecordWriteStub: public PlatformCodeStub {
     // registers are eax, ecx and edx.  The three scratch registers (incl. ecx)
     // will be restored by other means so we don't bother pushing them here.
     void SaveCallerSaveRegisters(MacroAssembler* masm, SaveFPRegsMode mode) {
-      if (!scratch0_.is(eax) && !scratch1_.is(eax)) masm->push(eax);
-      if (!scratch0_.is(edx) && !scratch1_.is(edx)) masm->push(edx);
-      if (mode == kSaveFPRegs) {
-        masm->sub(esp,
-                  Immediate(kDoubleSize * (XMMRegister::kMaxNumRegisters - 1)));
-        // Save all XMM registers except XMM0.
-        for (int i = XMMRegister::kMaxNumRegisters - 1; i > 0; i--) {
-          XMMRegister reg = XMMRegister::from_code(i);
-          masm->movsd(Operand(esp, (i - 1) * kDoubleSize), reg);
-        }
-      }
+      masm->PushCallerSaved(mode, ecx, scratch0_, scratch1_);
     }
 
-    inline void RestoreCallerSaveRegisters(MacroAssembler*masm,
+    inline void RestoreCallerSaveRegisters(MacroAssembler* masm,
                                            SaveFPRegsMode mode) {
-      if (mode == kSaveFPRegs) {
-        // Restore all XMM registers except XMM0.
-        for (int i = XMMRegister::kMaxNumRegisters - 1; i > 0; i--) {
-          XMMRegister reg = XMMRegister::from_code(i);
-          masm->movsd(reg, Operand(esp, (i - 1) * kDoubleSize));
-        }
-        masm->add(esp,
-                  Immediate(kDoubleSize * (XMMRegister::kMaxNumRegisters - 1)));
-      }
-      if (!scratch0_.is(edx) && !scratch1_.is(edx)) masm->pop(edx);
-      if (!scratch0_.is(eax) && !scratch1_.is(eax)) masm->pop(eax);
+      masm->PopCallerSaved(mode, ecx, scratch0_, scratch1_);
     }
 
     inline Register object() { return object_; }
@@ -320,13 +282,15 @@ class RecordWriteStub: public PlatformCodeStub {
     Register GetRegThatIsNotEcxOr(Register r1,
                                   Register r2,
                                   Register r3) {
-      for (int i = 0; i < Register::NumAllocatableRegisters(); i++) {
-        Register candidate = Register::FromAllocationIndex(i);
-        if (candidate.is(ecx)) continue;
-        if (candidate.is(r1)) continue;
-        if (candidate.is(r2)) continue;
-        if (candidate.is(r3)) continue;
-        return candidate;
+      for (int i = 0; i < Register::kNumRegisters; i++) {
+        if (RegisterConfiguration::Crankshaft()->IsAllocatableGeneralCode(i)) {
+          Register candidate = Register::from_code(i);
+          if (candidate.is(ecx)) continue;
+          if (candidate.is(r1)) continue;
+          if (candidate.is(r2)) continue;
+          if (candidate.is(r3)) continue;
+          return candidate;
+        }
       }
       UNREACHABLE();
       return no_reg;
@@ -385,6 +349,7 @@ class RecordWriteStub: public PlatformCodeStub {
 };
 
 
-} }  // namespace v8::internal
+}  // namespace internal
+}  // namespace v8
 
 #endif  // V8_IA32_CODE_STUBS_IA32_H_

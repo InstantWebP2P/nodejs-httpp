@@ -6,12 +6,12 @@
 #define V8_IC_ACCESS_COMPILER_H_
 
 #include "src/code-stubs.h"
+#include "src/ic/access-compiler-data.h"
 #include "src/macro-assembler.h"
 #include "src/objects.h"
 
 namespace v8 {
 namespace internal {
-
 
 class PropertyAccessCompiler BASE_EMBEDDED {
  public:
@@ -36,11 +36,11 @@ class PropertyAccessCompiler BASE_EMBEDDED {
  protected:
   PropertyAccessCompiler(Isolate* isolate, Code::Kind kind,
                          CacheHolderFlag cache_holder)
-      : registers_(GetCallingConvention(kind)),
+      : registers_(GetCallingConvention(isolate, kind)),
         kind_(kind),
         cache_holder_(cache_holder),
         isolate_(isolate),
-        masm_(isolate, NULL, 256) {
+        masm_(isolate, NULL, 256, CodeObjectRequired::kYes) {
     // TODO(yangguo): remove this once we can serialize IC stubs.
     masm_.enable_serializer();
   }
@@ -54,19 +54,10 @@ class PropertyAccessCompiler BASE_EMBEDDED {
 
   Register receiver() const { return registers_[0]; }
   Register name() const { return registers_[1]; }
-  Register slot() const { return LoadDescriptor::SlotRegister(); }
-  Register vector() const { return LoadWithVectorDescriptor::VectorRegister(); }
+  Register slot() const;
+  Register vector() const;
   Register scratch1() const { return registers_[2]; }
   Register scratch2() const { return registers_[3]; }
-  Register scratch3() const { return registers_[4]; }
-
-  // Calling convention between indexed store IC and handler.
-  Register transition_map() const { return scratch1(); }
-
-  static Register* GetCallingConvention(Code::Kind);
-  static Register* load_calling_convention();
-  static Register* store_calling_convention();
-  static Register* keyed_store_calling_convention();
 
   Register* registers_;
 
@@ -76,13 +67,18 @@ class PropertyAccessCompiler BASE_EMBEDDED {
   Handle<Code> GetCodeWithFlags(Code::Flags flags, Handle<Name> name);
 
  private:
+  static Register* GetCallingConvention(Isolate* isolate, Code::Kind kind);
+  static void InitializePlatformSpecific(AccessCompilerData* data);
+
   Code::Kind kind_;
   CacheHolderFlag cache_holder_;
 
   Isolate* isolate_;
   MacroAssembler masm_;
+  // Ensure that MacroAssembler has a reasonable size.
+  STATIC_ASSERT(sizeof(MacroAssembler) < 128 * kPointerSize);
 };
-}
-}  // namespace v8::internal
+}  // namespace internal
+}  // namespace v8
 
 #endif  // V8_IC_ACCESS_COMPILER_H_

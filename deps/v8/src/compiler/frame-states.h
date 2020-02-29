@@ -5,10 +5,15 @@
 #ifndef V8_COMPILER_FRAME_STATES_H_
 #define V8_COMPILER_FRAME_STATES_H_
 
-#include "src/handles-inl.h"
+#include "src/handles.h"
+#include "src/utils.h"
 
 namespace v8 {
 namespace internal {
+
+// Forward declarations.
+class SharedFunctionInfo;
+
 namespace compiler {
 
 // Flag that describes how to combine the current environment with
@@ -71,10 +76,14 @@ class OutputFrameStateCombine {
 
 // The type of stack frame that a FrameState node represents.
 enum class FrameStateType {
-  kJavaScriptFunction,  // Represents an unoptimized JavaScriptFrame.
-  kArgumentsAdaptor     // Represents an ArgumentsAdaptorFrame.
+  kJavaScriptFunction,   // Represents an unoptimized JavaScriptFrame.
+  kInterpretedFunction,  // Represents an InterpretedFrame.
+  kArgumentsAdaptor,     // Represents an ArgumentsAdaptorFrame.
+  kTailCallerFunction,   // Represents a frame removed by tail call elimination.
+  kConstructStub,        // Represents a ConstructStubFrame.
+  kGetterStub,           // Represents a GetterStubFrame.
+  kSetterStub            // Represents a SetterStubFrame.
 };
-
 
 class FrameStateFunctionInfo {
  public:
@@ -90,6 +99,11 @@ class FrameStateFunctionInfo {
   int parameter_count() const { return parameter_count_; }
   Handle<SharedFunctionInfo> shared_info() const { return shared_info_; }
   FrameStateType type() const { return type_; }
+
+  static bool IsJSFunctionType(FrameStateType type) {
+    return type == FrameStateType::kJavaScriptFunction ||
+           type == FrameStateType::kInterpretedFunction;
+  }
 
  private:
   FrameStateType const type_;

@@ -64,6 +64,7 @@ namespace node {
 
 extern int WRITE_UTF8_FLAGS;
 
+using namespace v8;
 
 class NODE_EXTERN Buffer: public ObjectWrap {
  public:
@@ -74,22 +75,27 @@ class NODE_EXTERN Buffer: public ObjectWrap {
 
   static bool HasInstance(v8::Handle<v8::Value> val);
 
-  static inline char* Data(v8::Handle<v8::Object> obj) {
-    return (char*)obj->GetIndexedPropertiesExternalArrayData();
-  }
 
   static inline char* Data(Buffer *b) {
-    return Buffer::Data(b->handle_);
+    return Buffer::Data(v8::Local<v8::Object>::New(Isolate::GetCurrent(), b->handle_));
   }
 
-  static inline size_t Length(v8::Handle<v8::Object> obj) {
-    return (size_t)obj->GetIndexedPropertiesExternalArrayDataLength();
+  static inline char *Data(v8::Handle<v8::Object> obj)
+  {
+    Local<ArrayBufferView> ui = obj.As<ArrayBufferView>();
+    ArrayBuffer::Contents ab_c = ui->Buffer()->GetContents();
+    return static_cast<char *>(ab_c.Data()) + ui->ByteOffset();
   }
 
   static inline size_t Length(Buffer *b) {
-    return Buffer::Length(b->handle_);
+    return Buffer::Length(v8::Local<v8::Object>::New(Isolate::GetCurrent(), b->handle_));
   }
 
+  static inline size_t Length(v8::Handle<v8::Object> obj)
+  {
+    Local<ArrayBufferView> ui = obj.As<ArrayBufferView>();
+    return ui->ByteLength();
+  }
 
   ~Buffer();
 
@@ -105,21 +111,21 @@ class NODE_EXTERN Buffer: public ObjectWrap {
                      free_callback callback, void *hint); // public constructor
 
   private:
-  static v8::Handle<v8::Value> New(const v8::Arguments &args);
-  static v8::Handle<v8::Value> BinarySlice(const v8::Arguments &args);
-  static v8::Handle<v8::Value> AsciiSlice(const v8::Arguments &args);
-  static v8::Handle<v8::Value> Base64Slice(const v8::Arguments &args);
-  static v8::Handle<v8::Value> Utf8Slice(const v8::Arguments &args);
-  static v8::Handle<v8::Value> Ucs2Slice(const v8::Arguments &args);
-  static v8::Handle<v8::Value> BinaryWrite(const v8::Arguments &args);
-  static v8::Handle<v8::Value> Base64Write(const v8::Arguments &args);
-  static v8::Handle<v8::Value> AsciiWrite(const v8::Arguments &args);
-  static v8::Handle<v8::Value> Utf8Write(const v8::Arguments &args);
-  static v8::Handle<v8::Value> Ucs2Write(const v8::Arguments &args);
-  static v8::Handle<v8::Value> ByteLength(const v8::Arguments &args);
-  static v8::Handle<v8::Value> MakeFastBuffer(const v8::Arguments &args);
-  static v8::Handle<v8::Value> Fill(const v8::Arguments &args);
-  static v8::Handle<v8::Value> Copy(const v8::Arguments &args);
+  static v8::Handle<v8::Value> New(const v8::internal::Arguments &args);
+  static v8::Handle<v8::Value> BinarySlice(const v8::internal::Arguments &args);
+  static v8::Handle<v8::Value> AsciiSlice(const v8::internal::Arguments &args);
+  static v8::Handle<v8::Value> Base64Slice(const v8::internal::Arguments &args);
+  static v8::Handle<v8::Value> Utf8Slice(const v8::internal::Arguments &args);
+  static v8::Handle<v8::Value> Ucs2Slice(const v8::internal::Arguments &args);
+  static v8::Handle<v8::Value> BinaryWrite(const v8::internal::Arguments &args);
+  static v8::Handle<v8::Value> Base64Write(const v8::internal::Arguments &args);
+  static v8::Handle<v8::Value> AsciiWrite(const v8::internal::Arguments &args);
+  static v8::Handle<v8::Value> Utf8Write(const v8::internal::Arguments &args);
+  static v8::Handle<v8::Value> Ucs2Write(const v8::internal::Arguments &args);
+  static v8::Handle<v8::Value> ByteLength(const v8::internal::Arguments &args);
+  static v8::Handle<v8::Value> MakeFastBuffer(const v8::internal::Arguments &args);
+  static v8::Handle<v8::Value> Fill(const v8::internal::Arguments &args);
+  static v8::Handle<v8::Value> Copy(const v8::internal::Arguments &args);
 
   Buffer(v8::Handle<v8::Object> wrapper, size_t length);
   void Replace(char *data, size_t length, free_callback callback, void *hint);

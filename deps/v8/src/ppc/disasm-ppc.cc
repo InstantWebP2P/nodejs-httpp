@@ -28,8 +28,6 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "src/v8.h"
-
 #if V8_TARGET_ARCH_PPC
 
 #include "src/base/platform/platform.h"
@@ -41,6 +39,7 @@
 namespace v8 {
 namespace internal {
 
+const auto GetRegConfig = RegisterConfiguration::Crankshaft;
 
 //------------------------------------------------------------------------------
 
@@ -80,8 +79,10 @@ class Decoder {
 
   void DecodeExt1(Instruction* instr);
   void DecodeExt2(Instruction* instr);
+  void DecodeExt3(Instruction* instr);
   void DecodeExt4(Instruction* instr);
   void DecodeExt5(Instruction* instr);
+  void DecodeExt6(Instruction* instr);
 
   const disasm::NameConverter& converter_;
   Vector<char> out_buffer_;
@@ -118,7 +119,9 @@ void Decoder::PrintRegister(int reg) {
 
 
 // Print the double FP register name according to the active name converter.
-void Decoder::PrintDRegister(int reg) { Print(FPRegisters::Name(reg)); }
+void Decoder::PrintDRegister(int reg) {
+  Print(GetRegConfig()->GetDoubleRegisterName(reg));
+}
 
 
 // Print SoftwareInterrupt codes. Factoring this out reduces the complexity of
@@ -243,6 +246,14 @@ int Decoder::FormatOption(Instruction* instr, const char* format) {
       }
       return 1;
     }
+    case 'c': {  // 'cr: condition register of branch instruction
+      int code = instr->Bits(20, 18);
+      if (code != 7) {
+        out_buffer_pos_ +=
+            SNPrintF(out_buffer_ + out_buffer_pos_, " cr%d", code);
+      }
+      return 2;
+    }
     case 't': {  // 'target: target of branch instructions
       // target26 or target16
       DCHECK(STRING_STARTS_WITH(format, "target"));
@@ -360,13 +371,16 @@ void Decoder::UnknownFormat(Instruction* instr, const char* name) {
 
 
 void Decoder::DecodeExt1(Instruction* instr) {
-  switch (instr->Bits(10, 1) << 1) {
+  switch (EXT1 | (instr->BitField(10, 1))) {
     case MCRF: {
       UnknownFormat(instr, "mcrf");  // not used by V8
       break;
     }
     case BCLRX: {
-      switch (instr->Bits(25, 21) << 21) {
+      int bo = instr->BitField(25, 21);
+      int bi = instr->Bits(20, 16);
+      CRBit cond = static_cast<CRBit>(bi & (CRWIDTH - 1));
+      switch (bo) {
         case DCBNZF: {
           UnknownFormat(instr, "bclrx-dcbnzf");
           break;
@@ -376,7 +390,20 @@ void Decoder::DecodeExt1(Instruction* instr) {
           break;
         }
         case BF: {
-          UnknownFormat(instr, "bclrx-bf");
+          switch (cond) {
+            case CR_EQ:
+              Format(instr, "bnelr'l'cr");
+              break;
+            case CR_GT:
+              Format(instr, "blelr'l'cr");
+              break;
+            case CR_LT:
+              Format(instr, "bgelr'l'cr");
+              break;
+            case CR_SO:
+              Format(instr, "bnsolr'l'cr");
+              break;
+          }
           break;
         }
         case DCBNZT: {
@@ -388,7 +415,20 @@ void Decoder::DecodeExt1(Instruction* instr) {
           break;
         }
         case BT: {
-          UnknownFormat(instr, "bclrx-bt");
+          switch (cond) {
+            case CR_EQ:
+              Format(instr, "beqlr'l'cr");
+              break;
+            case CR_GT:
+              Format(instr, "bgtlr'l'cr");
+              break;
+            case CR_LT:
+              Format(instr, "bltlr'l'cr");
+              break;
+            case CR_SO:
+              Format(instr, "bsolr'l'cr");
+              break;
+          }
           break;
         }
         case DCBNZ: {
@@ -400,18 +440,14 @@ void Decoder::DecodeExt1(Instruction* instr) {
           break;
         }
         case BA: {
-          if (instr->Bit(0) == 1) {
-            Format(instr, "blrl");
-          } else {
-            Format(instr, "blr");
-          }
+          Format(instr, "blr'l");
           break;
         }
       }
       break;
     }
     case BCCTRX: {
-      switch (instr->Bits(25, 21) << 21) {
+      switch (instr->BitField(25, 21)) {
         case DCBNZF: {
           UnknownFormat(instr, "bcctrx-dcbnzf");
           break;
@@ -505,7 +541,7 @@ void Decoder::DecodeExt1(Instruction* instr) {
 
 void Decoder::DecodeExt2(Instruction* instr) {
   // Some encodings are 10-1 bits, handle those first
-  switch (instr->Bits(10, 1) << 1) {
+  switch (EXT2 | (instr->BitField(10, 1))) {
     case SRWX: {
       Format(instr, "srw'.    'ra, 'rs, 'rb");
       return;
@@ -523,6 +559,24 @@ void Decoder::DecodeExt2(Instruction* instr) {
 #if V8_TARGET_ARCH_PPC64
     case SRAD: {
       Format(instr, "srad'.   'ra, 'rs, 'rb");
+      return;
+    }
+#endif
+    case MODSW: {
+      Format(instr, "modsw  'rt, 'ra, 'rb");
+      return;
+    }
+    case MODUW: {
+      Format(instr, "moduw  'rt, 'ra, 'rb");
+      return;
+    }
+#if V8_TARGET_ARCH_PPC64
+    case MODSD: {
+      Format(instr, "modsd  'rt, 'ra, 'rb");
+      return;
+    }
+    case MODUD: {
+      Format(instr, "modud  'rt, 'ra, 'rb");
       return;
     }
 #endif
@@ -576,9 +630,19 @@ void Decoder::DecodeExt2(Instruction* instr) {
       Format(instr, "stfdux   'rs, 'ra, 'rb");
       return;
     }
+    case POPCNTW: {
+      Format(instr, "popcntw  'ra, 'rs");
+      return;
+    }
+#if V8_TARGET_ARCH_PPC64
+    case POPCNTD: {
+      Format(instr, "popcntd  'ra, 'rs");
+      return;
+    }
+#endif
   }
 
-  switch (instr->Bits(10, 2) << 2) {
+  switch (EXT2 | (instr->BitField(10, 2))) {
     case SRADIX: {
       Format(instr, "sradi'.  'ra,'rs,'sh");
       return;
@@ -586,7 +650,7 @@ void Decoder::DecodeExt2(Instruction* instr) {
   }
 
   // ?? are all of these xo_form?
-  switch (instr->Bits(9, 1) << 1) {
+  switch (EXT2 | (instr->BitField(9, 1))) {
     case CMP: {
 #if V8_TARGET_ARCH_PPC64
       if (instr->Bit(21)) {
@@ -613,8 +677,16 @@ void Decoder::DecodeExt2(Instruction* instr) {
       Format(instr, "subfc'. 'rt, 'ra, 'rb");
       return;
     }
+    case SUBFEX: {
+      Format(instr, "subfe'. 'rt, 'ra, 'rb");
+      return;
+    }
     case ADDCX: {
       Format(instr, "addc'.   'rt, 'ra, 'rb");
+      return;
+    }
+    case ADDEX: {
+      Format(instr, "adde'.   'rt, 'ra, 'rb");
       return;
     }
     case CNTLZWX: {
@@ -827,7 +899,7 @@ void Decoder::DecodeExt2(Instruction* instr) {
 #endif
   }
 
-  switch (instr->Bits(5, 1) << 1) {
+  switch (EXT2 | (instr->BitField(5, 1))) {
     case ISEL: {
       Format(instr, "isel    'rt, 'ra, 'rb");
       return;
@@ -839,8 +911,25 @@ void Decoder::DecodeExt2(Instruction* instr) {
 }
 
 
+void Decoder::DecodeExt3(Instruction* instr) {
+  switch (EXT3 | (instr->BitField(10, 1))) {
+    case FCFID: {
+      Format(instr, "fcfids'. 'Dt, 'Db");
+      break;
+    }
+    case FCFIDU: {
+      Format(instr, "fcfidus'.'Dt, 'Db");
+      break;
+    }
+    default: {
+      Unknown(instr);  // not used by V8
+    }
+  }
+}
+
+
 void Decoder::DecodeExt4(Instruction* instr) {
-  switch (instr->Bits(5, 1) << 1) {
+  switch (EXT4 | (instr->BitField(5, 1))) {
     case FDIV: {
       Format(instr, "fdiv'.   'Dt, 'Da, 'Db");
       return;
@@ -875,7 +964,7 @@ void Decoder::DecodeExt4(Instruction* instr) {
     }
   }
 
-  switch (instr->Bits(10, 1) << 1) {
+  switch (EXT4 | (instr->BitField(10, 1))) {
     case FCMPU: {
       Format(instr, "fcmpu   'Da, 'Db");
       break;
@@ -888,12 +977,24 @@ void Decoder::DecodeExt4(Instruction* instr) {
       Format(instr, "fcfid'.  'Dt, 'Db");
       break;
     }
+    case FCFIDU: {
+      Format(instr, "fcfidu'. 'Dt, 'Db");
+      break;
+    }
     case FCTID: {
       Format(instr, "fctid   'Dt, 'Db");
       break;
     }
     case FCTIDZ: {
       Format(instr, "fctidz  'Dt, 'Db");
+      break;
+    }
+    case FCTIDU: {
+      Format(instr, "fctidu  'Dt, 'Db");
+      break;
+    }
+    case FCTIDUZ: {
+      Format(instr, "fctiduz 'Dt, 'Db");
       break;
     }
     case FCTIW: {
@@ -944,6 +1045,18 @@ void Decoder::DecodeExt4(Instruction* instr) {
       Format(instr, "fneg'.   'Dt, 'Db");
       break;
     }
+    case MCRFS: {
+      Format(instr, "mcrfs   ?,?");
+      break;
+    }
+    case MTFSB0: {
+      Format(instr, "mtfsb0'. ?");
+      break;
+    }
+    case MTFSB1: {
+      Format(instr, "mtfsb1'. ?");
+      break;
+    }
     default: {
       Unknown(instr);  // not used by V8
     }
@@ -952,7 +1065,7 @@ void Decoder::DecodeExt4(Instruction* instr) {
 
 
 void Decoder::DecodeExt5(Instruction* instr) {
-  switch (instr->Bits(4, 2) << 2) {
+  switch (EXT5 | (instr->BitField(4, 2))) {
     case RLDICL: {
       Format(instr, "rldicl'. 'ra, 'rs, 'sh, 'mb");
       return;
@@ -970,12 +1083,34 @@ void Decoder::DecodeExt5(Instruction* instr) {
       return;
     }
   }
-  switch (instr->Bits(4, 1) << 1) {
+  switch (EXT5 | (instr->BitField(4, 1))) {
     case RLDCL: {
       Format(instr, "rldcl'.  'ra, 'rs, 'sb, 'mb");
       return;
     }
   }
+  Unknown(instr);  // not used by V8
+}
+
+void Decoder::DecodeExt6(Instruction* instr) {
+  switch (EXT6 | (instr->BitField(10, 3))) {
+#define DECODE_XX3_INSTRUCTIONS(name, opcode_name, opcode_value) \
+  case opcode_name: {                                            \
+    Format(instr, #name" 'Dt, 'Da, 'Db");                        \
+    return;                                                      \
+  }
+    PPC_XX3_OPCODE_LIST(DECODE_XX3_INSTRUCTIONS)
+#undef DECODE_XX3_INSTRUCTIONS
+  }
+  switch (EXT6 | (instr->BitField(10, 2))) {
+#define DECODE_XX2_INSTRUCTIONS(name, opcode_name, opcode_value) \
+  case opcode_name: {                                            \
+    Format(instr, #name" 'Dt, 'Db");                             \
+    return;                                                      \
+  }
+    PPC_XX2_OPCODE_LIST(DECODE_XX2_INSTRUCTIONS)
+  }
+#undef DECODE_XX3_INSTRUCTIONS
   Unknown(instr);  // not used by V8
 }
 
@@ -988,16 +1123,15 @@ int Decoder::InstructionDecode(byte* instr_ptr) {
   out_buffer_pos_ += SNPrintF(out_buffer_ + out_buffer_pos_, "%08x       ",
                               instr->InstructionBits());
 
-#if ABI_USES_FUNCTION_DESCRIPTORS
-  // The first field will be identified as a jump table entry.  We emit the rest
-  // of the structure as zero, so just skip past them.
-  if (instr->InstructionBits() == 0) {
+  if (ABI_USES_FUNCTION_DESCRIPTORS && instr->InstructionBits() == 0) {
+    // The first field will be identified as a jump table entry.  We
+    // emit the rest of the structure as zero, so just skip past them.
     Format(instr, "constant");
     return Instruction::kInstrSize;
   }
-#endif
 
-  switch (instr->OpcodeValue() << 26) {
+  uint32_t opcode = instr->OpcodeValue() << 26;
+  switch (opcode) {
     case TWI: {
       PrintSoftwareInterrupt(instr->SvcValue());
       break;
@@ -1062,43 +1196,48 @@ int Decoder::InstructionDecode(byte* instr_ptr) {
     case BCX: {
       int bo = instr->Bits(25, 21) << 21;
       int bi = instr->Bits(20, 16);
-      switch (bi) {
-        case 2:
-        case 30:
-          if (BT == bo) {
-            Format(instr, "beq'l'a 'target16");
-            break;
+      CRBit cond = static_cast<CRBit>(bi & (CRWIDTH - 1));
+      switch (bo) {
+        case BT: {  // Branch if condition true
+          switch (cond) {
+            case CR_EQ:
+              Format(instr, "beq'l'a'cr 'target16");
+              break;
+            case CR_GT:
+              Format(instr, "bgt'l'a'cr 'target16");
+              break;
+            case CR_LT:
+              Format(instr, "blt'l'a'cr 'target16");
+              break;
+            case CR_SO:
+              Format(instr, "bso'l'a'cr 'target16");
+              break;
           }
-          if (BF == bo) {
-            Format(instr, "bne'l'a 'target16");
-            break;
-          }
-          Format(instr, "bc'l'a 'target16");
           break;
-        case 29:
-          if (BT == bo) {
-            Format(instr, "bgt'l'a 'target16");
-            break;
+        }
+        case BF: {  // Branch if condition false
+          switch (cond) {
+            case CR_EQ:
+              Format(instr, "bne'l'a'cr 'target16");
+              break;
+            case CR_GT:
+              Format(instr, "ble'l'a'cr 'target16");
+              break;
+            case CR_LT:
+              Format(instr, "bge'l'a'cr 'target16");
+              break;
+            case CR_SO:
+              Format(instr, "bnso'l'a'cr 'target16");
+              break;
           }
-          if (BF == bo) {
-            Format(instr, "ble'l'a 'target16");
-            break;
-          }
-          Format(instr, "bc'l'a 'target16");
           break;
-        case 28:
-          if (BT == bo) {
-            Format(instr, "blt'l'a 'target16");
-            break;
-          }
-          if (BF == bo) {
-            Format(instr, "bge'l'a 'target16");
-            break;
-          }
-          Format(instr, "bc'l'a 'target16");
+        }
+        case DCBNZ: {  // Decrement CTR; branch if CTR != 0
+          Format(instr, "bdnz'l'a 'target16");
           break;
+        }
         default:
-          Format(instr, "bc'l'a 'target16");
+          Format(instr, "bc'l'a'cr 'target16");
           break;
       }
       break;
@@ -1251,13 +1390,20 @@ int Decoder::InstructionDecode(byte* instr_ptr) {
       Format(instr, "stfdu   'Dt, 'int16('ra)");
       break;
     }
-    case EXT3:
+    case EXT3: {
+      DecodeExt3(instr);
+      break;
+    }
     case EXT4: {
       DecodeExt4(instr);
       break;
     }
     case EXT5: {
       DecodeExt5(instr);
+      break;
+    }
+    case EXT6: {
+      DecodeExt6(instr);
       break;
     }
 #if V8_TARGET_ARCH_PPC64
@@ -1302,7 +1448,7 @@ namespace disasm {
 
 
 const char* NameConverter::NameOfAddress(byte* addr) const {
-  v8::internal::SNPrintF(tmp_buffer_, "%p", addr);
+  v8::internal::SNPrintF(tmp_buffer_, "%p", static_cast<void*>(addr));
   return tmp_buffer_.start();
 }
 
@@ -1313,7 +1459,7 @@ const char* NameConverter::NameOfConstant(byte* addr) const {
 
 
 const char* NameConverter::NameOfCPURegister(int reg) const {
-  return v8::internal::Registers::Name(reg);
+  return v8::internal::GetRegConfig()->GetGeneralRegisterName(reg);
 }
 
 const char* NameConverter::NameOfByteCPURegister(int reg) const {
@@ -1362,7 +1508,7 @@ void Disassembler::Disassemble(FILE* f, byte* begin, byte* end) {
     buffer[0] = '\0';
     byte* prev_pc = pc;
     pc += d.InstructionDecode(buffer, pc);
-    v8::internal::PrintF(f, "%p    %08x      %s\n", prev_pc,
+    v8::internal::PrintF(f, "%p    %08x      %s\n", static_cast<void*>(prev_pc),
                          *reinterpret_cast<int32_t*>(prev_pc), buffer.start());
   }
 }

@@ -26,7 +26,9 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 
+import collections
 import os
+import re
 import shutil
 import sys
 import time
@@ -35,44 +37,177 @@ from pool import Pool
 from . import commands
 from . import perfdata
 from . import statusfile
+from . import testsuite
 from . import utils
+from ..objects import output
 
 
-class Job(object):
-  def __init__(self, command, dep_command, test_id, timeout, verbose):
+# Base dir of the v8 checkout.
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(
+    os.path.abspath(__file__)))))
+TEST_DIR = os.path.join(BASE_DIR, "test")
+
+
+class Instructions(object):
+  def __init__(self, command, test_id, timeout, verbose):
     self.command = command
-    self.dep_command = dep_command
     self.id = test_id
     self.timeout = timeout
     self.verbose = verbose
 
 
-def RunTest(job):
-  start_time = time.time()
-  if job.dep_command is not None:
-    dep_output = commands.Execute(job.dep_command, job.verbose, job.timeout)
-    # TODO(jkummerow): We approximate the test suite specific function
-    # IsFailureOutput() by just checking the exit code here. Currently
-    # only cctests define dependencies, for which this simplification is
-    # correct.
-    if dep_output.exit_code != 0:
-      return (job.id, dep_output, time.time() - start_time)
-  output = commands.Execute(job.command, job.verbose, job.timeout)
-  return (job.id, output, time.time() - start_time)
+# Structure that keeps global information per worker process.
+ProcessContext = collections.namedtuple(
+    "process_context", ["suites", "context"])
+
+
+def MakeProcessContext(context):
+  """Generate a process-local context.
+
+  This reloads all suites per process and stores the global context.
+
+  Args:
+    context: The global context from the test runner.
+  """
+  suite_paths = utils.GetSuitePaths(TEST_DIR)
+  suites = {}
+  for root in suite_paths:
+    # Don't reinitialize global state as this is concurrently called from
+    # different processes.
+    suite = testsuite.TestSuite.LoadTestSuite(
+        os.path.join(TEST_DIR, root), global_init=False)
+    if suite:
+      suites[suite.name] = suite
+  return ProcessContext(suites, context)
+
+
+def GetCommand(test, context):
+  d8testflag = []
+  shell = test.shell()
+  if shell == "d8":
+    d8testflag = ["--test"]
+  if utils.IsWindows():
+    shell += ".exe"
+  if context.random_seed:
+    d8testflag += ["--random-seed=%s" % context.random_seed]
+  cmd = (context.command_prefix +
+         [os.path.abspath(os.path.join(context.shell_dir, shell))] +
+         d8testflag +
+         test.suite.GetFlagsForTestCase(test, context) +
+         context.extra_flags)
+  return cmd
+
+
+def _GetInstructions(test, context):
+  command = GetCommand(test, context)
+  timeout = context.timeout
+  if ("--stress-opt" in test.flags or
+      "--stress-opt" in context.mode_flags or
+      "--stress-opt" in context.extra_flags):
+    timeout *= 4
+  if "--noenable-vfp3" in context.extra_flags:
+    timeout *= 2
+  # FIXME(machenbach): Make this more OO. Don't expose default outcomes or
+  # the like.
+  if statusfile.IsSlow(test.outcomes or [statusfile.PASS]):
+    timeout *= 2
+  return Instructions(command, test.id, timeout, context.verbose)
+
+
+class Job(object):
+  """Stores data to be sent over the multi-process boundary.
+
+  All contained fields will be pickled/unpickled.
+  """
+
+  def Run(self, process_context):
+    """Executes the job.
+
+    Args:
+      process_context: Process-local information that is initialized by the
+                       executing worker.
+    """
+    raise NotImplementedError()
+
+
+def SetupProblem(exception, test):
+  stderr = ">>> EXCEPTION: %s\n" % exception
+  match = re.match(r"^.*No such file or directory: '(.*)'$", str(exception))
+  if match:
+    # Extra debuging information when files are claimed missing.
+    f = match.group(1)
+    stderr += ">>> File %s exists? -> %s\n" % (f, os.path.exists(f))
+  return test.id, output.Output(1, False, "", stderr, None), 0
+
+
+class TestJob(Job):
+  def __init__(self, test):
+    self.test = test
+
+  def _rename_coverage_data(self, output, context):
+    """Rename coverage data.
+
+    Rename files with PIDs to files with unique test IDs, because the number
+    of tests might be higher than pid_max. E.g.:
+    d8.1234.sancov -> d8.test.42.1.sancov, where 1234 was the process' PID,
+    42 is the test ID and 1 is the attempt (the same test might be rerun on
+    failures).
+    """
+    if context.sancov_dir and output.pid is not None:
+      sancov_file = os.path.join(
+          context.sancov_dir, "%s.%d.sancov" % (self.test.shell(), output.pid))
+
+      # Some tests are expected to fail and don't produce coverage data.
+      if os.path.exists(sancov_file):
+        parts = sancov_file.split(".")
+        new_sancov_file = ".".join(
+            parts[:-2] +
+            ["test", str(self.test.id), str(self.test.run)] +
+            parts[-1:]
+        )
+        assert not os.path.exists(new_sancov_file)
+        os.rename(sancov_file, new_sancov_file)
+
+  def Run(self, process_context):
+    try:
+      # Retrieve a new suite object on the worker-process side. The original
+      # suite object isn't pickled.
+      self.test.SetSuiteObject(process_context.suites)
+      instr = _GetInstructions(self.test, process_context.context)
+    except Exception, e:
+      return SetupProblem(e, self.test)
+
+    start_time = time.time()
+    output = commands.Execute(instr.command, instr.verbose, instr.timeout)
+    self._rename_coverage_data(output, process_context.context)
+    return (instr.id, output, time.time() - start_time)
+
+
+def RunTest(job, process_context):
+  return job.Run(process_context)
+
 
 class Runner(object):
 
   def __init__(self, suites, progress_indicator, context):
     self.datapath = os.path.join("out", "testrunner_data")
-    self.perf_data_manager = perfdata.PerfDataManager(self.datapath)
+    self.perf_data_manager = perfdata.GetPerfDataManager(
+        context, self.datapath)
     self.perfdata = self.perf_data_manager.GetStore(context.arch, context.mode)
     self.perf_failures = False
     self.printed_allocations = False
     self.tests = [ t for s in suites for t in s.tests ]
+
+    # Always pre-sort by status file, slowest tests first.
+    slow_key = lambda t: statusfile.IsSlow(t.outcomes)
+    self.tests.sort(key=slow_key, reverse=True)
+
+    # Sort by stored duration of not opted out.
     if not context.no_sorting:
       for t in self.tests:
         t.duration = self.perfdata.FetchPerfData(t) or 1.0
       self.tests.sort(key=lambda t: t.duration, reverse=True)
+
     self._CommonInit(suites, progress_indicator, context)
 
   def _CommonInit(self, suites, progress_indicator, context):
@@ -97,23 +232,6 @@ class Runner(object):
       print("PerfData exception: %s" % e)
       self.perf_failures = True
 
-  def _GetJob(self, test):
-    command = self.GetCommand(test)
-    timeout = self.context.timeout
-    if ("--stress-opt" in test.flags or
-        "--stress-opt" in self.context.mode_flags or
-        "--stress-opt" in self.context.extra_flags):
-      timeout *= 4
-    # FIXME(machenbach): Make this more OO. Don't expose default outcomes or
-    # the like.
-    if statusfile.IsSlow(test.outcomes or [statusfile.PASS]):
-      timeout *= 2
-    if test.dependency is not None:
-      dep_command = [ c.replace(test.path, test.dependency) for c in command ]
-    else:
-      dep_command = None
-    return Job(command, dep_command, test.id, timeout, self.context.verbose)
-
   def _MaybeRerun(self, pool, test):
     if test.run <= self.context.rerun_failures_count:
       # Possibly rerun this test if its run count is below the maximum per
@@ -134,12 +252,11 @@ class Runner(object):
       test.duration = None
       test.output = None
       test.run += 1
-      pool.add([self._GetJob(test)])
+      pool.add([TestJob(test)])
       self.remaining += 1
       self.total += 1
 
   def _ProcessTestNormal(self, test, result, pool):
-    self.indicator.AboutToRun(test)
     test.output = result[1]
     test.duration = result[2]
     has_unexpected_output = test.suite.HasUnexpectedOutput(test)
@@ -176,7 +293,6 @@ class Runner(object):
     if test.run == 1 and result[1].HasTimedOut():
       # If we get a timeout in the first run, we are already in an
       # unpredictable state. Just report it as a failure and don't rerun.
-      self.indicator.AboutToRun(test)
       test.output = result[1]
       self.remaining -= 1
       self.failed.append(test)
@@ -185,16 +301,13 @@ class Runner(object):
       # From the second run on, check for different allocations. If a
       # difference is found, call the indicator twice to report both tests.
       # All runs of each test are counted as one for the statistic.
-      self.indicator.AboutToRun(test)
       self.remaining -= 1
       self.failed.append(test)
       self.indicator.HasRun(test, True)
-      self.indicator.AboutToRun(test)
       test.output = result[1]
       self.indicator.HasRun(test, True)
     elif test.run >= 3:
       # No difference on the third run -> report a success.
-      self.indicator.AboutToRun(test)
       self.remaining -= 1
       self.succeeded += 1
       test.output = result[1]
@@ -204,7 +317,7 @@ class Runner(object):
       # remember the output for comparison.
       test.run += 1
       test.output = result[1]
-      pool.add([self._GetJob(test)])
+      pool.add([TestJob(test)])
     # Always update the perf database.
     return True
 
@@ -212,8 +325,10 @@ class Runner(object):
     self.indicator.Starting()
     self._RunInternal(jobs)
     self.indicator.Done()
-    if self.failed or self.remaining:
+    if self.failed:
       return 1
+    elif self.remaining:
+      return 2
     return 0
 
   def _RunInternal(self, jobs):
@@ -225,14 +340,19 @@ class Runner(object):
         assert test.id >= 0
         test_map[test.id] = test
         try:
-          yield [self._GetJob(test)]
+          yield [TestJob(test)]
         except Exception, e:
           # If this failed, save the exception and re-raise it later (after
           # all other tests have had a chance to run).
           queued_exception[0] = e
           continue
     try:
-      it = pool.imap_unordered(RunTest, gen_tests())
+      it = pool.imap_unordered(
+          fn=RunTest,
+          gen=gen_tests(),
+          process_context_fn=MakeProcessContext,
+          process_context_args=[self.context],
+      )
       for result in it:
         if result.heartbeat:
           self.indicator.Heartbeat()
@@ -269,22 +389,6 @@ class Runner(object):
     if self.context.verbose:
       print text
       sys.stdout.flush()
-
-  def GetCommand(self, test):
-    d8testflag = []
-    shell = test.suite.shell()
-    if shell == "d8":
-      d8testflag = ["--test"]
-    if utils.IsWindows():
-      shell += ".exe"
-    if self.context.random_seed:
-      d8testflag += ["--random-seed=%s" % self.context.random_seed]
-    cmd = (self.context.command_prefix +
-           [os.path.abspath(os.path.join(self.context.shell_dir, shell))] +
-           d8testflag +
-           test.suite.GetFlagsForTestCase(test, self.context) +
-           self.context.extra_flags)
-    return cmd
 
 
 class BreakNowException(Exception):

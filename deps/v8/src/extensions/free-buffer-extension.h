@@ -5,7 +5,7 @@
 #ifndef V8_EXTENSIONS_FREE_BUFFER_EXTENSION_H_
 #define V8_EXTENSIONS_FREE_BUFFER_EXTENSION_H_
 
-#include "src/v8.h"
+#include "include/v8.h"
 
 namespace v8 {
 namespace internal {
@@ -19,6 +19,7 @@ class FreeBufferExtension : public v8::Extension {
   static void FreeBuffer(const v8::FunctionCallbackInfo<v8::Value>& args);
 };
 
-} }  // namespace v8::internal
+}  // namespace internal
+}  // namespace v8
 
 #endif  // V8_EXTENSIONS_FREE_BUFFER_EXTENSION_H_

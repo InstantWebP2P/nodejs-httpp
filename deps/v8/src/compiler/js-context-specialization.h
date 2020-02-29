@@ -27,9 +27,13 @@ class JSContextSpecialization final : public AdvancedReducer {
   Reduction Reduce(Node* node) final;
 
  private:
-  Reduction ReduceParameter(Node* node);
   Reduction ReduceJSLoadContext(Node* node);
   Reduction ReduceJSStoreContext(Node* node);
+
+  Reduction SimplifyJSStoreContext(Node* node, Node* new_context,
+                                   size_t new_depth);
+  Reduction SimplifyJSLoadContext(Node* node, Node* new_context,
+                                  size_t new_depth);
 
   Isolate* isolate() const;
   JSOperatorBuilder* javascript() const;

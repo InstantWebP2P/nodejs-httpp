@@ -9,6 +9,7 @@
 #include "src/compiler/graph-reducer.h"
 #include "src/compiler/node.h"
 #include "src/compiler/node-properties.h"
+#include "src/compiler/verifier.h"
 
 namespace v8 {
 namespace internal {
@@ -22,14 +23,19 @@ enum class GraphReducer::State : uint8_t {
 };
 
 
+void Reducer::Finalize() {}
+
 GraphReducer::GraphReducer(Zone* zone, Graph* graph, Node* dead)
     : graph_(graph),
       dead_(dead),
       state_(graph, 4),
       reducers_(zone),
       revisit_(zone),
-      stack_(zone) {}
-
+      stack_(zone) {
+  if (dead != nullptr) {
+    NodeProperties::SetType(dead_, Type::None());
+  }
+}
 
 GraphReducer::~GraphReducer() {}
 
@@ -57,7 +63,11 @@ void GraphReducer::ReduceNode(Node* node) {
         Push(node);
       }
     } else {
-      break;
+      // Run all finalizers.
+      for (Reducer* const reducer : reducers_) reducer->Finalize();
+
+      // Check if we have new nodes to revisit.
+      if (revisit_.empty()) break;
     }
   }
   DCHECK(revisit_.empty());
@@ -105,17 +115,23 @@ void GraphReducer::ReduceTop() {
 
   if (node->IsDead()) return Pop();  // Node was killed while on stack.
 
+  Node::Inputs node_inputs = node->inputs();
+
   // Recurse on an input if necessary.
-  int start = entry.input_index < node->InputCount() ? entry.input_index : 0;
-  for (int i = start; i < node->InputCount(); i++) {
-    Node* input = node->InputAt(i);
-    entry.input_index = i + 1;
-    if (input != node && Recurse(input)) return;
+  int start = entry.input_index < node_inputs.count() ? entry.input_index : 0;
+  for (int i = start; i < node_inputs.count(); ++i) {
+    Node* input = node_inputs[i];
+    if (input != node && Recurse(input)) {
+      entry.input_index = i + 1;
+      return;
+    }
   }
-  for (int i = 0; i < start; i++) {
-    Node* input = node->InputAt(i);
-    entry.input_index = i + 1;
-    if (input != node && Recurse(input)) return;
+  for (int i = 0; i < start; ++i) {
+    Node* input = node_inputs[i];
+    if (input != node && Recurse(input)) {
+      entry.input_index = i + 1;
+      return;
+    }
   }
 
   // Remember the max node id before reduction.
@@ -131,10 +147,13 @@ void GraphReducer::ReduceTop() {
   Node* const replacement = reduction.replacement();
   if (replacement == node) {
     // In-place update of {node}, may need to recurse on an input.
-    for (int i = 0; i < node->InputCount(); ++i) {
-      Node* input = node->InputAt(i);
-      entry.input_index = i + 1;
-      if (input != node && Recurse(input)) return;
+    Node::Inputs node_inputs = node->inputs();
+    for (int i = 0; i < node_inputs.count(); ++i) {
+      Node* input = node_inputs[i];
+      if (input != node && Recurse(input)) {
+        entry.input_index = i + 1;
+        return;
+      }
     }
   }
 
@@ -160,6 +179,10 @@ void GraphReducer::Replace(Node* node, Node* replacement) {
 
 
 void GraphReducer::Replace(Node* node, Node* replacement, NodeId max_id) {
+  if (FLAG_trace_turbo_reduction) {
+    OFStream os(stdout);
+    os << "- Replacing " << *node << " with " << *replacement << std::endl;
+  }
   if (node == graph()->start()) graph()->SetStart(replacement);
   if (node == graph()->end()) graph()->SetEnd(replacement);
   if (replacement->id() <= max_id) {
@@ -167,6 +190,7 @@ void GraphReducer::Replace(Node* node, Node* replacement, NodeId max_id) {
     // {replacement} was already reduced and finish.
     for (Edge edge : node->use_edges()) {
       Node* const user = edge.from();
+      Verifier::VerifyEdgeInputReplacement(edge, replacement);
       edge.UpdateTo(replacement);
       // Don't revisit this node if it refers to itself.
       if (user != node) Revisit(user);
@@ -213,7 +237,11 @@ void GraphReducer::ReplaceWithValue(Node* node, Node* value, Node* effect,
         edge.UpdateTo(dead_);
         Revisit(user);
       } else {
-        UNREACHABLE();
+        DCHECK_NOT_NULL(control);
+        edge.UpdateTo(control);
+        Revisit(user);
+        // TODO(jarin) Check that the node cannot throw (otherwise, it
+        // would have to be connected via IfSuccess/IfException).
       }
     } else if (NodeProperties::IsEffectEdge(edge)) {
       DCHECK_NOT_NULL(effect);

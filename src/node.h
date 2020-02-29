@@ -95,32 +95,40 @@ void Load(v8::Handle<v8::Object> process);
 void EmitExit(v8::Handle<v8::Object> process);
 
 #define NODE_PSYMBOL(s) \
-  v8::Persistent<v8::String>::New(v8::String::NewSymbol(s))
+  v8::Persistent<v8::String>::New(v8::String::NewFromUtf8(isolate(),s))
 
 /* Converts a unixtime to V8 Date */
 #define NODE_UNIXTIME_V8(t) v8::Date::New(1000*static_cast<double>(t))
 #define NODE_V8_UNIXTIME(v) (static_cast<double>((v)->NumberValue())/1000.0);
 
 #define NODE_DEFINE_CONSTANT(target, constant)                            \
-  (target)->Set(v8::String::NewSymbol(#constant),                         \
+  (target)->Set(v8::String::NewFromUtf8(isolate(),#constant),                         \
                 v8::Integer::New(constant),                               \
                 static_cast<v8::PropertyAttribute>(                       \
                     v8::ReadOnly|v8::DontDelete))
 
+inline v8::Local<v8::FunctionTemplate> 
+NewFunctionTemplate(v8::FunctionCallback callback)
+{
+  //v8::Local<v8::External> external = as_external();
+  //return v8::FunctionTemplate::New(isolate(), callback, external, signature);
+  return v8::FunctionTemplate::New(isolate(), callback);
+  }
+
 template <typename target_t>
 void SetMethod(target_t obj, const char* name,
-        v8::InvocationCallback callback)
+        v8::FunctionCallback callback)
 {
-    obj->Set(v8::String::NewSymbol(name),
-        v8::FunctionTemplate::New(callback)->GetFunction());
+    obj->Set(v8::String::NewFromUtf8(isolate(),name),
+        NewFunctionTemplate(callback)->GetFunction());
 }
 
 template <typename target_t>
 void SetPrototypeMethod(target_t target,
-        const char* name, v8::InvocationCallback callback)
+        const char* name, v8::FunctionCallback callback)
 {
-    v8::Local<v8::FunctionTemplate> templ = v8::FunctionTemplate::New(callback);
-    target->PrototypeTemplate()->Set(v8::String::NewSymbol(name), templ);
+    v8::Local<v8::FunctionTemplate> templ = NewFunctionTemplate(callback);
+    target->PrototypeTemplate()->Set(v8::String::NewFromUtf8(isolate(),name), templ);
 }
 
 // for backwards compatibility
@@ -154,29 +162,29 @@ v8::Local<v8::Object> BuildStatsObject(const uv_statbuf_t* s);
  * Buffer(10) instead of new Buffer(10).
  * @param constructorTemplate Constructor template to instantiate from.
  * @param args The arguments object passed to your constructor.
- * @see v8::Arguments::IsConstructCall
+ * @see v8::internal::Arguments::IsConstructCall
  */
 v8::Handle<v8::Value> FromConstructorTemplate(
     v8::Persistent<v8::FunctionTemplate>& constructorTemplate,
-    const v8::Arguments& args);
+    const v8::internal::Arguments& args);
 
 
-static inline v8::Persistent<v8::Function>* cb_persist(
+/*static inline v8::Persistent<v8::Function>* cb_persist(
     const v8::Local<v8::Value> &v) {
   v8::Persistent<v8::Function> *fn = new v8::Persistent<v8::Function>();
-  *fn = v8::Persistent<v8::Function>::New(v8::Local<v8::Function>::Cast(v));
+  *fn = v8::Persistent<v8::Function>::New(isolate(), v8::Local<v8::Function>::Cast(v));
   return fn;
-}
+}*/
 
 static inline v8::Persistent<v8::Function>* cb_unwrap(void *data) {
   v8::Persistent<v8::Function> *cb =
     reinterpret_cast<v8::Persistent<v8::Function>*>(data);
-  assert((*cb)->IsFunction());
+  //assert(cb->IsFunction());
   return cb;
 }
 
 static inline void cb_destroy(v8::Persistent<v8::Function> * cb) {
-  cb->Dispose();
+  //cb->Dispose();
   delete cb;
 }
 

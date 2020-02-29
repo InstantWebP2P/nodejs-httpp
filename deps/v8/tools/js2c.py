@@ -31,10 +31,9 @@
 # char arrays. It is used for embedded JavaScript code in the V8
 # library.
 
-import os, re, sys, string
+import os, re
 import optparse
 import jsmin
-import bz2
 import textwrap
 
 
@@ -108,6 +107,9 @@ def ExpandMacroDefinition(lines, pos, name_pattern, macro, expander):
     mapping = { }
     def add_arg(str):
       # Remember to expand recursively in the arguments
+      if arg_index[0] >= len(macro.args):
+        lineno = lines.count(os.linesep, 0, start) + 1
+        raise Error('line %s: Too many arguments for macro "%s"' % (lineno, name_pattern.pattern))
       replacement = expander(str.strip())
       mapping[macro.args[arg_index[0]]] = replacement
       arg_index[0] += 1
@@ -143,10 +145,12 @@ class TextMacro:
     self.args = args
     self.body = body
   def expand(self, mapping):
-    result = self.body
-    for key, value in mapping.items():
-        result = result.replace(key, value)
-    return result
+    # Keys could be substrings of earlier values. To avoid unintended
+    # clobbering, apply all replacements simultaneously.
+    any_key_pattern = "|".join(re.escape(k) for k in mapping.iterkeys())
+    def replace(match):
+      return mapping[match.group(0)]
+    return re.sub(any_key_pattern, replace, self.body)
 
 class PythonMacro:
   def __init__(self, args, fun):
@@ -196,7 +200,7 @@ def ReadMacros(lines):
   return (constants, macros)
 
 
-TEMPLATE_PATTERN = re.compile(r'^\s+T\(([A-Z][a-zA-Z]*),')
+TEMPLATE_PATTERN = re.compile(r'^\s+T\(([A-Z][a-zA-Z0-9]*),')
 
 def ReadMessageTemplates(lines):
   templates = []
@@ -240,7 +244,7 @@ def ExpandInlineMacros(lines):
     lines = ExpandMacroDefinition(lines, pos, name_pattern, macro, non_expander)
 
 
-INLINE_CONSTANT_PATTERN = re.compile(r'define\s+([a-zA-Z0-9_]+)\s*=\s*([^;\n]+)[;\n]')
+INLINE_CONSTANT_PATTERN = re.compile(r'define\s+([a-zA-Z0-9_]+)\s*=\s*([^;\n]+);\n')
 
 def ExpandInlineConstants(lines):
   pos = 0
@@ -346,8 +350,8 @@ def BuildFilterChain(macro_filename, message_template_file):
 
   if macro_filename:
     (consts, macros) = ReadMacros(ReadFile(macro_filename))
-    filter_chain.append(lambda l: ExpandConstants(l, consts))
     filter_chain.append(lambda l: ExpandMacros(l, macros))
+    filter_chain.append(lambda l: ExpandConstants(l, consts))
 
   if message_template_file:
     message_templates = ReadMessageTemplates(ReadFile(message_template_file))
@@ -377,7 +381,7 @@ class Sources:
 
 
 def IsDebuggerFile(filename):
-  return filename.endswith("-debugger.js")
+  return "debug" in filename
 
 def IsMacroFile(filename):
   return filename.endswith("macros.py")
@@ -415,7 +419,7 @@ def PrepareSources(source_files, native_type, emit_js):
     message_template_file = message_template_files[0]
 
   filters = None
-  if native_type == "EXTRAS":
+  if native_type in ("EXTRAS", "EXPERIMENTAL_EXTRAS"):
     filters = BuildExtraFilterChain()
   else:
     filters = BuildFilterChain(macro_file, message_template_file)
@@ -447,7 +451,7 @@ def PrepareSources(source_files, native_type, emit_js):
     result.is_debugger_id.append(is_debugger)
 
     name = os.path.basename(source)[:-3]
-    result.names.append(name if not is_debugger else name[:-9])
+    result.names.append(name)
 
   return result
 
@@ -583,7 +587,8 @@ def main():
                     help="file to write the startup blob to.")
   parser.add_option("--js",
                     help="writes a JS file output instead of a C file",
-                    action="store_true")
+                    action="store_true", default=False, dest='js')
+  parser.add_option("--nojs", action="store_false", default=False, dest='js')
   parser.set_usage("""js2c out.cc type sources.js ...
         out.cc: C code to be generated.
         type: type parameter for NativesCollection template.

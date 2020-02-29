@@ -2,9 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "src/v8.h"
+#include "src/transitions.h"
 
-#include "src/objects.h"
+#include "src/objects-inl.h"
 #include "src/transitions-inl.h"
 #include "src/utils.h"
 
@@ -51,8 +51,7 @@ void TransitionArray::Insert(Handle<Map> map, Handle<Name> name,
     // Re-read existing data; the allocation might have caused it to be cleared.
     if (IsSimpleTransition(map->raw_transitions())) {
       old_target = GetSimpleTransition(map->raw_transitions());
-      result->NoIncrementalWriteBarrierSet(
-          0, GetSimpleTransitionKey(old_target), old_target);
+      result->Set(0, GetSimpleTransitionKey(old_target), old_target);
     } else {
       result->SetNumberOfTransitions(0);
     }
@@ -106,10 +105,9 @@ void TransitionArray::Insert(Handle<Map> map, Handle<Name> name,
   }
 
   // We're gonna need a bigger TransitionArray.
-  Handle<TransitionArray> result =
-      Allocate(map->GetIsolate(), new_nof,
-               Map::SlackForArraySize(false, number_of_transitions,
-                                      kMaxNumberOfTransitions));
+  Handle<TransitionArray> result = Allocate(
+      map->GetIsolate(), new_nof,
+      Map::SlackForArraySize(number_of_transitions, kMaxNumberOfTransitions));
 
   // The map's transition array may have shrunk during the allocation above as
   // it was weakly traversed, though it is guaranteed not to disappear. Trim the
@@ -146,11 +144,11 @@ void TransitionArray::Insert(Handle<Map> map, Handle<Name> name,
 
   DCHECK_NE(kNotFound, insertion_index);
   for (int i = 0; i < insertion_index; ++i) {
-    result->NoIncrementalWriteBarrierCopyFrom(array, i, i);
+    result->Set(i, array->GetKey(i), array->GetTarget(i));
   }
-  result->NoIncrementalWriteBarrierSet(insertion_index, *name, *target);
+  result->Set(insertion_index, *name, *target);
   for (int i = insertion_index; i < number_of_transitions; ++i) {
-    result->NoIncrementalWriteBarrierCopyFrom(array, i, i + 1);
+    result->Set(i + 1, array->GetKey(i), array->GetTarget(i));
   }
 
   SLOW_DCHECK(result->IsSortedNoDuplicates());
@@ -161,20 +159,21 @@ void TransitionArray::Insert(Handle<Map> map, Handle<Name> name,
 // static
 Map* TransitionArray::SearchTransition(Map* map, PropertyKind kind, Name* name,
                                        PropertyAttributes attributes) {
+  DCHECK(name->IsUniqueName());
   Object* raw_transitions = map->raw_transitions();
   if (IsSimpleTransition(raw_transitions)) {
     Map* target = GetSimpleTransition(raw_transitions);
     Name* key = GetSimpleTransitionKey(target);
-    if (!key->Equals(name)) return NULL;
+    if (key != name) return nullptr;
     PropertyDetails details = GetSimpleTargetDetails(target);
-    if (details.attributes() != attributes) return NULL;
-    if (details.kind() != kind) return NULL;
+    if (details.attributes() != attributes) return nullptr;
+    if (details.kind() != kind) return nullptr;
     return target;
   }
   if (IsFullTransitionArray(raw_transitions)) {
     TransitionArray* transitions = TransitionArray::cast(raw_transitions);
     int transition = transitions->Search(kind, name, attributes);
-    if (transition == kNotFound) return NULL;
+    if (transition == kNotFound) return nullptr;
     return transitions->GetTarget(transition);
   }
   return NULL;
@@ -197,12 +196,14 @@ Map* TransitionArray::SearchSpecial(Map* map, Symbol* name) {
 // static
 Handle<Map> TransitionArray::FindTransitionToField(Handle<Map> map,
                                                    Handle<Name> name) {
+  DCHECK(name->IsUniqueName());
   DisallowHeapAllocation no_gc;
   Map* target = SearchTransition(*map, kData, *name, NONE);
   if (target == NULL) return Handle<Map>::null();
   PropertyDetails details = target->GetLastDescriptorDetails();
   DCHECK_EQ(NONE, details.attributes());
-  if (details.type() != DATA) return Handle<Map>::null();
+  if (details.location() != kField) return Handle<Map>::null();
+  DCHECK_EQ(kData, details.kind());
   return Handle<Map>(target);
 }
 
@@ -214,7 +215,8 @@ Handle<String> TransitionArray::ExpectedTransitionKey(Handle<Map> map) {
   if (!IsSimpleTransition(raw_transition)) return Handle<String>::null();
   Map* target = GetSimpleTransition(raw_transition);
   PropertyDetails details = GetSimpleTargetDetails(target);
-  if (details.type() != DATA) return Handle<String>::null();
+  if (details.location() != kField) return Handle<String>::null();
+  DCHECK_EQ(kData, details.kind());
   if (details.attributes() != NONE) return Handle<String>::null();
   Name* name = GetSimpleTransitionKey(target);
   if (!name->IsString()) return Handle<String>::null();
@@ -231,6 +233,61 @@ bool TransitionArray::CanHaveMoreTransitions(Handle<Map> map) {
     return transitions->number_of_transitions() < kMaxNumberOfTransitions;
   }
   return true;
+}
+
+
+// static
+bool TransitionArray::CompactPrototypeTransitionArray(FixedArray* array) {
+  const int header = kProtoTransitionHeaderSize;
+  int number_of_transitions = NumberOfPrototypeTransitions(array);
+  if (number_of_transitions == 0) {
+    // Empty array cannot be compacted.
+    return false;
+  }
+  int new_number_of_transitions = 0;
+  for (int i = 0; i < number_of_transitions; i++) {
+    Object* cell = array->get(header + i);
+    if (!WeakCell::cast(cell)->cleared()) {
+      if (new_number_of_transitions != i) {
+        array->set(header + new_number_of_transitions, cell);
+      }
+      new_number_of_transitions++;
+    }
+  }
+  // Fill slots that became free with undefined value.
+  for (int i = new_number_of_transitions; i < number_of_transitions; i++) {
+    array->set_undefined(header + i);
+  }
+  if (number_of_transitions != new_number_of_transitions) {
+    SetNumberOfPrototypeTransitions(array, new_number_of_transitions);
+  }
+  return new_number_of_transitions < number_of_transitions;
+}
+
+
+// static
+Handle<FixedArray> TransitionArray::GrowPrototypeTransitionArray(
+    Handle<FixedArray> array, int new_capacity, Isolate* isolate) {
+  // Grow array by factor 2 up to MaxCachedPrototypeTransitions.
+  int capacity = array->length() - kProtoTransitionHeaderSize;
+  new_capacity = Min(kMaxCachedPrototypeTransitions, new_capacity);
+  DCHECK_GT(new_capacity, capacity);
+  int grow_by = new_capacity - capacity;
+  array = isolate->factory()->CopyFixedArrayAndGrow(array, grow_by, TENURED);
+  if (capacity < 0) {
+    // There was no prototype transitions array before, so the size
+    // couldn't be copied. Initialize it explicitly.
+    SetNumberOfPrototypeTransitions(*array, 0);
+  }
+  return array;
+}
+
+
+// static
+int TransitionArray::NumberOfPrototypeTransitionsForTest(Map* map) {
+  FixedArray* transitions = GetPrototypeTransitions(map);
+  CompactPrototypeTransitionArray(transitions);
+  return TransitionArray::NumberOfPrototypeTransitions(transitions);
 }
 
 
@@ -253,21 +310,16 @@ void TransitionArray::PutPrototypeTransition(Handle<Map> map,
   int transitions = NumberOfPrototypeTransitions(*cache) + 1;
 
   if (transitions > capacity) {
-    // Grow array by factor 2 up to MaxCachedPrototypeTransitions.
-    int new_capacity = Min(kMaxCachedPrototypeTransitions, transitions * 2);
-    if (new_capacity == capacity) return;
-
-    cache = FixedArray::CopySize(cache, header + new_capacity);
-    if (capacity < 0) {
-      // There was no prototype transitions array before, so the size
-      // couldn't be copied. Initialize it explicitly.
-      SetNumberOfPrototypeTransitions(*cache, 0);
+    // Grow the array if compacting it doesn't free space.
+    if (!CompactPrototypeTransitionArray(*cache)) {
+      if (capacity == kMaxCachedPrototypeTransitions) return;
+      cache = GrowPrototypeTransitionArray(cache, 2 * transitions,
+                                           map->GetIsolate());
+      SetPrototypeTransitions(map, cache);
     }
-
-    SetPrototypeTransitions(map, cache);
   }
 
-  // Reload number of transitions as GC might shrink them.
+  // Reload number of transitions as they might have been compacted.
   int last = NumberOfPrototypeTransitions(*cache);
   int entry = header + last;
 
@@ -343,27 +395,22 @@ int TransitionArray::Capacity(Object* raw_transitions) {
 Handle<TransitionArray> TransitionArray::Allocate(Isolate* isolate,
                                                   int number_of_transitions,
                                                   int slack) {
-  Handle<FixedArray> array = isolate->factory()->NewFixedArray(
+  Handle<FixedArray> array = isolate->factory()->NewTransitionArray(
       LengthFor(number_of_transitions + slack));
-  array->set(kPrototypeTransitionsIndex, Smi::FromInt(0));
+  array->set(kPrototypeTransitionsIndex, Smi::kZero);
   array->set(kTransitionLengthIndex, Smi::FromInt(number_of_transitions));
   return Handle<TransitionArray>::cast(array);
 }
 
 
-void TransitionArray::NoIncrementalWriteBarrierCopyFrom(TransitionArray* origin,
-                                                        int origin_transition,
-                                                        int target_transition) {
-  NoIncrementalWriteBarrierSet(target_transition,
-                               origin->GetKey(origin_transition),
-                               origin->GetTarget(origin_transition));
-}
-
-
-static void ZapTransitionArray(TransitionArray* transitions) {
-  MemsetPointer(transitions->data_start(),
+// static
+void TransitionArray::ZapTransitionArray(TransitionArray* transitions) {
+  // Do not zap the next link that is used by GC.
+  STATIC_ASSERT(kNextLinkIndex + 1 == kPrototypeTransitionsIndex);
+  MemsetPointer(transitions->data_start() + kPrototypeTransitionsIndex,
                 transitions->GetHeap()->the_hole_value(),
-                transitions->length());
+                transitions->length() - kPrototypeTransitionsIndex);
+  transitions->SetNumberOfTransitions(0);
 }
 
 
@@ -386,25 +433,9 @@ void TransitionArray::ReplaceTransitions(Handle<Map> map,
 }
 
 
-static void ZapPrototypeTransitions(Object* raw_transitions) {
-  DCHECK(TransitionArray::IsFullTransitionArray(raw_transitions));
-  TransitionArray* transitions = TransitionArray::cast(raw_transitions);
-  if (!transitions->HasPrototypeTransitions()) return;
-  FixedArray* proto_transitions = transitions->GetPrototypeTransitions();
-  MemsetPointer(proto_transitions->data_start(),
-                proto_transitions->GetHeap()->the_hole_value(),
-                proto_transitions->length());
-}
-
-
 void TransitionArray::SetPrototypeTransitions(
     Handle<Map> map, Handle<FixedArray> proto_transitions) {
   EnsureHasFullTransitionArray(map);
-  if (Heap::ShouldZapGarbage()) {
-    Object* raw_transitions = map->raw_transitions();
-    DCHECK(raw_transitions != *proto_transitions);
-    ZapPrototypeTransitions(raw_transitions);
-  }
   TransitionArray* transitions = TransitionArray::cast(map->raw_transitions());
   transitions->SetPrototypeTransitions(*proto_transitions);
 }
@@ -426,7 +457,7 @@ void TransitionArray::EnsureHasFullTransitionArray(Handle<Map> map) {
   } else if (nof == 1) {
     Map* target = GetSimpleTransition(raw_transitions);
     Name* key = GetSimpleTransitionKey(target);
-    result->NoIncrementalWriteBarrierSet(0, key, target);
+    result->Set(0, key, target);
   }
   ReplaceTransitions(map, *result);
 }
@@ -443,8 +474,10 @@ void TransitionArray::TraverseTransitionTreeInternal(Map* map,
       for (int i = 0; i < NumberOfPrototypeTransitions(proto_trans); ++i) {
         int index = TransitionArray::kProtoTransitionHeaderSize + i;
         WeakCell* cell = WeakCell::cast(proto_trans->get(index));
-        TraverseTransitionTreeInternal(Map::cast(cell->value()), callback,
-                                       data);
+        if (!cell->cleared()) {
+          TraverseTransitionTreeInternal(Map::cast(cell->value()), callback,
+                                         data);
+        }
       }
     }
     for (int i = 0; i < transitions->number_of_transitions(); ++i) {
@@ -515,9 +548,7 @@ int TransitionArray::Search(PropertyKind kind, Name* name,
                             PropertyAttributes attributes,
                             int* out_insertion_index) {
   int transition = SearchName(name, out_insertion_index);
-  if (transition == kNotFound) {
-    return kNotFound;
-  }
+  if (transition == kNotFound) return kNotFound;
   return SearchDetails(transition, kind, attributes, out_insertion_index);
 }
 }  // namespace internal

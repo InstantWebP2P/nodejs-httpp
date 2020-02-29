@@ -7,8 +7,6 @@
 #include <stdlib.h>
 #include <cmath>
 
-#include "src/v8.h"
-
 #if V8_TARGET_ARCH_MIPS64
 
 #include "src/assembler.h"
@@ -18,6 +16,7 @@
 #include "src/mips64/constants-mips64.h"
 #include "src/mips64/simulator-mips64.h"
 #include "src/ostreams.h"
+#include "src/runtime/runtime-utils.h"
 
 // Only build the simulator if not compiling for real MIPS hardware.
 #if defined(USE_SIMULATOR)
@@ -25,11 +24,8 @@
 namespace v8 {
 namespace internal {
 
-// Utils functions.
-bool HaveSameSign(int64_t a, int64_t b) {
-  return ((a ^ b) >= 0);
-}
-
+// Util functions.
+inline bool HaveSameSign(int64_t a, int64_t b) { return ((a ^ b) >= 0); }
 
 uint32_t get_fcsr_condition_bit(uint32_t cc) {
   if (cc == 0) {
@@ -70,7 +66,6 @@ static int64_t MultiplyHighSigned(int64_t u, int64_t v) {
 class MipsDebugger {
  public:
   explicit MipsDebugger(Simulator* sim) : sim_(sim) { }
-  ~MipsDebugger();
 
   void Stop(Instruction* instr);
   void Debug();
@@ -101,75 +96,16 @@ class MipsDebugger {
   void RedoBreakpoints();
 };
 
-
-MipsDebugger::~MipsDebugger() {
-}
-
-
-#ifdef GENERATED_CODE_COVERAGE
-static FILE* coverage_log = NULL;
-
-
-static void InitializeCoverage() {
-  char* file_name = getenv("V8_GENERATED_CODE_COVERAGE_LOG");
-  if (file_name != NULL) {
-    coverage_log = fopen(file_name, "aw+");
-  }
-}
-
+inline void UNSUPPORTED() { printf("Sim: Unsupported instruction.\n"); }
 
 void MipsDebugger::Stop(Instruction* instr) {
   // Get the stop code.
   uint32_t code = instr->Bits(25, 6);
-  // Retrieve the encoded address, which comes just after this stop.
-  char** msg_address =
-    reinterpret_cast<char**>(sim_->get_pc() + Instr::kInstrSize);
-  char* msg = *msg_address;
-  DCHECK(msg != NULL);
-
-  // Update this stop description.
-  if (!watched_stops_[code].desc) {
-    watched_stops_[code].desc = msg;
-  }
-
-  if (strlen(msg) > 0) {
-    if (coverage_log != NULL) {
-      fprintf(coverage_log, "%s\n", str);
-      fflush(coverage_log);
-    }
-    // Overwrite the instruction and address with nops.
-    instr->SetInstructionBits(kNopInstr);
-    reinterpret_cast<Instr*>(msg_address)->SetInstructionBits(kNopInstr);
-  }
-  // TODO(yuyin): 2 -> 3?
-  sim_->set_pc(sim_->get_pc() + 3 * Instruction::kInstructionSize);
-}
-
-
-#else  // GENERATED_CODE_COVERAGE
-
-#define UNSUPPORTED() printf("Unsupported instruction.\n");
-
-static void InitializeCoverage() {}
-
-
-void MipsDebugger::Stop(Instruction* instr) {
-  // Get the stop code.
-  uint32_t code = instr->Bits(25, 6);
-  // Retrieve the encoded address, which comes just after this stop.
-  char* msg = *reinterpret_cast<char**>(sim_->get_pc() +
-      Instruction::kInstrSize);
-  // Update this stop description.
-  if (!sim_->watched_stops_[code].desc) {
-    sim_->watched_stops_[code].desc = msg;
-  }
-  PrintF("Simulator hit %s (%u)\n", msg, code);
+  PrintF("Simulator hit (%u)\n", code);
   // TODO(yuyin): 2 -> 3?
   sim_->set_pc(sim_->get_pc() + 3 * Instruction::kInstrSize);
   Debug();
 }
-#endif  // GENERATED_CODE_COVERAGE
-
 
 int64_t MipsDebugger::GetRegisterValue(int regnum) {
   if (regnum == kNumSimuRegisters) {
@@ -272,33 +208,42 @@ void MipsDebugger::PrintAllRegs() {
 
   PrintF("\n");
   // at, v0, a0.
-  PrintF("%3s: 0x%016lx %14ld\t%3s: 0x%016lx %14ld\t%3s: 0x%016lx %14ld\n",
+  PrintF("%3s: 0x%016" PRIx64 " %14" PRId64 "\t%3s: 0x%016" PRIx64 " %14" PRId64
+         "\t%3s: 0x%016" PRIx64 " %14" PRId64 "\n",
          REG_INFO(1), REG_INFO(2), REG_INFO(4));
   // v1, a1.
-  PrintF("%34s\t%3s: 0x%016lx %14ld\t%3s: 0x%016lx %14ld\n",
+  PrintF("%34s\t%3s: 0x%016" PRIx64 "  %14" PRId64 " \t%3s: 0x%016" PRIx64
+         "  %14" PRId64 " \n",
          "", REG_INFO(3), REG_INFO(5));
   // a2.
-  PrintF("%34s\t%34s\t%3s: 0x%016lx %14ld\n", "", "", REG_INFO(6));
+  PrintF("%34s\t%34s\t%3s: 0x%016" PRIx64 "  %14" PRId64 " \n", "", "",
+         REG_INFO(6));
   // a3.
-  PrintF("%34s\t%34s\t%3s: 0x%016lx %14ld\n", "", "", REG_INFO(7));
+  PrintF("%34s\t%34s\t%3s: 0x%016" PRIx64 "  %14" PRId64 " \n", "", "",
+         REG_INFO(7));
   PrintF("\n");
   // a4-t3, s0-s7
   for (int i = 0; i < 8; i++) {
-    PrintF("%3s: 0x%016lx %14ld\t%3s: 0x%016lx %14ld\n",
-           REG_INFO(8+i), REG_INFO(16+i));
+    PrintF("%3s: 0x%016" PRIx64 "  %14" PRId64 " \t%3s: 0x%016" PRIx64
+           "  %14" PRId64 " \n",
+           REG_INFO(8 + i), REG_INFO(16 + i));
   }
   PrintF("\n");
   // t8, k0, LO.
-  PrintF("%3s: 0x%016lx %14ld\t%3s: 0x%016lx %14ld\t%3s: 0x%016lx %14ld\n",
+  PrintF("%3s: 0x%016" PRIx64 "  %14" PRId64 " \t%3s: 0x%016" PRIx64
+         "  %14" PRId64 " \t%3s: 0x%016" PRIx64 "  %14" PRId64 " \n",
          REG_INFO(24), REG_INFO(26), REG_INFO(32));
   // t9, k1, HI.
-  PrintF("%3s: 0x%016lx %14ld\t%3s: 0x%016lx %14ld\t%3s: 0x%016lx %14ld\n",
+  PrintF("%3s: 0x%016" PRIx64 "  %14" PRId64 " \t%3s: 0x%016" PRIx64
+         "  %14" PRId64 " \t%3s: 0x%016" PRIx64 "  %14" PRId64 " \n",
          REG_INFO(25), REG_INFO(27), REG_INFO(33));
   // sp, fp, gp.
-  PrintF("%3s: 0x%016lx %14ld\t%3s: 0x%016lx %14ld\t%3s: 0x%016lx %14ld\n",
+  PrintF("%3s: 0x%016" PRIx64 "  %14" PRId64 " \t%3s: 0x%016" PRIx64
+         "  %14" PRId64 " \t%3s: 0x%016" PRIx64 "  %14" PRId64 " \n",
          REG_INFO(29), REG_INFO(30), REG_INFO(28));
   // pc.
-  PrintF("%3s: 0x%016lx %14ld\t%3s: 0x%016lx %14ld\n",
+  PrintF("%3s: 0x%016" PRIx64 "  %14" PRId64 " \t%3s: 0x%016" PRIx64
+         "  %14" PRId64 " \n",
          REG_INFO(31), REG_INFO(34));
 
 #undef REG_INFO
@@ -316,38 +261,38 @@ void MipsDebugger::PrintAllRegsIncludingFPU() {
   PrintF("\n\n");
   // f0, f1, f2, ... f31.
   // TODO(plind): consider printing 2 columns for space efficiency.
-  PrintF("%3s: 0x%016lx %16.4e\n", FPU_REG_INFO(0) );
-  PrintF("%3s: 0x%016lx %16.4e\n", FPU_REG_INFO(1) );
-  PrintF("%3s: 0x%016lx %16.4e\n", FPU_REG_INFO(2) );
-  PrintF("%3s: 0x%016lx %16.4e\n", FPU_REG_INFO(3) );
-  PrintF("%3s: 0x%016lx %16.4e\n", FPU_REG_INFO(4) );
-  PrintF("%3s: 0x%016lx %16.4e\n", FPU_REG_INFO(5) );
-  PrintF("%3s: 0x%016lx %16.4e\n", FPU_REG_INFO(6) );
-  PrintF("%3s: 0x%016lx %16.4e\n", FPU_REG_INFO(7) );
-  PrintF("%3s: 0x%016lx %16.4e\n", FPU_REG_INFO(8) );
-  PrintF("%3s: 0x%016lx %16.4e\n", FPU_REG_INFO(9) );
-  PrintF("%3s: 0x%016lx %16.4e\n", FPU_REG_INFO(10));
-  PrintF("%3s: 0x%016lx %16.4e\n", FPU_REG_INFO(11));
-  PrintF("%3s: 0x%016lx %16.4e\n", FPU_REG_INFO(12));
-  PrintF("%3s: 0x%016lx %16.4e\n", FPU_REG_INFO(13));
-  PrintF("%3s: 0x%016lx %16.4e\n", FPU_REG_INFO(14));
-  PrintF("%3s: 0x%016lx %16.4e\n", FPU_REG_INFO(15));
-  PrintF("%3s: 0x%016lx %16.4e\n", FPU_REG_INFO(16));
-  PrintF("%3s: 0x%016lx %16.4e\n", FPU_REG_INFO(17));
-  PrintF("%3s: 0x%016lx %16.4e\n", FPU_REG_INFO(18));
-  PrintF("%3s: 0x%016lx %16.4e\n", FPU_REG_INFO(19));
-  PrintF("%3s: 0x%016lx %16.4e\n", FPU_REG_INFO(20));
-  PrintF("%3s: 0x%016lx %16.4e\n", FPU_REG_INFO(21));
-  PrintF("%3s: 0x%016lx %16.4e\n", FPU_REG_INFO(22));
-  PrintF("%3s: 0x%016lx %16.4e\n", FPU_REG_INFO(23));
-  PrintF("%3s: 0x%016lx %16.4e\n", FPU_REG_INFO(24));
-  PrintF("%3s: 0x%016lx %16.4e\n", FPU_REG_INFO(25));
-  PrintF("%3s: 0x%016lx %16.4e\n", FPU_REG_INFO(26));
-  PrintF("%3s: 0x%016lx %16.4e\n", FPU_REG_INFO(27));
-  PrintF("%3s: 0x%016lx %16.4e\n", FPU_REG_INFO(28));
-  PrintF("%3s: 0x%016lx %16.4e\n", FPU_REG_INFO(29));
-  PrintF("%3s: 0x%016lx %16.4e\n", FPU_REG_INFO(30));
-  PrintF("%3s: 0x%016lx %16.4e\n", FPU_REG_INFO(31));
+  PrintF("%3s: 0x%016" PRIx64 "  %16.4e\n", FPU_REG_INFO(0));
+  PrintF("%3s: 0x%016" PRIx64 "  %16.4e\n", FPU_REG_INFO(1));
+  PrintF("%3s: 0x%016" PRIx64 "  %16.4e\n", FPU_REG_INFO(2));
+  PrintF("%3s: 0x%016" PRIx64 "  %16.4e\n", FPU_REG_INFO(3));
+  PrintF("%3s: 0x%016" PRIx64 "  %16.4e\n", FPU_REG_INFO(4));
+  PrintF("%3s: 0x%016" PRIx64 "  %16.4e\n", FPU_REG_INFO(5));
+  PrintF("%3s: 0x%016" PRIx64 "  %16.4e\n", FPU_REG_INFO(6));
+  PrintF("%3s: 0x%016" PRIx64 "  %16.4e\n", FPU_REG_INFO(7));
+  PrintF("%3s: 0x%016" PRIx64 "  %16.4e\n", FPU_REG_INFO(8));
+  PrintF("%3s: 0x%016" PRIx64 "  %16.4e\n", FPU_REG_INFO(9));
+  PrintF("%3s: 0x%016" PRIx64 "  %16.4e\n", FPU_REG_INFO(10));
+  PrintF("%3s: 0x%016" PRIx64 "  %16.4e\n", FPU_REG_INFO(11));
+  PrintF("%3s: 0x%016" PRIx64 "  %16.4e\n", FPU_REG_INFO(12));
+  PrintF("%3s: 0x%016" PRIx64 "  %16.4e\n", FPU_REG_INFO(13));
+  PrintF("%3s: 0x%016" PRIx64 "  %16.4e\n", FPU_REG_INFO(14));
+  PrintF("%3s: 0x%016" PRIx64 "  %16.4e\n", FPU_REG_INFO(15));
+  PrintF("%3s: 0x%016" PRIx64 "  %16.4e\n", FPU_REG_INFO(16));
+  PrintF("%3s: 0x%016" PRIx64 "  %16.4e\n", FPU_REG_INFO(17));
+  PrintF("%3s: 0x%016" PRIx64 "  %16.4e\n", FPU_REG_INFO(18));
+  PrintF("%3s: 0x%016" PRIx64 "  %16.4e\n", FPU_REG_INFO(19));
+  PrintF("%3s: 0x%016" PRIx64 "  %16.4e\n", FPU_REG_INFO(20));
+  PrintF("%3s: 0x%016" PRIx64 "  %16.4e\n", FPU_REG_INFO(21));
+  PrintF("%3s: 0x%016" PRIx64 "  %16.4e\n", FPU_REG_INFO(22));
+  PrintF("%3s: 0x%016" PRIx64 "  %16.4e\n", FPU_REG_INFO(23));
+  PrintF("%3s: 0x%016" PRIx64 "  %16.4e\n", FPU_REG_INFO(24));
+  PrintF("%3s: 0x%016" PRIx64 "  %16.4e\n", FPU_REG_INFO(25));
+  PrintF("%3s: 0x%016" PRIx64 "  %16.4e\n", FPU_REG_INFO(26));
+  PrintF("%3s: 0x%016" PRIx64 "  %16.4e\n", FPU_REG_INFO(27));
+  PrintF("%3s: 0x%016" PRIx64 "  %16.4e\n", FPU_REG_INFO(28));
+  PrintF("%3s: 0x%016" PRIx64 "  %16.4e\n", FPU_REG_INFO(29));
+  PrintF("%3s: 0x%016" PRIx64 "  %16.4e\n", FPU_REG_INFO(30));
+  PrintF("%3s: 0x%016" PRIx64 "  %16.4e\n", FPU_REG_INFO(31));
 
 #undef REG_INFO
 #undef FPU_REG_INFO
@@ -386,7 +331,7 @@ void MipsDebugger::Debug() {
       v8::internal::EmbeddedVector<char, 256> buffer;
       dasm.InstructionDecode(buffer,
                              reinterpret_cast<byte*>(sim_->get_pc()));
-      PrintF("  0x%016lx  %s\n", sim_->get_pc(), buffer.start());
+      PrintF("  0x%016" PRIx64 "   %s\n", sim_->get_pc(), buffer.start());
       last_pc = sim_->get_pc();
     }
     char* line = ReadLine("sim> ");
@@ -437,11 +382,12 @@ void MipsDebugger::Debug() {
 
             if (regnum != kInvalidRegister) {
               value = GetRegisterValue(regnum);
-              PrintF("%s: 0x%08lx %ld \n", arg1, value, value);
+              PrintF("%s: 0x%08" PRIx64 "  %" PRId64 "  \n", arg1, value,
+                     value);
             } else if (fpuregnum != kInvalidFPURegister) {
               value = GetFPURegisterValue(fpuregnum);
               dvalue = GetFPURegisterValueDouble(fpuregnum);
-              PrintF("%3s: 0x%016lx %16.4e\n",
+              PrintF("%3s: 0x%016" PRIx64 "  %16.4e\n",
                      FPURegisters::Name(fpuregnum), value, dvalue);
             } else {
               PrintF("%s unrecognized\n", arg1);
@@ -458,7 +404,7 @@ void MipsDebugger::Debug() {
                 value = GetFPURegisterValue(fpuregnum);
                 value &= 0xffffffffUL;
                 fvalue = GetFPURegisterValueFloat(fpuregnum);
-                PrintF("%s: 0x%08lx %11.4e\n", arg1, value, fvalue);
+                PrintF("%s: 0x%08" PRIx64 "  %11.4e\n", arg1, value, fvalue);
               } else {
                 PrintF("%s unrecognized\n", arg1);
               }
@@ -517,12 +463,13 @@ void MipsDebugger::Debug() {
         end = cur + words;
 
         while (cur < end) {
-          PrintF("  0x%012lx:  0x%016lx %14ld",
+          PrintF("  0x%012" PRIxPTR " :  0x%016" PRIx64 "  %14" PRId64 " ",
                  reinterpret_cast<intptr_t>(cur), *cur, *cur);
           HeapObject* obj = reinterpret_cast<HeapObject*>(*cur);
           int64_t value = *cur;
-          Heap* current_heap = v8::internal::Isolate::Current()->heap();
-          if (((value & 1) == 0) || current_heap->Contains(obj)) {
+          Heap* current_heap = sim_->isolate_->heap();
+          if (((value & 1) == 0) ||
+              current_heap->ContainsSlow(obj->address())) {
             PrintF(" (");
             if ((value & 1) == 0) {
               PrintF("smi %d", static_cast<int>(value >> 32));
@@ -579,8 +526,8 @@ void MipsDebugger::Debug() {
 
         while (cur < end) {
           dasm.InstructionDecode(buffer, cur);
-          PrintF("  0x%08lx  %s\n",
-              reinterpret_cast<intptr_t>(cur), buffer.start());
+          PrintF("  0x%08" PRIxPTR "   %s\n", reinterpret_cast<intptr_t>(cur),
+                 buffer.start());
           cur += Instruction::kInstrSize;
         }
       } else if (strcmp(cmd, "gdb") == 0) {
@@ -701,8 +648,8 @@ void MipsDebugger::Debug() {
 
         while (cur < end) {
           dasm.InstructionDecode(buffer, cur);
-          PrintF("  0x%08lx  %s\n",
-                 reinterpret_cast<intptr_t>(cur), buffer.start());
+          PrintF("  0x%08" PRIxPTR "   %s\n", reinterpret_cast<intptr_t>(cur),
+                 buffer.start());
           cur += Instruction::kInstrSize;
         }
       } else if ((strcmp(cmd, "h") == 0) || (strcmp(cmd, "help") == 0)) {
@@ -794,10 +741,8 @@ void Simulator::set_last_debugger_input(char* input) {
   last_debugger_input_ = input;
 }
 
-
-void Simulator::FlushICache(v8::internal::HashMap* i_cache,
-                            void* start_addr,
-                            size_t size) {
+void Simulator::FlushICache(base::CustomMatcherHashMap* i_cache,
+                            void* start_addr, size_t size) {
   int64_t start = reinterpret_cast<int64_t>(start_addr);
   int64_t intra_line = (start & CachePage::kLineMask);
   start -= intra_line;
@@ -817,10 +762,9 @@ void Simulator::FlushICache(v8::internal::HashMap* i_cache,
   }
 }
 
-
-CachePage* Simulator::GetCachePage(v8::internal::HashMap* i_cache, void* page) {
-  v8::internal::HashMap::Entry* entry =
-      i_cache->LookupOrInsert(page, ICacheHash(page));
+CachePage* Simulator::GetCachePage(base::CustomMatcherHashMap* i_cache,
+                                   void* page) {
+  base::HashMap::Entry* entry = i_cache->LookupOrInsert(page, ICacheHash(page));
   if (entry->value == NULL) {
     CachePage* new_page = new CachePage();
     entry->value = new_page;
@@ -830,8 +774,8 @@ CachePage* Simulator::GetCachePage(v8::internal::HashMap* i_cache, void* page) {
 
 
 // Flush from start up to and not including start + size.
-void Simulator::FlushOnePage(v8::internal::HashMap* i_cache, intptr_t start,
-                             size_t size) {
+void Simulator::FlushOnePage(base::CustomMatcherHashMap* i_cache,
+                             intptr_t start, size_t size) {
   DCHECK(size <= CachePage::kPageSize);
   DCHECK(AllOnOnePage(start, size - 1));
   DCHECK((start & CachePage::kLineMask) == 0);
@@ -843,8 +787,7 @@ void Simulator::FlushOnePage(v8::internal::HashMap* i_cache, intptr_t start,
   memset(valid_bytemap, CachePage::LINE_INVALID, size >> CachePage::kLineShift);
 }
 
-
-void Simulator::CheckICache(v8::internal::HashMap* i_cache,
+void Simulator::CheckICache(base::CustomMatcherHashMap* i_cache,
                             Instruction* instr) {
   int64_t address = reinterpret_cast<int64_t>(instr);
   void* page = reinterpret_cast<void*>(address & (~CachePage::kPageMask));
@@ -878,7 +821,7 @@ void Simulator::Initialize(Isolate* isolate) {
 Simulator::Simulator(Isolate* isolate) : isolate_(isolate) {
   i_cache_ = isolate_->simulator_i_cache();
   if (i_cache_ == NULL) {
-    i_cache_ = new v8::internal::HashMap(&ICacheMatch);
+    i_cache_ = new base::CustomMatcherHashMap(&ICacheMatch);
     isolate_->set_simulator_i_cache(i_cache_);
   }
   Initialize(isolate);
@@ -900,7 +843,12 @@ Simulator::Simulator(Isolate* isolate) : isolate_(isolate) {
   for (int i = 0; i < kNumFPURegisters; i++) {
     FPUregisters_[i] = 0;
   }
-  FCSR_ = 0;
+
+  if (kArchVariant == kMips64r6) {
+    FCSR_ = kFCSRNaN2008FlagMask;
+  } else {
+    FCSR_ = 0;
+  }
 
   // The sp is initialized to point to the bottom (high address) of the
   // allocated stack area. To be safe in potential stack underflows we leave
@@ -910,10 +858,6 @@ Simulator::Simulator(Isolate* isolate) : isolate_(isolate) {
   // access violation if the simulator ever tries to execute it.
   registers_[pc] = bad_ra;
   registers_[ra] = bad_ra;
-  InitializeCoverage();
-  for (int i = 0; i < kNumExceptions; i++) {
-    exceptions[i] = 0;
-  }
 
   last_debugger_input_ = NULL;
 }
@@ -931,12 +875,12 @@ Simulator::~Simulator() { free(stack_); }
 // offset from the swi instruction so the simulator knows what to call.
 class Redirection {
  public:
-  Redirection(void* external_function, ExternalReference::Type type)
+  Redirection(Isolate* isolate, void* external_function,
+              ExternalReference::Type type)
       : external_function_(external_function),
         swi_instruction_(rtCallRedirInstr),
         type_(type),
         next_(NULL) {
-    Isolate* isolate = Isolate::Current();
     next_ = isolate->simulator_redirection();
     Simulator::current(isolate)->
         FlushICache(isolate->simulator_i_cache(),
@@ -952,14 +896,13 @@ class Redirection {
   void* external_function() { return external_function_; }
   ExternalReference::Type type() { return type_; }
 
-  static Redirection* Get(void* external_function,
+  static Redirection* Get(Isolate* isolate, void* external_function,
                           ExternalReference::Type type) {
-    Isolate* isolate = Isolate::Current();
     Redirection* current = isolate->simulator_redirection();
     for (; current != NULL; current = current->next_) {
       if (current->external_function_ == external_function) return current;
     }
-    return new Redirection(external_function, type);
+    return new Redirection(isolate, external_function, type);
   }
 
   static Redirection* FromSwiInstruction(Instruction* swi_instruction) {
@@ -992,10 +935,11 @@ class Redirection {
 
 
 // static
-void Simulator::TearDown(HashMap* i_cache, Redirection* first) {
+void Simulator::TearDown(base::CustomMatcherHashMap* i_cache,
+                         Redirection* first) {
   Redirection::DeleteChain(first);
   if (i_cache != nullptr) {
-    for (HashMap::Entry* entry = i_cache->Start(); entry != nullptr;
+    for (base::HashMap::Entry* entry = i_cache->Start(); entry != nullptr;
          entry = i_cache->Next(entry)) {
       delete static_cast<CachePage*>(entry->value);
     }
@@ -1004,9 +948,10 @@ void Simulator::TearDown(HashMap* i_cache, Redirection* first) {
 }
 
 
-void* Simulator::RedirectExternalReference(void* external_function,
+void* Simulator::RedirectExternalReference(Isolate* isolate,
+                                           void* external_function,
                                            ExternalReference::Type type) {
-  Redirection* redirection = Redirection::Get(external_function, type);
+  Redirection* redirection = Redirection::Get(isolate, external_function, type);
   return redirection->address_of_swi_instruction();
 }
 
@@ -1057,18 +1002,26 @@ void Simulator::set_fpu_register(int fpureg, int64_t value) {
 
 void Simulator::set_fpu_register_word(int fpureg, int32_t value) {
   // Set ONLY lower 32-bits, leaving upper bits untouched.
-  // TODO(plind): big endian issue.
   DCHECK((fpureg >= 0) && (fpureg < kNumFPURegisters));
-  int32_t *pword = reinterpret_cast<int32_t*>(&FPUregisters_[fpureg]);
+  int32_t* pword;
+  if (kArchEndian == kLittle) {
+    pword = reinterpret_cast<int32_t*>(&FPUregisters_[fpureg]);
+  } else {
+    pword = reinterpret_cast<int32_t*>(&FPUregisters_[fpureg]) + 1;
+  }
   *pword = value;
 }
 
 
 void Simulator::set_fpu_register_hi_word(int fpureg, int32_t value) {
   // Set ONLY upper 32-bits, leaving lower bits untouched.
-  // TODO(plind): big endian issue.
   DCHECK((fpureg >= 0) && (fpureg < kNumFPURegisters));
-  int32_t *phiword = (reinterpret_cast<int32_t*>(&FPUregisters_[fpureg])) + 1;
+  int32_t* phiword;
+  if (kArchEndian == kLittle) {
+    phiword = (reinterpret_cast<int32_t*>(&FPUregisters_[fpureg])) + 1;
+  } else {
+    phiword = reinterpret_cast<int32_t*>(&FPUregisters_[fpureg]);
+  }
   *phiword = value;
 }
 
@@ -1151,7 +1104,7 @@ double Simulator::get_fpu_register_double(int fpureg) const {
 // from a0-a3 or f12 and f13 (n64), or f14 (O32).
 void Simulator::GetFpArgs(double* x, double* y, int32_t* z) {
   if (!IsMipsSoftFloatABI) {
-    const int fparg2 = (kMipsAbi == kN64) ? 13 : 14;
+    const int fparg2 = 13;
     *x = get_fpu_register_double(12);
     *y = get_fpu_register_double(fparg2);
     *z = static_cast<int32_t>(get_register(a2));
@@ -1253,6 +1206,8 @@ bool Simulator::set_fcsr_round_error(double original, double rounded) {
 // Returns true if the operation was invalid.
 bool Simulator::set_fcsr_round64_error(double original, double rounded) {
   bool ret = false;
+  // The value of INT64_MAX (2^63-1) can't be represented as double exactly,
+  // loading the most accurate representation into max_int64, which is 2^63.
   double max_int64 = std::numeric_limits<int64_t>::max();
   double min_int64 = std::numeric_limits<int64_t>::min();
 
@@ -1270,7 +1225,7 @@ bool Simulator::set_fcsr_round64_error(double original, double rounded) {
     ret = true;
   }
 
-  if (rounded > max_int64 || rounded < min_int64) {
+  if (rounded >= max_int64 || rounded < min_int64) {
     set_fcsr_bit(kFCSROverflowFlagBit, true);
     // The reference is not really clear but it seems this is required:
     set_fcsr_bit(kFCSRInvalidOpFlagBit, true);
@@ -1312,11 +1267,135 @@ bool Simulator::set_fcsr_round_error(float original, float rounded) {
   return ret;
 }
 
+void Simulator::set_fpu_register_word_invalid_result(float original,
+                                                     float rounded) {
+  if (FCSR_ & kFCSRNaN2008FlagMask) {
+    double max_int32 = std::numeric_limits<int32_t>::max();
+    double min_int32 = std::numeric_limits<int32_t>::min();
+    if (std::isnan(original)) {
+      set_fpu_register_word(fd_reg(), 0);
+    } else if (rounded > max_int32) {
+      set_fpu_register_word(fd_reg(), kFPUInvalidResult);
+    } else if (rounded < min_int32) {
+      set_fpu_register_word(fd_reg(), kFPUInvalidResultNegative);
+    } else {
+      UNREACHABLE();
+    }
+  } else {
+    set_fpu_register_word(fd_reg(), kFPUInvalidResult);
+  }
+}
+
+
+void Simulator::set_fpu_register_invalid_result(float original, float rounded) {
+  if (FCSR_ & kFCSRNaN2008FlagMask) {
+    double max_int32 = std::numeric_limits<int32_t>::max();
+    double min_int32 = std::numeric_limits<int32_t>::min();
+    if (std::isnan(original)) {
+      set_fpu_register(fd_reg(), 0);
+    } else if (rounded > max_int32) {
+      set_fpu_register(fd_reg(), kFPUInvalidResult);
+    } else if (rounded < min_int32) {
+      set_fpu_register(fd_reg(), kFPUInvalidResultNegative);
+    } else {
+      UNREACHABLE();
+    }
+  } else {
+    set_fpu_register(fd_reg(), kFPUInvalidResult);
+  }
+}
+
+
+void Simulator::set_fpu_register_invalid_result64(float original,
+                                                  float rounded) {
+  if (FCSR_ & kFCSRNaN2008FlagMask) {
+    // The value of INT64_MAX (2^63-1) can't be represented as double exactly,
+    // loading the most accurate representation into max_int64, which is 2^63.
+    double max_int64 = std::numeric_limits<int64_t>::max();
+    double min_int64 = std::numeric_limits<int64_t>::min();
+    if (std::isnan(original)) {
+      set_fpu_register(fd_reg(), 0);
+    } else if (rounded >= max_int64) {
+      set_fpu_register(fd_reg(), kFPU64InvalidResult);
+    } else if (rounded < min_int64) {
+      set_fpu_register(fd_reg(), kFPU64InvalidResultNegative);
+    } else {
+      UNREACHABLE();
+    }
+  } else {
+    set_fpu_register(fd_reg(), kFPU64InvalidResult);
+  }
+}
+
+
+void Simulator::set_fpu_register_word_invalid_result(double original,
+                                                     double rounded) {
+  if (FCSR_ & kFCSRNaN2008FlagMask) {
+    double max_int32 = std::numeric_limits<int32_t>::max();
+    double min_int32 = std::numeric_limits<int32_t>::min();
+    if (std::isnan(original)) {
+      set_fpu_register_word(fd_reg(), 0);
+    } else if (rounded > max_int32) {
+      set_fpu_register_word(fd_reg(), kFPUInvalidResult);
+    } else if (rounded < min_int32) {
+      set_fpu_register_word(fd_reg(), kFPUInvalidResultNegative);
+    } else {
+      UNREACHABLE();
+    }
+  } else {
+    set_fpu_register_word(fd_reg(), kFPUInvalidResult);
+  }
+}
+
+
+void Simulator::set_fpu_register_invalid_result(double original,
+                                                double rounded) {
+  if (FCSR_ & kFCSRNaN2008FlagMask) {
+    double max_int32 = std::numeric_limits<int32_t>::max();
+    double min_int32 = std::numeric_limits<int32_t>::min();
+    if (std::isnan(original)) {
+      set_fpu_register(fd_reg(), 0);
+    } else if (rounded > max_int32) {
+      set_fpu_register(fd_reg(), kFPUInvalidResult);
+    } else if (rounded < min_int32) {
+      set_fpu_register(fd_reg(), kFPUInvalidResultNegative);
+    } else {
+      UNREACHABLE();
+    }
+  } else {
+    set_fpu_register(fd_reg(), kFPUInvalidResult);
+  }
+}
+
+
+void Simulator::set_fpu_register_invalid_result64(double original,
+                                                  double rounded) {
+  if (FCSR_ & kFCSRNaN2008FlagMask) {
+    // The value of INT64_MAX (2^63-1) can't be represented as double exactly,
+    // loading the most accurate representation into max_int64, which is 2^63.
+    double max_int64 = std::numeric_limits<int64_t>::max();
+    double min_int64 = std::numeric_limits<int64_t>::min();
+    if (std::isnan(original)) {
+      set_fpu_register(fd_reg(), 0);
+    } else if (rounded >= max_int64) {
+      set_fpu_register(fd_reg(), kFPU64InvalidResult);
+    } else if (rounded < min_int64) {
+      set_fpu_register(fd_reg(), kFPU64InvalidResultNegative);
+    } else {
+      UNREACHABLE();
+    }
+  } else {
+    set_fpu_register(fd_reg(), kFPU64InvalidResult);
+  }
+}
+
 
 // Sets the rounding error codes in FCSR based on the result of the rounding.
 // Returns true if the operation was invalid.
 bool Simulator::set_fcsr_round64_error(float original, float rounded) {
   bool ret = false;
+  // The value of INT64_MAX (2^63-1) can't be represented as double exactly,
+  // loading the most accurate representation into max_int64, which is 2^63.
   double max_int64 = std::numeric_limits<int64_t>::max();
   double min_int64 = std::numeric_limits<int64_t>::min();
 
@@ -1334,7 +1413,7 @@ bool Simulator::set_fcsr_round64_error(float original, float rounded) {
     ret = true;
   }
 
-  if (rounded > max_int64 || rounded < min_int64) {
+  if (rounded >= max_int64 || rounded < min_int64) {
     set_fcsr_bit(kFCSROverflowFlagBit, true);
     // The reference is not really clear but it seems this is required:
     set_fcsr_bit(kFCSRInvalidOpFlagBit, true);
@@ -1547,19 +1626,92 @@ void Simulator::DieOrDebug() {
   }
 }
 
-
-void Simulator::TraceRegWr(int64_t value) {
+void Simulator::TraceRegWr(int64_t value, TraceType t) {
   if (::v8::internal::FLAG_trace_sim) {
-    SNPrintF(trace_buf_, "%016lx", value);
+    union {
+      int64_t fmt_int64;
+      int32_t fmt_int32[2];
+      float fmt_float[2];
+      double fmt_double;
+    } v;
+    v.fmt_int64 = value;
+
+    switch (t) {
+      case WORD:
+        SNPrintF(trace_buf_, "%016" PRIx64 "    (%" PRId64 ")    int32:%" PRId32
+                             " uint32:%" PRIu32,
+                 v.fmt_int64, icount_, v.fmt_int32[0], v.fmt_int32[0]);
+        break;
+      case DWORD:
+        SNPrintF(trace_buf_, "%016" PRIx64 "    (%" PRId64 ")    int64:%" PRId64
+                             " uint64:%" PRIu64,
+                 value, icount_, value, value);
+        break;
+      case FLOAT:
+        SNPrintF(trace_buf_, "%016" PRIx64 "    (%" PRId64 ")    flt:%e",
+                 v.fmt_int64, icount_, v.fmt_float[0]);
+        break;
+      case DOUBLE:
+        SNPrintF(trace_buf_, "%016" PRIx64 "    (%" PRId64 ")    dbl:%e",
+                 v.fmt_int64, icount_, v.fmt_double);
+        break;
+      case FLOAT_DOUBLE:
+        SNPrintF(trace_buf_, "%016" PRIx64 "    (%" PRId64 ")    flt:%e dbl:%e",
+                 v.fmt_int64, icount_, v.fmt_float[0], v.fmt_double);
+        break;
+      case WORD_DWORD:
+        SNPrintF(trace_buf_,
+                 "%016" PRIx64 "    (%" PRId64 ")    int32:%" PRId32
+                 " uint32:%" PRIu32 " int64:%" PRId64 " uint64:%" PRIu64,
+                 v.fmt_int64, icount_, v.fmt_int32[0], v.fmt_int32[0],
+                 v.fmt_int64, v.fmt_int64);
+        break;
+      default:
+        UNREACHABLE();
+    }
   }
 }
 
-
 // TODO(plind): consider making icount_ printing a flag option.
-void Simulator::TraceMemRd(int64_t addr, int64_t value) {
+void Simulator::TraceMemRd(int64_t addr, int64_t value, TraceType t) {
   if (::v8::internal::FLAG_trace_sim) {
-    SNPrintF(trace_buf_, "%016lx <-- [%016lx]    (%ld)",
-             value, addr, icount_);
+    union {
+      int64_t fmt_int64;
+      int32_t fmt_int32[2];
+      float fmt_float[2];
+      double fmt_double;
+    } v;
+    v.fmt_int64 = value;
+
+    switch (t) {
+      case WORD:
+        SNPrintF(trace_buf_, "%016" PRIx64 "  <-- [%016" PRIx64 "]    (%" PRId64
+                             ")    int32:%" PRId32 " uint32:%" PRIu32,
+                 v.fmt_int64, addr, icount_, v.fmt_int32[0], v.fmt_int32[0]);
+        break;
+      case DWORD:
+        SNPrintF(trace_buf_, "%016" PRIx64 "  <-- [%016" PRIx64 "]    (%" PRId64
+                             ")    int64:%" PRId64 " uint64:%" PRIu64,
+                 value, addr, icount_, value, value);
+        break;
+      case FLOAT:
+        SNPrintF(trace_buf_, "%016" PRIx64 "  <-- [%016" PRIx64 "]    (%" PRId64
+                             ")    flt:%e",
+                 v.fmt_int64, addr, icount_, v.fmt_float[0]);
+        break;
+      case DOUBLE:
+        SNPrintF(trace_buf_, "%016" PRIx64 "  <-- [%016" PRIx64 "]    (%" PRId64
+                             ")    dbl:%e",
+                 v.fmt_int64, addr, icount_, v.fmt_double);
+        break;
+      case FLOAT_DOUBLE:
+        SNPrintF(trace_buf_, "%016" PRIx64 "  <-- [%016" PRIx64 "]    (%" PRId64
+                             ")    flt:%e dbl:%e",
+                 v.fmt_int64, addr, icount_, v.fmt_float[0], v.fmt_double);
+        break;
+      default:
+        UNREACHABLE();
+    }
   }
 }
 
@@ -1568,21 +1720,27 @@ void Simulator::TraceMemWr(int64_t addr, int64_t value, TraceType t) {
   if (::v8::internal::FLAG_trace_sim) {
     switch (t) {
       case BYTE:
-        SNPrintF(trace_buf_, "               %02x --> [%016lx]",
-                 static_cast<int8_t>(value), addr);
+        SNPrintF(trace_buf_, "               %02" PRIx8 " --> [%016" PRIx64
+                             "]    (%" PRId64 ")",
+                 static_cast<uint8_t>(value), addr, icount_);
         break;
       case HALF:
-        SNPrintF(trace_buf_, "            %04x --> [%016lx]",
-                 static_cast<int16_t>(value), addr);
+        SNPrintF(trace_buf_, "            %04" PRIx16 " --> [%016" PRIx64
+                             "]    (%" PRId64 ")",
+                 static_cast<uint16_t>(value), addr, icount_);
         break;
       case WORD:
-        SNPrintF(trace_buf_, "        %08x --> [%016lx]",
-                 static_cast<int32_t>(value), addr);
+        SNPrintF(trace_buf_,
+                 "        %08" PRIx32 " --> [%016" PRIx64 "]    (%" PRId64 ")",
+                 static_cast<uint32_t>(value), addr, icount_);
         break;
       case DWORD:
-        SNPrintF(trace_buf_, "%016lx --> [%016lx]    (%ld)",
+        SNPrintF(trace_buf_,
+                 "%016" PRIx64 "  --> [%016" PRIx64 "]    (%" PRId64 " )",
                  value, addr, icount_);
         break;
+      default:
+        UNREACHABLE();
     }
   }
 }
@@ -1590,20 +1748,20 @@ void Simulator::TraceMemWr(int64_t addr, int64_t value, TraceType t) {
 
 // TODO(plind): sign-extend and zero-extend not implmented properly
 // on all the ReadXX functions, I don't think re-interpret cast does it.
-int32_t Simulator::ReadW(int64_t addr, Instruction* instr) {
+int32_t Simulator::ReadW(int64_t addr, Instruction* instr, TraceType t) {
   if (addr >=0 && addr < 0x400) {
     // This has to be a NULL-dereference, drop into debugger.
-    PrintF("Memory read from bad address: 0x%08lx, pc=0x%08lx\n",
+    PrintF("Memory read from bad address: 0x%08" PRIx64 " , pc=0x%08" PRIxPTR
+           " \n",
            addr, reinterpret_cast<intptr_t>(instr));
     DieOrDebug();
   }
-  if ((addr & 0x3) == 0) {
+  if ((addr & 0x3) == 0 || kArchVariant == kMips64r6) {
     int32_t* ptr = reinterpret_cast<int32_t*>(addr);
-    TraceMemRd(addr, static_cast<int64_t>(*ptr));
+    TraceMemRd(addr, static_cast<int64_t>(*ptr), t);
     return *ptr;
   }
-  PrintF("Unaligned read at 0x%08lx, pc=0x%08" V8PRIxPTR "\n",
-         addr,
+  PrintF("Unaligned read at 0x%08" PRIx64 " , pc=0x%08" V8PRIxPTR "\n", addr,
          reinterpret_cast<intptr_t>(instr));
   DieOrDebug();
   return 0;
@@ -1613,17 +1771,17 @@ int32_t Simulator::ReadW(int64_t addr, Instruction* instr) {
 uint32_t Simulator::ReadWU(int64_t addr, Instruction* instr) {
   if (addr >=0 && addr < 0x400) {
     // This has to be a NULL-dereference, drop into debugger.
-    PrintF("Memory read from bad address: 0x%08lx, pc=0x%08lx\n",
+    PrintF("Memory read from bad address: 0x%08" PRIx64 " , pc=0x%08" PRIxPTR
+           " \n",
            addr, reinterpret_cast<intptr_t>(instr));
     DieOrDebug();
   }
-  if ((addr & 0x3) == 0) {
+  if ((addr & 0x3) == 0 || kArchVariant == kMips64r6) {
     uint32_t* ptr = reinterpret_cast<uint32_t*>(addr);
-    TraceMemRd(addr, static_cast<int64_t>(*ptr));
+    TraceMemRd(addr, static_cast<int64_t>(*ptr), WORD);
     return *ptr;
   }
-  PrintF("Unaligned read at 0x%08lx, pc=0x%08" V8PRIxPTR "\n",
-         addr,
+  PrintF("Unaligned read at 0x%08" PRIx64 " , pc=0x%08" V8PRIxPTR "\n", addr,
          reinterpret_cast<intptr_t>(instr));
   DieOrDebug();
   return 0;
@@ -1633,18 +1791,18 @@ uint32_t Simulator::ReadWU(int64_t addr, Instruction* instr) {
 void Simulator::WriteW(int64_t addr, int32_t value, Instruction* instr) {
   if (addr >= 0 && addr < 0x400) {
     // This has to be a NULL-dereference, drop into debugger.
-    PrintF("Memory write to bad address: 0x%08lx, pc=0x%08lx\n",
+    PrintF("Memory write to bad address: 0x%08" PRIx64 " , pc=0x%08" PRIxPTR
+           " \n",
            addr, reinterpret_cast<intptr_t>(instr));
     DieOrDebug();
   }
-  if ((addr & 0x3) == 0) {
+  if ((addr & 0x3) == 0 || kArchVariant == kMips64r6) {
     TraceMemWr(addr, value, WORD);
     int* ptr = reinterpret_cast<int*>(addr);
     *ptr = value;
     return;
   }
-  PrintF("Unaligned write at 0x%08lx, pc=0x%08" V8PRIxPTR "\n",
-         addr,
+  PrintF("Unaligned write at 0x%08" PRIx64 " , pc=0x%08" V8PRIxPTR "\n", addr,
          reinterpret_cast<intptr_t>(instr));
   DieOrDebug();
 }
@@ -1653,17 +1811,17 @@ void Simulator::WriteW(int64_t addr, int32_t value, Instruction* instr) {
 int64_t Simulator::Read2W(int64_t addr, Instruction* instr) {
   if (addr >=0 && addr < 0x400) {
     // This has to be a NULL-dereference, drop into debugger.
-    PrintF("Memory read from bad address: 0x%08lx, pc=0x%08lx\n",
+    PrintF("Memory read from bad address: 0x%08" PRIx64 " , pc=0x%08" PRIxPTR
+           " \n",
            addr, reinterpret_cast<intptr_t>(instr));
     DieOrDebug();
   }
-  if ((addr & kPointerAlignmentMask) == 0) {
+  if ((addr & kPointerAlignmentMask) == 0 || kArchVariant == kMips64r6) {
     int64_t* ptr = reinterpret_cast<int64_t*>(addr);
     TraceMemRd(addr, *ptr);
     return *ptr;
   }
-  PrintF("Unaligned read at 0x%08lx, pc=0x%08" V8PRIxPTR "\n",
-         addr,
+  PrintF("Unaligned read at 0x%08" PRIx64 " , pc=0x%08" V8PRIxPTR "\n", addr,
          reinterpret_cast<intptr_t>(instr));
   DieOrDebug();
   return 0;
@@ -1673,102 +1831,100 @@ int64_t Simulator::Read2W(int64_t addr, Instruction* instr) {
 void Simulator::Write2W(int64_t addr, int64_t value, Instruction* instr) {
   if (addr >= 0 && addr < 0x400) {
     // This has to be a NULL-dereference, drop into debugger.
-    PrintF("Memory write to bad address: 0x%08lx, pc=0x%08lx\n",
+    PrintF("Memory write to bad address: 0x%08" PRIx64 " , pc=0x%08" PRIxPTR
+           "\n",
            addr, reinterpret_cast<intptr_t>(instr));
     DieOrDebug();
   }
-  if ((addr & kPointerAlignmentMask) == 0) {
+  if ((addr & kPointerAlignmentMask) == 0 || kArchVariant == kMips64r6) {
     TraceMemWr(addr, value, DWORD);
     int64_t* ptr = reinterpret_cast<int64_t*>(addr);
     *ptr = value;
     return;
   }
-  PrintF("Unaligned write at 0x%08lx, pc=0x%08" V8PRIxPTR "\n",
-         addr,
+  PrintF("Unaligned write at 0x%08" PRIx64 " , pc=0x%08" V8PRIxPTR "\n", addr,
          reinterpret_cast<intptr_t>(instr));
   DieOrDebug();
 }
 
 
 double Simulator::ReadD(int64_t addr, Instruction* instr) {
-  if ((addr & kDoubleAlignmentMask) == 0) {
+  if ((addr & kDoubleAlignmentMask) == 0 || kArchVariant == kMips64r6) {
     double* ptr = reinterpret_cast<double*>(addr);
     return *ptr;
   }
-  PrintF("Unaligned (double) read at 0x%08lx, pc=0x%08" V8PRIxPTR "\n",
-         addr,
-         reinterpret_cast<intptr_t>(instr));
+  PrintF("Unaligned (double) read at 0x%08" PRIx64 " , pc=0x%08" V8PRIxPTR "\n",
+         addr, reinterpret_cast<intptr_t>(instr));
   base::OS::Abort();
   return 0;
 }
 
 
 void Simulator::WriteD(int64_t addr, double value, Instruction* instr) {
-  if ((addr & kDoubleAlignmentMask) == 0) {
+  if ((addr & kDoubleAlignmentMask) == 0 || kArchVariant == kMips64r6) {
     double* ptr = reinterpret_cast<double*>(addr);
     *ptr = value;
     return;
   }
-  PrintF("Unaligned (double) write at 0x%08lx, pc=0x%08" V8PRIxPTR "\n",
-         addr,
-         reinterpret_cast<intptr_t>(instr));
+  PrintF("Unaligned (double) write at 0x%08" PRIx64 " , pc=0x%08" V8PRIxPTR
+         "\n",
+         addr, reinterpret_cast<intptr_t>(instr));
   DieOrDebug();
 }
 
 
 uint16_t Simulator::ReadHU(int64_t addr, Instruction* instr) {
-  if ((addr & 1) == 0) {
+  if ((addr & 1) == 0 || kArchVariant == kMips64r6) {
     uint16_t* ptr = reinterpret_cast<uint16_t*>(addr);
     TraceMemRd(addr, static_cast<int64_t>(*ptr));
     return *ptr;
   }
-  PrintF("Unaligned unsigned halfword read at 0x%08lx, pc=0x%08" V8PRIxPTR "\n",
-         addr,
-         reinterpret_cast<intptr_t>(instr));
+  PrintF("Unaligned unsigned halfword read at 0x%08" PRIx64
+         " , pc=0x%08" V8PRIxPTR "\n",
+         addr, reinterpret_cast<intptr_t>(instr));
   DieOrDebug();
   return 0;
 }
 
 
 int16_t Simulator::ReadH(int64_t addr, Instruction* instr) {
-  if ((addr & 1) == 0) {
+  if ((addr & 1) == 0 || kArchVariant == kMips64r6) {
     int16_t* ptr = reinterpret_cast<int16_t*>(addr);
     TraceMemRd(addr, static_cast<int64_t>(*ptr));
     return *ptr;
   }
-  PrintF("Unaligned signed halfword read at 0x%08lx, pc=0x%08" V8PRIxPTR "\n",
-         addr,
-         reinterpret_cast<intptr_t>(instr));
+  PrintF("Unaligned signed halfword read at 0x%08" PRIx64
+         " , pc=0x%08" V8PRIxPTR "\n",
+         addr, reinterpret_cast<intptr_t>(instr));
   DieOrDebug();
   return 0;
 }
 
 
 void Simulator::WriteH(int64_t addr, uint16_t value, Instruction* instr) {
-  if ((addr & 1) == 0) {
+  if ((addr & 1) == 0 || kArchVariant == kMips64r6) {
     TraceMemWr(addr, value, HALF);
     uint16_t* ptr = reinterpret_cast<uint16_t*>(addr);
     *ptr = value;
     return;
   }
-  PrintF(
-      "Unaligned unsigned halfword write at 0x%08lx, pc=0x%08" V8PRIxPTR "\n",
-      addr,
-      reinterpret_cast<intptr_t>(instr));
+  PrintF("Unaligned unsigned halfword write at 0x%08" PRIx64
+         " , pc=0x%08" V8PRIxPTR "\n",
+         addr, reinterpret_cast<intptr_t>(instr));
   DieOrDebug();
 }
 
 
 void Simulator::WriteH(int64_t addr, int16_t value, Instruction* instr) {
-  if ((addr & 1) == 0) {
+  if ((addr & 1) == 0 || kArchVariant == kMips64r6) {
     TraceMemWr(addr, value, HALF);
     int16_t* ptr = reinterpret_cast<int16_t*>(addr);
     *ptr = value;
     return;
   }
-  PrintF("Unaligned halfword write at 0x%08lx, pc=0x%08" V8PRIxPTR "\n",
-         addr,
-         reinterpret_cast<intptr_t>(instr));
+  PrintF("Unaligned halfword write at 0x%08" PRIx64 " , pc=0x%08" V8PRIxPTR
+         "\n",
+         addr, reinterpret_cast<intptr_t>(instr));
   DieOrDebug();
 }
 
@@ -1802,16 +1958,22 @@ void Simulator::WriteB(int64_t addr, int8_t value) {
 
 
 // Returns the limit of the stack area to enable checking for stack overflows.
-uintptr_t Simulator::StackLimit() const {
-  // Leave a safety margin of 1024 bytes to prevent overrunning the stack when
-  // pushing values.
+uintptr_t Simulator::StackLimit(uintptr_t c_limit) const {
+  // The simulator uses a separate JS stack. If we have exhausted the C stack,
+  // we also drop down the JS limit to reflect the exhaustion on the JS stack.
+  if (GetCurrentStackPosition() < c_limit) {
+    return reinterpret_cast<uintptr_t>(get_sp());
+  }
+
+  // Otherwise the limit is the JS stack. Leave a safety margin of 1024 bytes
+  // to prevent overrunning the stack when pushing values.
   return reinterpret_cast<uintptr_t>(stack_) + 1024;
 }
 
 
 // Unsupported instructions use Format to print an error and stop execution.
 void Simulator::Format(Instruction* instr, const char* format) {
-  PrintF("Simulator found unsupported instruction:\n 0x%08lx: %s\n",
+  PrintF("Simulator found unsupported instruction:\n 0x%08" PRIxPTR " : %s\n",
          reinterpret_cast<intptr_t>(instr), format);
   UNIMPLEMENTED_MIPS();
 }
@@ -1824,11 +1986,6 @@ void Simulator::Format(Instruction* instr, const char* format) {
 // 64 bits of result. If they don't, the v1 result register contains a bogus
 // value, which is fine because it is caller-saved.
 
-struct ObjectPair {
-  Object* x;
-  Object* y;
-};
-
 typedef ObjectPair (*SimulatorRuntimeCall)(int64_t arg0,
                                         int64_t arg1,
                                         int64_t arg2,
@@ -1836,6 +1993,9 @@ typedef ObjectPair (*SimulatorRuntimeCall)(int64_t arg0,
                                         int64_t arg4,
                                         int64_t arg5);
 
+typedef ObjectTriple (*SimulatorRuntimeTripleCall)(int64_t arg0, int64_t arg1,
+                                                   int64_t arg2, int64_t arg3,
+                                                   int64_t arg4);
 
 // These prototypes handle the four types of FP calls.
 typedef int64_t (*SimulatorRuntimeCompareCall)(double darg0, double darg1);
@@ -1855,30 +2015,24 @@ typedef void (*SimulatorRuntimeProfilingGetterCall)(
 
 // Software interrupt instructions are used by the simulator to call into the
 // C-based V8 runtime. They are also used for debugging with simulator.
-void Simulator::SoftwareInterrupt(Instruction* instr) {
+void Simulator::SoftwareInterrupt() {
   // There are several instructions that could get us here,
   // the break_ instruction, or several variants of traps. All
   // Are "SPECIAL" class opcode, and are distinuished by function.
-  int32_t func = instr->FunctionFieldRaw();
-  uint32_t code = (func == BREAK) ? instr->Bits(25, 6) : -1;
+  int32_t func = instr_.FunctionFieldRaw();
+  uint32_t code = (func == BREAK) ? instr_.Bits(25, 6) : -1;
   // We first check if we met a call_rt_redirected.
-  if (instr->InstructionBits() == rtCallRedirInstr) {
-    Redirection* redirection = Redirection::FromSwiInstruction(instr);
+  if (instr_.InstructionBits() == rtCallRedirInstr) {
+    Redirection* redirection = Redirection::FromSwiInstruction(instr_.instr());
     int64_t arg0 = get_register(a0);
     int64_t arg1 = get_register(a1);
     int64_t arg2 = get_register(a2);
     int64_t arg3 = get_register(a3);
     int64_t arg4, arg5;
 
-    if (kMipsAbi == kN64) {
-      arg4 = get_register(a4);  // Abi n64 register a4.
-      arg5 = get_register(a5);  // Abi n64 register a5.
-    } else {  // Abi O32.
-      int64_t* stack_pointer = reinterpret_cast<int64_t*>(get_register(sp));
-      // Args 4 and 5 are on the stack after the reserved space for args 0..3.
-      arg4 = stack_pointer[4];
-      arg5 = stack_pointer[5];
-    }
+    arg4 = get_register(a4);  // Abi n64 register a4.
+    arg5 = get_register(a5);  // Abi n64 register a5.
+
     bool fp_call =
          (redirection->type() == ExternalReference::BUILTIN_FP_FP_CALL) ||
          (redirection->type() == ExternalReference::BUILTIN_COMPARE_CALL) ||
@@ -1936,15 +2090,17 @@ void Simulator::SoftwareInterrupt(Instruction* instr) {
           case ExternalReference::BUILTIN_FP_FP_CALL:
           case ExternalReference::BUILTIN_COMPARE_CALL:
             PrintF("Call to host function at %p with args %f, %f",
-                   FUNCTION_ADDR(generic_target), dval0, dval1);
+                   static_cast<void*>(FUNCTION_ADDR(generic_target)), dval0,
+                   dval1);
             break;
           case ExternalReference::BUILTIN_FP_CALL:
             PrintF("Call to host function at %p with arg %f",
-                FUNCTION_ADDR(generic_target), dval0);
+                   static_cast<void*>(FUNCTION_ADDR(generic_target)), dval0);
             break;
           case ExternalReference::BUILTIN_FP_INT_CALL:
             PrintF("Call to host function at %p with args %f, %d",
-                   FUNCTION_ADDR(generic_target), dval0, ival);
+                   static_cast<void*>(FUNCTION_ADDR(generic_target)), dval0,
+                   ival);
             break;
           default:
             UNREACHABLE();
@@ -2002,8 +2158,8 @@ void Simulator::SoftwareInterrupt(Instruction* instr) {
       }
     } else if (redirection->type() == ExternalReference::DIRECT_API_CALL) {
       if (::v8::internal::FLAG_trace_sim) {
-        PrintF("Call to host function at %p args %08lx\n",
-            reinterpret_cast<void*>(external), arg0);
+        PrintF("Call to host function at %p args %08" PRIx64 " \n",
+               reinterpret_cast<void*>(external), arg0);
       }
       SimulatorRuntimeDirectApiCall target =
           reinterpret_cast<SimulatorRuntimeDirectApiCall>(external);
@@ -2011,8 +2167,9 @@ void Simulator::SoftwareInterrupt(Instruction* instr) {
     } else if (
         redirection->type() == ExternalReference::PROFILING_API_CALL) {
       if (::v8::internal::FLAG_trace_sim) {
-        PrintF("Call to host function at %p args %08lx %08lx\n",
-            reinterpret_cast<void*>(external), arg0, arg1);
+        PrintF("Call to host function at %p args %08" PRIx64 "  %08" PRIx64
+               " \n",
+               reinterpret_cast<void*>(external), arg0, arg1);
       }
       SimulatorRuntimeProfilingApiCall target =
           reinterpret_cast<SimulatorRuntimeProfilingApiCall>(external);
@@ -2020,8 +2177,9 @@ void Simulator::SoftwareInterrupt(Instruction* instr) {
     } else if (
         redirection->type() == ExternalReference::DIRECT_GETTER_CALL) {
       if (::v8::internal::FLAG_trace_sim) {
-        PrintF("Call to host function at %p args %08lx %08lx\n",
-            reinterpret_cast<void*>(external), arg0, arg1);
+        PrintF("Call to host function at %p args %08" PRIx64 "  %08" PRIx64
+               " \n",
+               reinterpret_cast<void*>(external), arg0, arg1);
       }
       SimulatorRuntimeDirectGetterCall target =
           reinterpret_cast<SimulatorRuntimeDirectGetterCall>(external);
@@ -2029,26 +2187,48 @@ void Simulator::SoftwareInterrupt(Instruction* instr) {
     } else if (
         redirection->type() == ExternalReference::PROFILING_GETTER_CALL) {
       if (::v8::internal::FLAG_trace_sim) {
-        PrintF("Call to host function at %p args %08lx %08lx %08lx\n",
-            reinterpret_cast<void*>(external), arg0, arg1, arg2);
+        PrintF("Call to host function at %p args %08" PRIx64 "  %08" PRIx64
+               "  %08" PRIx64 " \n",
+               reinterpret_cast<void*>(external), arg0, arg1, arg2);
       }
       SimulatorRuntimeProfilingGetterCall target =
           reinterpret_cast<SimulatorRuntimeProfilingGetterCall>(external);
       target(arg0, arg1, Redirection::ReverseRedirection(arg2));
+    } else if (redirection->type() == ExternalReference::BUILTIN_CALL_TRIPLE) {
+      // builtin call returning ObjectTriple.
+      SimulatorRuntimeTripleCall target =
+          reinterpret_cast<SimulatorRuntimeTripleCall>(external);
+      if (::v8::internal::FLAG_trace_sim) {
+        PrintF(
+            "Call to host triple returning runtime function %p "
+            "args %016" PRIx64 ", %016" PRIx64 ", %016" PRIx64 ", %016" PRIx64
+            ", %016" PRIx64 "\n",
+            static_cast<void*>(FUNCTION_ADDR(target)), arg1, arg2, arg3, arg4,
+            arg5);
+      }
+      // arg0 is a hidden argument pointing to the return location, so don't
+      // pass it to the target function.
+      ObjectTriple result = target(arg1, arg2, arg3, arg4, arg5);
+      if (::v8::internal::FLAG_trace_sim) {
+        PrintF("Returned { %p, %p, %p }\n", static_cast<void*>(result.x),
+               static_cast<void*>(result.y), static_cast<void*>(result.z));
+      }
+      // Return is passed back in address pointed to by hidden first argument.
+      ObjectTriple* sim_result = reinterpret_cast<ObjectTriple*>(arg0);
+      *sim_result = result;
+      set_register(v0, arg0);
     } else {
+      DCHECK(redirection->type() == ExternalReference::BUILTIN_CALL ||
+             redirection->type() == ExternalReference::BUILTIN_CALL_PAIR);
       SimulatorRuntimeCall target =
                   reinterpret_cast<SimulatorRuntimeCall>(external);
       if (::v8::internal::FLAG_trace_sim) {
         PrintF(
             "Call to host function at %p "
-            "args %08lx, %08lx, %08lx, %08lx, %08lx, %08lx\n",
-            FUNCTION_ADDR(target),
-            arg0,
-            arg1,
-            arg2,
-            arg3,
-            arg4,
-            arg5);
+            "args %08" PRIx64 " , %08" PRIx64 " , %08" PRIx64 " , %08" PRIx64
+            " , %08" PRIx64 " , %08" PRIx64 " \n",
+            static_cast<void*>(FUNCTION_ADDR(target)), arg0, arg1, arg2, arg3,
+            arg4, arg5);
       }
       // int64_t result = target(arg0, arg1, arg2, arg3, arg4, arg5);
       // set_register(v0, static_cast<int32_t>(result));
@@ -2058,7 +2238,8 @@ void Simulator::SoftwareInterrupt(Instruction* instr) {
       set_register(v1, (int64_t)(result.y));
     }
      if (::v8::internal::FLAG_trace_sim) {
-      PrintF("Returned %08lx : %08lx\n", get_register(v1), get_register(v0));
+       PrintF("Returned %08" PRIx64 "  : %08" PRIx64 " \n", get_register(v1),
+              get_register(v0));
     }
     set_register(ra, saved_ra);
     set_pc(get_register(ra));
@@ -2068,7 +2249,7 @@ void Simulator::SoftwareInterrupt(Instruction* instr) {
       PrintWatchpoint(code);
     } else {
       IncreaseStopCounter(code);
-      HandleStop(code, instr);
+      HandleStop(code, instr_.instr());
     }
   } else {
     // All remaining break_ codes, and all traps are handled here.
@@ -2087,7 +2268,8 @@ bool Simulator::IsWatchpoint(uint64_t code) {
 void Simulator::PrintWatchpoint(uint64_t code) {
   MipsDebugger dbg(this);
   ++break_count_;
-  PrintF("\n---- break %ld marker: %3d  (instr count: %8ld) ----------"
+  PrintF("\n---- break %" PRId64 "  marker: %3d  (instr count: %8" PRId64
+         " ) ----------"
          "----------------------------------",
          code, break_count_, icount_);
   dbg.PrintAllRegs();  // Print registers and continue running.
@@ -2137,8 +2319,10 @@ void Simulator::DisableStop(uint64_t code) {
 void Simulator::IncreaseStopCounter(uint64_t code) {
   DCHECK(code <= kMaxStopCode);
   if ((watched_stops_[code].count & ~(1 << 31)) == 0x7fffffff) {
-    PrintF("Stop counter for code %ld has overflowed.\n"
-           "Enabling this code and reseting the counter to 0.\n", code);
+    PrintF("Stop counter for code %" PRId64
+           "  has overflowed.\n"
+           "Enabling this code and reseting the counter to 0.\n",
+           code);
     watched_stops_[code].count = 0;
     EnableStop(code);
   } else {
@@ -2161,505 +2345,161 @@ void Simulator::PrintStopInfo(uint64_t code) {
   // Don't print the state of unused breakpoints.
   if (count != 0) {
     if (watched_stops_[code].desc) {
-      PrintF("stop %ld - 0x%lx: \t%s, \tcounter = %i, \t%s\n",
+      PrintF("stop %" PRId64 "  - 0x%" PRIx64 " : \t%s, \tcounter = %i, \t%s\n",
              code, code, state, count, watched_stops_[code].desc);
     } else {
-      PrintF("stop %ld - 0x%lx: \t%s, \tcounter = %i\n",
-             code, code, state, count);
+      PrintF("stop %" PRId64 "  - 0x%" PRIx64 " : \t%s, \tcounter = %i\n", code,
+             code, state, count);
     }
   }
 }
 
 
-void Simulator::SignalExceptions() {
-  for (int i = 1; i < kNumExceptions; i++) {
-    if (exceptions[i] != 0) {
-      V8_Fatal(__FILE__, __LINE__, "Error: Exception %i raised.", i);
-    }
+void Simulator::SignalException(Exception e) {
+  V8_Fatal(__FILE__, __LINE__, "Error: Exception %i raised.",
+           static_cast<int>(e));
+}
+
+// Min/Max template functions for Double and Single arguments.
+
+template <typename T>
+static T FPAbs(T a);
+
+template <>
+double FPAbs<double>(double a) {
+  return fabs(a);
+}
+
+template <>
+float FPAbs<float>(float a) {
+  return fabsf(a);
+}
+
+template <typename T>
+static bool FPUProcessNaNsAndZeros(T a, T b, MaxMinKind kind, T& result) {
+  if (std::isnan(a) && std::isnan(b)) {
+    result = a;
+  } else if (std::isnan(a)) {
+    result = b;
+  } else if (std::isnan(b)) {
+    result = a;
+  } else if (b == a) {
+    // Handle -0.0 == 0.0 case.
+    // std::signbit() returns int 0 or 1 so substracting MaxMinKind::kMax
+    // negates the result.
+    result = std::signbit(b) - static_cast<int>(kind) ? b : a;
+  } else {
+    return false;
+  }
+  return true;
+}
+
+template <typename T>
+static T FPUMin(T a, T b) {
+  T result;
+  if (FPUProcessNaNsAndZeros(a, b, MaxMinKind::kMin, result)) {
+    return result;
+  } else {
+    return b < a ? b : a;
   }
 }
 
+template <typename T>
+static T FPUMax(T a, T b) {
+  T result;
+  if (FPUProcessNaNsAndZeros(a, b, MaxMinKind::kMax, result)) {
+    return result;
+  } else {
+    return b > a ? b : a;
+  }
+}
+
+template <typename T>
+static T FPUMinA(T a, T b) {
+  T result;
+  if (!FPUProcessNaNsAndZeros(a, b, MaxMinKind::kMin, result)) {
+    if (FPAbs(a) < FPAbs(b)) {
+      result = a;
+    } else if (FPAbs(b) < FPAbs(a)) {
+      result = b;
+    } else {
+      result = a < b ? a : b;
+    }
+  }
+  return result;
+}
+
+template <typename T>
+static T FPUMaxA(T a, T b) {
+  T result;
+  if (!FPUProcessNaNsAndZeros(a, b, MaxMinKind::kMin, result)) {
+    if (FPAbs(a) > FPAbs(b)) {
+      result = a;
+    } else if (FPAbs(b) > FPAbs(a)) {
+      result = b;
+    } else {
+      result = a > b ? a : b;
+    }
+  }
+  return result;
+}
+
+enum class KeepSign : bool { no = false, yes };
+
+template <typename T, typename std::enable_if<std::is_floating_point<T>::value,
+                                              int>::type = 0>
+T FPUCanonalizeNaNArg(T result, T arg, KeepSign keepSign = KeepSign::no) {
+  DCHECK(std::isnan(arg));
+  T qNaN = std::numeric_limits<T>::quiet_NaN();
+  if (keepSign == KeepSign::yes) {
+    return std::copysign(qNaN, result);
+  }
+  return qNaN;
+}
+
+template <typename T>
+T FPUCanonalizeNaNArgs(T result, KeepSign keepSign, T first) {
+  if (std::isnan(first)) {
+    return FPUCanonalizeNaNArg(result, first, keepSign);
+  }
+  return result;
+}
+
+template <typename T, typename... Args>
+T FPUCanonalizeNaNArgs(T result, KeepSign keepSign, T first, Args... args) {
+  if (std::isnan(first)) {
+    return FPUCanonalizeNaNArg(result, first, keepSign);
+  }
+  return FPUCanonalizeNaNArgs(result, keepSign, args...);
+}
+
+template <typename Func, typename T, typename... Args>
+T FPUCanonalizeOperation(Func f, T first, Args... args) {
+  return FPUCanonalizeOperation(f, KeepSign::no, first, args...);
+}
+
+template <typename Func, typename T, typename... Args>
+T FPUCanonalizeOperation(Func f, KeepSign keepSign, T first, Args... args) {
+  T result = f(first, args...);
+  if (std::isnan(result)) {
+    result = FPUCanonalizeNaNArgs(result, keepSign, first, args...);
+  }
+  return result;
+}
 
 // Handle execution based on instruction types.
 
-void Simulator::ConfigureTypeRegister(Instruction* instr, int64_t* alu_out,
-                                      int64_t* i64hilo, uint64_t* u64hilo,
-                                      int64_t* next_pc, int* return_addr_reg,
-                                      bool* do_interrupt, int64_t* i128resultH,
-                                      int64_t* i128resultL) {
-  // Every local variable declared here needs to be const.
-  // This is to make sure that changed values are sent back to
-  // DecodeTypeRegister correctly.
-
-  // Instruction fields.
-  const Opcode   op     = instr->OpcodeFieldRaw();
-  const int32_t  rs_reg = instr->RsValue();
-  const int64_t  rs     = get_register(rs_reg);
-  const uint64_t rs_u   = static_cast<uint64_t>(rs);
-  const int32_t  rt_reg = instr->RtValue();
-  const int64_t  rt     = get_register(rt_reg);
-  const uint64_t rt_u   = static_cast<uint64_t>(rt);
-  const int32_t  rd_reg = instr->RdValue();
-  const uint64_t sa     = instr->SaValue();
-  const uint8_t bp2 = instr->Bp2Value();
-  const uint8_t bp3 = instr->Bp3Value();
-
-  const int32_t  fs_reg = instr->FsValue();
-
-
-  // ---------- Configuration.
-  switch (op) {
-    case COP1:    // Coprocessor instructions.
-      switch (instr->RsFieldRaw()) {
-        case CFC1:
-          // At the moment only FCSR is supported.
-          DCHECK(fs_reg == kFCSRRegister);
-          *alu_out = FCSR_;
-          break;
-        case MFC1:
-          *alu_out = static_cast<int64_t>(get_fpu_register_word(fs_reg));
-          break;
-        case DMFC1:
-          *alu_out = get_fpu_register(fs_reg);
-          break;
-        case MFHC1:
-          *alu_out = get_fpu_register_hi_word(fs_reg);
-          break;
-        case CTC1:
-        case MTC1:
-        case DMTC1:
-        case MTHC1:
-        case S:
-        case D:
-        case W:
-        case L:
-        case PS:
-          // Do everything in the execution step.
-          break;
-        default:
-        // BC1 BC1EQZ BC1NEZ handled in DecodeTypeImmed, should never come here.
-           UNREACHABLE();
-      }
-      break;
-    case COP1X:
-      break;
-    case SPECIAL:
-      switch (instr->FunctionFieldRaw()) {
-        case JR:
-        case JALR:
-          *next_pc = get_register(instr->RsValue());
-          *return_addr_reg = instr->RdValue();
-          break;
-        case SLL:
-          *alu_out = static_cast<int32_t>(rt) << sa;
-          break;
-        case DSLL:
-          *alu_out = rt << sa;
-          break;
-        case DSLL32:
-          *alu_out = rt << sa << 32;
-          break;
-        case SRL:
-          if (rs_reg == 0) {
-            // Regular logical right shift of a word by a fixed number of
-            // bits instruction. RS field is always equal to 0.
-            // Sign-extend the 32-bit result.
-            *alu_out = static_cast<int32_t>(static_cast<uint32_t>(rt_u) >> sa);
-          } else {
-            // Logical right-rotate of a word by a fixed number of bits. This
-            // is special case of SRL instruction, added in MIPS32 Release 2.
-            // RS field is equal to 00001.
-            *alu_out = static_cast<int32_t>(
-                base::bits::RotateRight32(static_cast<const uint32_t>(rt_u),
-                                          static_cast<const uint32_t>(sa)));
-          }
-          break;
-        case DSRL:
-          *alu_out = rt_u >> sa;
-          break;
-        case DSRL32:
-          *alu_out = rt_u >> sa >> 32;
-          break;
-        case SRA:
-          *alu_out = (int32_t)rt >> sa;
-          break;
-        case DSRA:
-          *alu_out = rt >> sa;
-          break;
-        case DSRA32:
-          *alu_out = rt >> sa >> 32;
-          break;
-        case SLLV:
-          *alu_out = (int32_t)rt << rs;
-          break;
-        case DSLLV:
-          *alu_out = rt << rs;
-          break;
-        case SRLV:
-          if (sa == 0) {
-            // Regular logical right-shift of a word by a variable number of
-            // bits instruction. SA field is always equal to 0.
-            *alu_out = static_cast<int32_t>((uint32_t)rt_u >> rs);
-          } else {
-            // Logical right-rotate of a word by a variable number of bits.
-            // This is special case od SRLV instruction, added in MIPS32
-            // Release 2. SA field is equal to 00001.
-            *alu_out = static_cast<int32_t>(
-                base::bits::RotateRight32(static_cast<const uint32_t>(rt_u),
-                                          static_cast<const uint32_t>(rs_u)));
-          }
-          break;
-        case DSRLV:
-          if (sa == 0) {
-            // Regular logical right-shift of a word by a variable number of
-            // bits instruction. SA field is always equal to 0.
-            *alu_out = rt_u >> rs;
-          } else {
-            // Logical right-rotate of a word by a variable number of bits.
-            // This is special case od SRLV instruction, added in MIPS32
-            // Release 2. SA field is equal to 00001.
-            *alu_out =
-                base::bits::RotateRight32(static_cast<const uint32_t>(rt_u),
-                                          static_cast<const uint32_t>(rs_u));
-          }
-          break;
-        case SRAV:
-          *alu_out = (int32_t)rt >> rs;
-          break;
-        case DSRAV:
-          *alu_out = rt >> rs;
-          break;
-        case MFHI:  // MFHI == CLZ on R6.
-          if (kArchVariant != kMips64r6) {
-            DCHECK(instr->SaValue() == 0);
-            *alu_out = get_register(HI);
-          } else {
-            // MIPS spec: If no bits were set in GPR rs, the result written to
-            // GPR rd is 32.
-            DCHECK(instr->SaValue() == 1);
-            *alu_out =
-                base::bits::CountLeadingZeros32(static_cast<int32_t>(rs_u));
-          }
-          break;
-        case MFLO:
-          *alu_out = get_register(LO);
-          break;
-        case MULT: {  // MULT == D_MUL_MUH.
-          int32_t rs_lo = static_cast<int32_t>(rs);
-          int32_t rt_lo = static_cast<int32_t>(rt);
-          *i64hilo = static_cast<int64_t>(rs_lo) * static_cast<int64_t>(rt_lo);
-          break;
-        }
-        case MULTU:
-          *u64hilo = static_cast<uint64_t>(rs_u & 0xffffffff) *
-                     static_cast<uint64_t>(rt_u & 0xffffffff);
-          break;
-        case DMULT:  // DMULT == D_MUL_MUH.
-          if (kArchVariant != kMips64r6) {
-            *i128resultH = MultiplyHighSigned(rs, rt);
-            *i128resultL = rs * rt;
-          } else {
-            switch (instr->SaValue()) {
-              case MUL_OP:
-                *i128resultL = rs * rt;
-                break;
-              case MUH_OP:
-                *i128resultH = MultiplyHighSigned(rs, rt);
-                break;
-              default:
-                UNIMPLEMENTED_MIPS();
-                break;
-            }
-          }
-          break;
-        case DMULTU:
-          UNIMPLEMENTED_MIPS();
-          break;
-        case ADD:
-        case DADD:
-          if (HaveSameSign(rs, rt)) {
-            if (rs > 0) {
-              exceptions[kIntegerOverflow] = rs > (Registers::kMaxValue - rt);
-            } else if (rs < 0) {
-              exceptions[kIntegerUnderflow] = rs < (Registers::kMinValue - rt);
-            }
-          }
-          *alu_out = rs + rt;
-          break;
-        case ADDU: {
-          int32_t alu32_out = static_cast<int32_t>(rs + rt);
-          // Sign-extend result of 32bit operation into 64bit register.
-          *alu_out = static_cast<int64_t>(alu32_out);
-          break;
-        }
-        case DADDU:
-          *alu_out = rs + rt;
-          break;
-        case SUB:
-        case DSUB:
-          if (!HaveSameSign(rs, rt)) {
-            if (rs > 0) {
-              exceptions[kIntegerOverflow] = rs > (Registers::kMaxValue + rt);
-            } else if (rs < 0) {
-              exceptions[kIntegerUnderflow] = rs < (Registers::kMinValue + rt);
-            }
-          }
-          *alu_out = rs - rt;
-          break;
-        case SUBU: {
-          int32_t alu32_out = static_cast<int32_t>(rs - rt);
-          // Sign-extend result of 32bit operation into 64bit register.
-          *alu_out = static_cast<int64_t>(alu32_out);
-          break;
-        }
-        case DSUBU:
-          *alu_out = rs - rt;
-          break;
-        case AND:
-          *alu_out = rs & rt;
-          break;
-        case OR:
-          *alu_out = rs | rt;
-          break;
-        case XOR:
-          *alu_out = rs ^ rt;
-          break;
-        case NOR:
-          *alu_out = ~(rs | rt);
-          break;
-        case SLT:
-          *alu_out = rs < rt ? 1 : 0;
-          break;
-        case SLTU:
-          *alu_out = rs_u < rt_u ? 1 : 0;
-          break;
-        // Break and trap instructions.
-        case BREAK:
-
-          *do_interrupt = true;
-          break;
-        case TGE:
-          *do_interrupt = rs >= rt;
-          break;
-        case TGEU:
-          *do_interrupt = rs_u >= rt_u;
-          break;
-        case TLT:
-          *do_interrupt = rs < rt;
-          break;
-        case TLTU:
-          *do_interrupt = rs_u < rt_u;
-          break;
-        case TEQ:
-          *do_interrupt = rs == rt;
-          break;
-        case TNE:
-          *do_interrupt = rs != rt;
-          break;
-        case MOVN:
-        case MOVZ:
-        case MOVCI:
-          // No action taken on decode.
-          break;
-        case DIV:
-        case DIVU:
-        case DDIV:
-        case DDIVU:
-          // div and divu never raise exceptions.
-          break;
-        case SELEQZ_S:
-        case SELNEZ_S:
-          break;
-        default:
-          UNREACHABLE();
-      }
-      break;
-    case SPECIAL2:
-      switch (instr->FunctionFieldRaw()) {
-        case MUL:
-          // Only the lower 32 bits are kept.
-          *alu_out = (int32_t)rs_u * (int32_t)rt_u;
-          break;
-        case CLZ:
-          // MIPS32 spec: If no bits were set in GPR rs, the result written to
-          // GPR rd is 32.
-          *alu_out =
-              base::bits::CountLeadingZeros32(static_cast<uint32_t>(rs_u));
-          break;
-        default:
-          UNREACHABLE();
-      }
-      break;
-    case SPECIAL3:
-      switch (instr->FunctionFieldRaw()) {
-        case INS: {   // Mips32r2 instruction.
-          // Interpret rd field as 5-bit msb of insert.
-          uint16_t msb = rd_reg;
-          // Interpret sa field as 5-bit lsb of insert.
-          uint16_t lsb = sa;
-          uint16_t size = msb - lsb + 1;
-          uint64_t mask = (1ULL << size) - 1;
-          *alu_out = (rt_u & ~(mask << lsb)) | ((rs_u & mask) << lsb);
-          break;
-        }
-        case EXT: {   // Mips32r2 instruction.
-          // Interpret rd field as 5-bit msb of extract.
-          uint16_t msb = rd_reg;
-          // Interpret sa field as 5-bit lsb of extract.
-          uint16_t lsb = sa;
-          uint16_t size = msb + 1;
-          uint64_t mask = (1ULL << size) - 1;
-          *alu_out = static_cast<int32_t>((rs_u & (mask << lsb)) >> lsb);
-          break;
-        }
-        case DEXT: {  // Mips32r2 instruction.
-          // Interpret rd field as 5-bit msb of extract.
-          uint16_t msb = rd_reg;
-          // Interpret sa field as 5-bit lsb of extract.
-          uint16_t lsb = sa;
-          uint16_t size = msb + 1;
-          uint64_t mask = (1ULL << size) - 1;
-          *alu_out = static_cast<int64_t>((rs_u & (mask << lsb)) >> lsb);
-          break;
-        }
-        case BSHFL: {
-          int sa = instr->SaFieldRaw() >> kSaShift;
-          switch (sa) {
-            case BITSWAP: {
-              uint32_t input = static_cast<uint32_t>(rt);
-              uint32_t output = 0;
-              uint8_t i_byte, o_byte;
-
-              // Reverse the bit in byte for each individual byte
-              for (int i = 0; i < 4; i++) {
-                output = output >> 8;
-                i_byte = input & 0xff;
-
-                // Fast way to reverse bits in byte
-                // Devised by Sean Anderson, July 13, 2001
-                o_byte =
-                    static_cast<uint8_t>(((i_byte * 0x0802LU & 0x22110LU) |
-                                          (i_byte * 0x8020LU & 0x88440LU)) *
-                                             0x10101LU >>
-                                         16);
-
-                output = output | (static_cast<uint32_t>(o_byte << 24));
-                input = input >> 8;
-              }
-
-              *alu_out = static_cast<int64_t>(static_cast<int32_t>(output));
-              break;
-            }
-            case SEB:
-            case SEH:
-            case WSBH:
-              UNREACHABLE();
-              break;
-            default: {
-              sa >>= kBp2Bits;
-              switch (sa) {
-                case ALIGN: {
-                  if (bp2 == 0) {
-                    *alu_out = static_cast<int32_t>(rt);
-                  } else {
-                    uint64_t rt_hi = rt << (8 * bp2);
-                    uint64_t rs_lo = rs >> (8 * (4 - bp2));
-                    *alu_out = static_cast<int32_t>(rt_hi | rs_lo);
-                  }
-                  break;
-                }
-                default:
-                  UNREACHABLE();
-                  break;
-              }
-              break;
-            }
-          }
-          break;
-        }
-        case DBSHFL: {
-          int sa = instr->SaFieldRaw() >> kSaShift;
-          switch (sa) {
-            case DBITSWAP: {
-              switch (instr->SaFieldRaw() >> kSaShift) {
-                case DBITSWAP_SA: {  // Mips64r6
-                  uint64_t input = static_cast<uint64_t>(rt);
-                  uint64_t output = 0;
-                  uint8_t i_byte, o_byte;
-
-                  // Reverse the bit in byte for each individual byte
-                  for (int i = 0; i < 8; i++) {
-                    output = output >> 8;
-                    i_byte = input & 0xff;
-
-                    // Fast way to reverse bits in byte
-                    // Devised by Sean Anderson, July 13, 2001
-                    o_byte =
-                        static_cast<uint8_t>(((i_byte * 0x0802LU & 0x22110LU) |
-                                              (i_byte * 0x8020LU & 0x88440LU)) *
-                                                 0x10101LU >>
-                                             16);
-
-                    output = output | ((static_cast<uint64_t>(o_byte) << 56));
-                    input = input >> 8;
-                  }
-
-                  *alu_out = static_cast<int64_t>(output);
-                  break;
-                }
-              }
-              break;
-            }
-            case DSBH:
-            case DSHD:
-              UNREACHABLE();
-              break;
-            default: {
-              sa >>= kBp3Bits;
-              switch (sa) {
-                case DALIGN: {
-                  if (bp3 == 0) {
-                    *alu_out = static_cast<int64_t>(rt);
-                  } else {
-                    uint64_t rt_hi = rt << (8 * bp3);
-                    uint64_t rs_lo = rs >> (8 * (8 - bp3));
-                    *alu_out = static_cast<int64_t>(rt_hi | rs_lo);
-                  }
-                  break;
-                }
-                default:
-                  UNREACHABLE();
-                  break;
-              }
-              break;
-            }
-          }
-          break;
-        }
-        default:
-          UNREACHABLE();
-      }
-      break;
-    default:
-      UNREACHABLE();
-  }
-}
-
-
-void Simulator::DecodeTypeRegisterSRsType(Instruction* instr,
-                                          const int32_t fs_reg,
-                                          const int32_t ft_reg,
-                                          const int32_t fd_reg) {
+void Simulator::DecodeTypeRegisterSRsType() {
   float fs, ft, fd;
-  fs = get_fpu_register_float(fs_reg);
-  ft = get_fpu_register_float(ft_reg);
-  fd = get_fpu_register_float(fd_reg);
+  fs = get_fpu_register_float(fs_reg());
+  ft = get_fpu_register_float(ft_reg());
+  fd = get_fpu_register_float(fd_reg());
   int32_t ft_int = bit_cast<int32_t>(ft);
   int32_t fd_int = bit_cast<int32_t>(fd);
   uint32_t cc, fcsr_cc;
-  cc = instr->FCccValue();
+  cc = instr_.FCccValue();
   fcsr_cc = get_fcsr_condition_bit(cc);
-  switch (instr->FunctionFieldRaw()) {
+  switch (instr_.FunctionFieldRaw()) {
     case RINT: {
       DCHECK(kArchVariant == kMips64r6);
       float result, temp_result;
@@ -2692,72 +2532,104 @@ void Simulator::DecodeTypeRegisterSRsType(Instruction* instr,
           result = lower;
           break;
       }
-      set_fpu_register_float(fd_reg, result);
+      SetFPUFloatResult(fd_reg(), result);
       if (result != fs) {
         set_fcsr_bit(kFCSRInexactFlagBit, true);
       }
       break;
     }
     case ADD_S:
-      set_fpu_register_float(fd_reg, fs + ft);
+      SetFPUFloatResult(
+          fd_reg(),
+          FPUCanonalizeOperation([](float lhs, float rhs) { return lhs + rhs; },
+                                 fs, ft));
       break;
     case SUB_S:
-      set_fpu_register_float(fd_reg, fs - ft);
+      SetFPUFloatResult(
+          fd_reg(),
+          FPUCanonalizeOperation([](float lhs, float rhs) { return lhs - rhs; },
+                                 fs, ft));
+      break;
+    case MADDF_S:
+      DCHECK(kArchVariant == kMips64r6);
+      SetFPUFloatResult(fd_reg(), std::fma(fs, ft, fd));
+      break;
+    case MSUBF_S:
+      DCHECK(kArchVariant == kMips64r6);
+      SetFPUFloatResult(fd_reg(), std::fma(-fs, ft, fd));
       break;
     case MUL_S:
-      set_fpu_register_float(fd_reg, fs * ft);
+      SetFPUFloatResult(
+          fd_reg(),
+          FPUCanonalizeOperation([](float lhs, float rhs) { return lhs * rhs; },
+                                 fs, ft));
       break;
     case DIV_S:
-      set_fpu_register_float(fd_reg, fs / ft);
+      SetFPUFloatResult(
+          fd_reg(),
+          FPUCanonalizeOperation([](float lhs, float rhs) { return lhs / rhs; },
+                                 fs, ft));
       break;
     case ABS_S:
-      set_fpu_register_float(fd_reg, fabs(fs));
+      SetFPUFloatResult(fd_reg(), FPUCanonalizeOperation(
+                                      [](float fs) { return FPAbs(fs); }, fs));
       break;
     case MOV_S:
-      set_fpu_register_float(fd_reg, fs);
+      SetFPUFloatResult(fd_reg(), fs);
       break;
     case NEG_S:
-      set_fpu_register_float(fd_reg, -fs);
+      SetFPUFloatResult(fd_reg(),
+                        FPUCanonalizeOperation([](float src) { return -src; },
+                                               KeepSign::yes, fs));
       break;
     case SQRT_S:
-      set_fpu_register_float(fd_reg, fast_sqrt(fs));
+      SetFPUFloatResult(
+          fd_reg(),
+          FPUCanonalizeOperation([](float src) { return std::sqrt(src); }, fs));
       break;
-    case RSQRT_S: {
-      float result = 1.0 / fast_sqrt(fs);
-      set_fpu_register_float(fd_reg, result);
+    case RSQRT_S:
+      SetFPUFloatResult(
+          fd_reg(), FPUCanonalizeOperation(
+                        [](float src) { return 1.0 / std::sqrt(src); }, fs));
       break;
-    }
-    case RECIP_S: {
-      float result = 1.0 / fs;
-      set_fpu_register_float(fd_reg, result);
+    case RECIP_S:
+      SetFPUFloatResult(fd_reg(), FPUCanonalizeOperation(
+                                      [](float src) { return 1.0 / src; }, fs));
       break;
-    }
     case C_F_D:
       set_fcsr_bit(fcsr_cc, false);
+      TraceRegWr(test_fcsr_bit(fcsr_cc));
       break;
     case C_UN_D:
       set_fcsr_bit(fcsr_cc, std::isnan(fs) || std::isnan(ft));
+      TraceRegWr(test_fcsr_bit(fcsr_cc));
       break;
     case C_EQ_D:
       set_fcsr_bit(fcsr_cc, (fs == ft));
+      TraceRegWr(test_fcsr_bit(fcsr_cc));
       break;
     case C_UEQ_D:
       set_fcsr_bit(fcsr_cc, (fs == ft) || (std::isnan(fs) || std::isnan(ft)));
+      TraceRegWr(test_fcsr_bit(fcsr_cc));
       break;
     case C_OLT_D:
       set_fcsr_bit(fcsr_cc, (fs < ft));
+      TraceRegWr(test_fcsr_bit(fcsr_cc));
       break;
     case C_ULT_D:
       set_fcsr_bit(fcsr_cc, (fs < ft) || (std::isnan(fs) || std::isnan(ft)));
+      TraceRegWr(test_fcsr_bit(fcsr_cc));
       break;
     case C_OLE_D:
       set_fcsr_bit(fcsr_cc, (fs <= ft));
+      TraceRegWr(test_fcsr_bit(fcsr_cc));
       break;
     case C_ULE_D:
       set_fcsr_bit(fcsr_cc, (fs <= ft) || (std::isnan(fs) || std::isnan(ft)));
+      TraceRegWr(test_fcsr_bit(fcsr_cc));
       break;
     case CVT_D_S:
-      set_fpu_register_double(fd_reg, static_cast<double>(fs));
+      SetFPUDoubleResult(fd_reg(), static_cast<double>(fs));
       break;
     case CLASS_S: {  // Mips64r6 instruction
       // Convert float input to uint32_t for easier bit manipulation
@@ -2820,17 +2692,16 @@ void Simulator::DecodeTypeRegisterSRsType(Instruction* instr,
       DCHECK(result != 0);
 
       fResult = bit_cast<float>(result);
-      set_fpu_register_float(fd_reg, fResult);
-
+      SetFPUFloatResult(fd_reg(), fResult);
       break;
     }
     case CVT_L_S: {
       float rounded;
       int64_t result;
       round64_according_to_fcsr(fs, rounded, result, fs);
-      set_fpu_register(fd_reg, result);
+      SetFPUResult(fd_reg(), result);
       if (set_fcsr_round64_error(fs, rounded)) {
-        set_fpu_register(fd_reg, kFPU64InvalidResult);
+        set_fpu_register_invalid_result64(fs, rounded);
       }
       break;
     }
@@ -2838,26 +2709,26 @@ void Simulator::DecodeTypeRegisterSRsType(Instruction* instr,
       float rounded;
       int32_t result;
       round_according_to_fcsr(fs, rounded, result, fs);
-      set_fpu_register_word(fd_reg, result);
+      SetFPUWordResult(fd_reg(), result);
       if (set_fcsr_round_error(fs, rounded)) {
-        set_fpu_register_word(fd_reg, kFPUInvalidResult);
+        set_fpu_register_word_invalid_result(fs, rounded);
       }
       break;
     }
     case TRUNC_W_S: {  // Truncate single to word (round towards 0).
       float rounded = trunc(fs);
       int32_t result = static_cast<int32_t>(rounded);
-      set_fpu_register_word(fd_reg, result);
+      SetFPUWordResult(fd_reg(), result);
       if (set_fcsr_round_error(fs, rounded)) {
-        set_fpu_register_word(fd_reg, kFPUInvalidResult);
+        set_fpu_register_word_invalid_result(fs, rounded);
       }
     } break;
     case TRUNC_L_S: {  // Mips64r2 instruction.
       float rounded = trunc(fs);
       int64_t result = static_cast<int64_t>(rounded);
-      set_fpu_register(fd_reg, result);
+      SetFPUResult(fd_reg(), result);
       if (set_fcsr_round64_error(fs, rounded)) {
-        set_fpu_register(fd_reg, kFPU64InvalidResult);
+        set_fpu_register_invalid_result64(fs, rounded);
       }
       break;
     }
@@ -2869,9 +2740,9 @@ void Simulator::DecodeTypeRegisterSRsType(Instruction* instr,
         // round to the even one.
         result--;
       }
-      set_fpu_register_word(fd_reg, result);
+      SetFPUWordResult(fd_reg(), result);
       if (set_fcsr_round_error(fs, rounded)) {
-        set_fpu_register_word(fd_reg, kFPUInvalidResult);
+        set_fpu_register_word_invalid_result(fs, rounded);
       }
       break;
     }
@@ -2884,18 +2755,18 @@ void Simulator::DecodeTypeRegisterSRsType(Instruction* instr,
         result--;
       }
       int64_t i64 = static_cast<int64_t>(result);
-      set_fpu_register(fd_reg, i64);
+      SetFPUResult(fd_reg(), i64);
       if (set_fcsr_round64_error(fs, rounded)) {
-        set_fpu_register(fd_reg, kFPU64InvalidResult);
+        set_fpu_register_invalid_result64(fs, rounded);
       }
       break;
     }
     case FLOOR_L_S: {  // Mips64r2 instruction.
       float rounded = floor(fs);
       int64_t result = static_cast<int64_t>(rounded);
-      set_fpu_register(fd_reg, result);
+      SetFPUResult(fd_reg(), result);
       if (set_fcsr_round64_error(fs, rounded)) {
-        set_fpu_register(fd_reg, kFPU64InvalidResult);
+        set_fpu_register_invalid_result64(fs, rounded);
       }
       break;
     }
@@ -2903,140 +2774,86 @@ void Simulator::DecodeTypeRegisterSRsType(Instruction* instr,
     {
       float rounded = std::floor(fs);
       int32_t result = static_cast<int32_t>(rounded);
-      set_fpu_register_word(fd_reg, result);
+      SetFPUWordResult(fd_reg(), result);
       if (set_fcsr_round_error(fs, rounded)) {
-        set_fpu_register_word(fd_reg, kFPUInvalidResult);
+        set_fpu_register_word_invalid_result(fs, rounded);
       }
     } break;
     case CEIL_W_S:  // Round double to word towards positive infinity.
     {
       float rounded = std::ceil(fs);
       int32_t result = static_cast<int32_t>(rounded);
-      set_fpu_register_word(fd_reg, result);
+      SetFPUWordResult(fd_reg(), result);
       if (set_fcsr_round_error(fs, rounded)) {
-        set_fpu_register(fd_reg, kFPUInvalidResult);
+        set_fpu_register_invalid_result(fs, rounded);
       }
     } break;
     case CEIL_L_S: {  // Mips64r2 instruction.
       float rounded = ceil(fs);
       int64_t result = static_cast<int64_t>(rounded);
-      set_fpu_register(fd_reg, result);
+      SetFPUResult(fd_reg(), result);
       if (set_fcsr_round64_error(fs, rounded)) {
-        set_fpu_register(fd_reg, kFPU64InvalidResult);
+        set_fpu_register_invalid_result64(fs, rounded);
       }
       break;
     }
     case MINA:
       DCHECK(kArchVariant == kMips64r6);
-      fs = get_fpu_register_float(fs_reg);
-      if (std::isnan(fs) && std::isnan(ft)) {
-        set_fpu_register_float(fd_reg, fs);
-      } else if (std::isnan(fs) && !std::isnan(ft)) {
-        set_fpu_register_float(fd_reg, ft);
-      } else if (!std::isnan(fs) && std::isnan(ft)) {
-        set_fpu_register_float(fd_reg, fs);
-      } else {
-        float result;
-        if (fabs(fs) > fabs(ft)) {
-          result = ft;
-        } else if (fabs(fs) < fabs(ft)) {
-          result = fs;
-        } else {
-          result = (fs > ft ? fs : ft);
-        }
-        set_fpu_register_float(fd_reg, result);
-      }
+      SetFPUFloatResult(fd_reg(), FPUMinA(ft, fs));
       break;
     case MAXA:
       DCHECK(kArchVariant == kMips64r6);
-      fs = get_fpu_register_float(fs_reg);
-      if (std::isnan(fs) && std::isnan(ft)) {
-        set_fpu_register_float(fd_reg, fs);
-      } else if (std::isnan(fs) && !std::isnan(ft)) {
-        set_fpu_register_float(fd_reg, ft);
-      } else if (!std::isnan(fs) && std::isnan(ft)) {
-        set_fpu_register_float(fd_reg, fs);
-      } else {
-        float result;
-        if (fabs(fs) < fabs(ft)) {
-          result = ft;
-        } else if (fabs(fs) > fabs(ft)) {
-          result = fs;
-        } else {
-          result = (fs > ft ? fs : ft);
-        }
-        set_fpu_register_float(fd_reg, result);
-      }
+      SetFPUFloatResult(fd_reg(), FPUMaxA(ft, fs));
       break;
     case MIN:
       DCHECK(kArchVariant == kMips64r6);
-      fs = get_fpu_register_float(fs_reg);
-      if (std::isnan(fs) && std::isnan(ft)) {
-        set_fpu_register_float(fd_reg, fs);
-      } else if (std::isnan(fs) && !std::isnan(ft)) {
-        set_fpu_register_float(fd_reg, ft);
-      } else if (!std::isnan(fs) && std::isnan(ft)) {
-        set_fpu_register_float(fd_reg, fs);
-      } else {
-        set_fpu_register_float(fd_reg, (fs >= ft) ? ft : fs);
-      }
+      SetFPUFloatResult(fd_reg(), FPUMin(ft, fs));
       break;
     case MAX:
       DCHECK(kArchVariant == kMips64r6);
-      fs = get_fpu_register_float(fs_reg);
-      if (std::isnan(fs) && std::isnan(ft)) {
-        set_fpu_register_float(fd_reg, fs);
-      } else if (std::isnan(fs) && !std::isnan(ft)) {
-        set_fpu_register_float(fd_reg, ft);
-      } else if (!std::isnan(fs) && std::isnan(ft)) {
-        set_fpu_register_float(fd_reg, fs);
-      } else {
-        set_fpu_register_float(fd_reg, (fs <= ft) ? ft : fs);
-      }
+      SetFPUFloatResult(fd_reg(), FPUMax(ft, fs));
       break;
     case SEL:
       DCHECK(kArchVariant == kMips64r6);
-      set_fpu_register_float(fd_reg, (fd_int & 0x1) == 0 ? fs : ft);
+      SetFPUFloatResult(fd_reg(), (fd_int & 0x1) == 0 ? fs : ft);
       break;
     case SELEQZ_C:
       DCHECK(kArchVariant == kMips64r6);
-      set_fpu_register_float(
-          fd_reg, (ft_int & 0x1) == 0 ? get_fpu_register_float(fs_reg) : 0.0);
+      SetFPUFloatResult(
+          fd_reg(),
+          (ft_int & 0x1) == 0 ? get_fpu_register_float(fs_reg()) : 0.0);
       break;
     case SELNEZ_C:
       DCHECK(kArchVariant == kMips64r6);
-      set_fpu_register_float(
-          fd_reg, (ft_int & 0x1) != 0 ? get_fpu_register_float(fs_reg) : 0.0);
+      SetFPUFloatResult(
+          fd_reg(),
+          (ft_int & 0x1) != 0 ? get_fpu_register_float(fs_reg()) : 0.0);
       break;
     case MOVZ_C: {
       DCHECK(kArchVariant == kMips64r2);
-      int32_t rt_reg = instr->RtValue();
-      int64_t rt = get_register(rt_reg);
-      if (rt == 0) {
-        set_fpu_register_float(fd_reg, fs);
+      if (rt() == 0) {
+        SetFPUFloatResult(fd_reg(), fs);
       }
       break;
     }
     case MOVN_C: {
       DCHECK(kArchVariant == kMips64r2);
-      int32_t rt_reg = instr->RtValue();
-      int64_t rt = get_register(rt_reg);
-      if (rt != 0) {
-        set_fpu_register_float(fd_reg, fs);
+      if (rt() != 0) {
+        SetFPUFloatResult(fd_reg(), fs);
       }
       break;
     }
     case MOVF: {
       // Same function field for MOVT.D and MOVF.D
-      uint32_t ft_cc = (ft_reg >> 2) & 0x7;
+      uint32_t ft_cc = (ft_reg() >> 2) & 0x7;
       ft_cc = get_fcsr_condition_bit(ft_cc);
 
-      if (instr->Bit(16)) {  // Read Tf bit.
+      if (instr_.Bit(16)) {  // Read Tf bit.
         // MOVT.D
-        if (test_fcsr_bit(ft_cc)) set_fpu_register_float(fd_reg, fs);
+        if (test_fcsr_bit(ft_cc)) SetFPUFloatResult(fd_reg(), fs);
       } else {
         // MOVF.D
-        if (!test_fcsr_bit(ft_cc)) set_fpu_register_float(fd_reg, fs);
+        if (!test_fcsr_bit(ft_cc)) SetFPUFloatResult(fd_reg(), fs);
       }
       break;
     }
@@ -3048,21 +2865,18 @@ void Simulator::DecodeTypeRegisterSRsType(Instruction* instr,
 }
 
 
-void Simulator::DecodeTypeRegisterDRsType(Instruction* instr,
-                                          const int32_t fs_reg,
-                                          const int32_t ft_reg,
-                                          const int32_t fd_reg) {
+void Simulator::DecodeTypeRegisterDRsType() {
   double ft, fs, fd;
   uint32_t cc, fcsr_cc;
-  fs = get_fpu_register_double(fs_reg);
-  ft = (instr->FunctionFieldRaw() != MOVF) ? get_fpu_register_double(ft_reg)
+  fs = get_fpu_register_double(fs_reg());
+  ft = (instr_.FunctionFieldRaw() != MOVF) ? get_fpu_register_double(ft_reg())
                                            : 0.0;
-  fd = get_fpu_register_double(fd_reg);
-  cc = instr->FCccValue();
+  fd = get_fpu_register_double(fd_reg());
+  cc = instr_.FCccValue();
   fcsr_cc = get_fcsr_condition_bit(cc);
   int64_t ft_int = bit_cast<int64_t>(ft);
   int64_t fd_int = bit_cast<int64_t>(fd);
-  switch (instr->FunctionFieldRaw()) {
+  switch (instr_.FunctionFieldRaw()) {
     case RINT: {
       DCHECK(kArchVariant == kMips64r6);
       double result, temp, temp_result;
@@ -3094,7 +2908,7 @@ void Simulator::DecodeTypeRegisterDRsType(Instruction* instr,
           result = lower;
           break;
       }
-      set_fpu_register_double(fd_reg, result);
+      SetFPUDoubleResult(fd_reg(), result);
       if (result != fs) {
         set_fcsr_bit(kFCSRInexactFlagBit, true);
       }
@@ -3102,177 +2916,153 @@ void Simulator::DecodeTypeRegisterDRsType(Instruction* instr,
     }
     case SEL:
       DCHECK(kArchVariant == kMips64r6);
-      set_fpu_register_double(fd_reg, (fd_int & 0x1) == 0 ? fs : ft);
+      SetFPUDoubleResult(fd_reg(), (fd_int & 0x1) == 0 ? fs : ft);
       break;
     case SELEQZ_C:
       DCHECK(kArchVariant == kMips64r6);
-      set_fpu_register_double(fd_reg, (ft_int & 0x1) == 0 ? fs : 0.0);
+      SetFPUDoubleResult(fd_reg(), (ft_int & 0x1) == 0 ? fs : 0.0);
       break;
     case SELNEZ_C:
       DCHECK(kArchVariant == kMips64r6);
-      set_fpu_register_double(fd_reg, (ft_int & 0x1) != 0 ? fs : 0.0);
+      SetFPUDoubleResult(fd_reg(), (ft_int & 0x1) != 0 ? fs : 0.0);
       break;
     case MOVZ_C: {
       DCHECK(kArchVariant == kMips64r2);
-      int32_t rt_reg = instr->RtValue();
-      int64_t rt = get_register(rt_reg);
-      if (rt == 0) {
-        set_fpu_register_double(fd_reg, fs);
+      if (rt() == 0) {
+        SetFPUDoubleResult(fd_reg(), fs);
       }
       break;
     }
     case MOVN_C: {
       DCHECK(kArchVariant == kMips64r2);
-      int32_t rt_reg = instr->RtValue();
-      int64_t rt = get_register(rt_reg);
-      if (rt != 0) {
-        set_fpu_register_double(fd_reg, fs);
+      if (rt() != 0) {
+        SetFPUDoubleResult(fd_reg(), fs);
       }
       break;
     }
     case MOVF: {
       // Same function field for MOVT.D and MOVF.D
-      uint32_t ft_cc = (ft_reg >> 2) & 0x7;
+      uint32_t ft_cc = (ft_reg() >> 2) & 0x7;
       ft_cc = get_fcsr_condition_bit(ft_cc);
-      if (instr->Bit(16)) {  // Read Tf bit.
+      if (instr_.Bit(16)) {  // Read Tf bit.
         // MOVT.D
-        if (test_fcsr_bit(ft_cc)) set_fpu_register_double(fd_reg, fs);
+        if (test_fcsr_bit(ft_cc)) SetFPUDoubleResult(fd_reg(), fs);
       } else {
         // MOVF.D
-        if (!test_fcsr_bit(ft_cc)) set_fpu_register_double(fd_reg, fs);
+        if (!test_fcsr_bit(ft_cc)) SetFPUDoubleResult(fd_reg(), fs);
       }
       break;
     }
     case MINA:
       DCHECK(kArchVariant == kMips64r6);
-      fs = get_fpu_register_double(fs_reg);
-      if (std::isnan(fs) && std::isnan(ft)) {
-        set_fpu_register_double(fd_reg, fs);
-      } else if (std::isnan(fs) && !std::isnan(ft)) {
-        set_fpu_register_double(fd_reg, ft);
-      } else if (!std::isnan(fs) && std::isnan(ft)) {
-        set_fpu_register_double(fd_reg, fs);
-      } else {
-        double result;
-        if (fabs(fs) > fabs(ft)) {
-          result = ft;
-        } else if (fabs(fs) < fabs(ft)) {
-          result = fs;
-        } else {
-          result = (fs > ft ? fs : ft);
-        }
-        set_fpu_register_double(fd_reg, result);
-      }
+      SetFPUDoubleResult(fd_reg(), FPUMinA(ft, fs));
       break;
     case MAXA:
       DCHECK(kArchVariant == kMips64r6);
-      fs = get_fpu_register_double(fs_reg);
-      if (std::isnan(fs) && std::isnan(ft)) {
-        set_fpu_register_double(fd_reg, fs);
-      } else if (std::isnan(fs) && !std::isnan(ft)) {
-        set_fpu_register_double(fd_reg, ft);
-      } else if (!std::isnan(fs) && std::isnan(ft)) {
-        set_fpu_register_double(fd_reg, fs);
-      } else {
-        double result;
-        if (fabs(fs) < fabs(ft)) {
-          result = ft;
-        } else if (fabs(fs) > fabs(ft)) {
-          result = fs;
-        } else {
-          result = (fs > ft ? fs : ft);
-        }
-        set_fpu_register_double(fd_reg, result);
-      }
+      SetFPUDoubleResult(fd_reg(), FPUMaxA(ft, fs));
       break;
     case MIN:
       DCHECK(kArchVariant == kMips64r6);
-      fs = get_fpu_register_double(fs_reg);
-      if (std::isnan(fs) && std::isnan(ft)) {
-        set_fpu_register_double(fd_reg, fs);
-      } else if (std::isnan(fs) && !std::isnan(ft)) {
-        set_fpu_register_double(fd_reg, ft);
-      } else if (!std::isnan(fs) && std::isnan(ft)) {
-        set_fpu_register_double(fd_reg, fs);
-      } else {
-        set_fpu_register_double(fd_reg, (fs >= ft) ? ft : fs);
-      }
+      SetFPUDoubleResult(fd_reg(), FPUMin(ft, fs));
       break;
     case MAX:
       DCHECK(kArchVariant == kMips64r6);
-      fs = get_fpu_register_double(fs_reg);
-      if (std::isnan(fs) && std::isnan(ft)) {
-        set_fpu_register_double(fd_reg, fs);
-      } else if (std::isnan(fs) && !std::isnan(ft)) {
-        set_fpu_register_double(fd_reg, ft);
-      } else if (!std::isnan(fs) && std::isnan(ft)) {
-        set_fpu_register_double(fd_reg, fs);
-      } else {
-        set_fpu_register_double(fd_reg, (fs <= ft) ? ft : fs);
-      }
+      SetFPUDoubleResult(fd_reg(), FPUMax(ft, fs));
       break;
     case ADD_D:
-      set_fpu_register_double(fd_reg, fs + ft);
+      SetFPUDoubleResult(
+          fd_reg(),
+          FPUCanonalizeOperation(
+              [](double lhs, double rhs) { return lhs + rhs; }, fs, ft));
       break;
     case SUB_D:
-      set_fpu_register_double(fd_reg, fs - ft);
+      SetFPUDoubleResult(
+          fd_reg(),
+          FPUCanonalizeOperation(
+              [](double lhs, double rhs) { return lhs - rhs; }, fs, ft));
+      break;
+    case MADDF_D:
+      DCHECK(kArchVariant == kMips64r6);
+      SetFPUDoubleResult(fd_reg(), std::fma(fs, ft, fd));
+      break;
+    case MSUBF_D:
+      DCHECK(kArchVariant == kMips64r6);
+      SetFPUDoubleResult(fd_reg(), std::fma(-fs, ft, fd));
       break;
     case MUL_D:
-      set_fpu_register_double(fd_reg, fs * ft);
+      SetFPUDoubleResult(
+          fd_reg(),
+          FPUCanonalizeOperation(
+              [](double lhs, double rhs) { return lhs * rhs; }, fs, ft));
       break;
     case DIV_D:
-      set_fpu_register_double(fd_reg, fs / ft);
+      SetFPUDoubleResult(
+          fd_reg(),
+          FPUCanonalizeOperation(
+              [](double lhs, double rhs) { return lhs / rhs; }, fs, ft));
       break;
     case ABS_D:
-      set_fpu_register_double(fd_reg, fabs(fs));
+      SetFPUDoubleResult(
+          fd_reg(),
+          FPUCanonalizeOperation([](double fs) { return FPAbs(fs); }, fs));
       break;
     case MOV_D:
-      set_fpu_register_double(fd_reg, fs);
+      SetFPUDoubleResult(fd_reg(), fs);
       break;
     case NEG_D:
-      set_fpu_register_double(fd_reg, -fs);
+      SetFPUDoubleResult(fd_reg(),
+                         FPUCanonalizeOperation([](double src) { return -src; },
+                                                KeepSign::yes, fs));
       break;
     case SQRT_D:
-      set_fpu_register_double(fd_reg, fast_sqrt(fs));
+      SetFPUDoubleResult(
+          fd_reg(),
+          FPUCanonalizeOperation([](double fs) { return std::sqrt(fs); }, fs));
       break;
-    case RSQRT_D: {
-      double result = 1.0 / fast_sqrt(fs);
-      set_fpu_register_double(fd_reg, result);
+    case RSQRT_D:
+      SetFPUDoubleResult(
+          fd_reg(), FPUCanonalizeOperation(
+                        [](double fs) { return 1.0 / std::sqrt(fs); }, fs));
       break;
-    }
-    case RECIP_D: {
-      double result = 1.0 / fs;
-      set_fpu_register_double(fd_reg, result);
+    case RECIP_D:
+      SetFPUDoubleResult(fd_reg(), FPUCanonalizeOperation(
+                                       [](double fs) { return 1.0 / fs; }, fs));
       break;
-    }
     case C_UN_D:
       set_fcsr_bit(fcsr_cc, std::isnan(fs) || std::isnan(ft));
+      TraceRegWr(test_fcsr_bit(fcsr_cc));
       break;
     case C_EQ_D:
       set_fcsr_bit(fcsr_cc, (fs == ft));
+      TraceRegWr(test_fcsr_bit(fcsr_cc));
       break;
     case C_UEQ_D:
       set_fcsr_bit(fcsr_cc, (fs == ft) || (std::isnan(fs) || std::isnan(ft)));
+      TraceRegWr(test_fcsr_bit(fcsr_cc));
       break;
     case C_OLT_D:
       set_fcsr_bit(fcsr_cc, (fs < ft));
+      TraceRegWr(test_fcsr_bit(fcsr_cc));
       break;
     case C_ULT_D:
       set_fcsr_bit(fcsr_cc, (fs < ft) || (std::isnan(fs) || std::isnan(ft)));
+      TraceRegWr(test_fcsr_bit(fcsr_cc));
       break;
     case C_OLE_D:
       set_fcsr_bit(fcsr_cc, (fs <= ft));
+      TraceRegWr(test_fcsr_bit(fcsr_cc));
       break;
     case C_ULE_D:
       set_fcsr_bit(fcsr_cc, (fs <= ft) || (std::isnan(fs) || std::isnan(ft)));
+      TraceRegWr(test_fcsr_bit(fcsr_cc));
       break;
     case CVT_W_D: {  // Convert double to word.
       double rounded;
       int32_t result;
       round_according_to_fcsr(fs, rounded, result, fs);
-      set_fpu_register_word(fd_reg, result);
+      SetFPUWordResult(fd_reg(), result);
       if (set_fcsr_round_error(fs, rounded)) {
-        set_fpu_register_word(fd_reg, kFPUInvalidResult);
+        set_fpu_register_word_invalid_result(fs, rounded);
       }
       break;
     }
@@ -3285,48 +3075,48 @@ void Simulator::DecodeTypeRegisterDRsType(Instruction* instr,
         // round to the even one.
         result--;
       }
-      set_fpu_register_word(fd_reg, result);
+      SetFPUWordResult(fd_reg(), result);
       if (set_fcsr_round_error(fs, rounded)) {
-        set_fpu_register(fd_reg, kFPUInvalidResult);
+        set_fpu_register_invalid_result(fs, rounded);
       }
     } break;
     case TRUNC_W_D:  // Truncate double to word (round towards 0).
     {
       double rounded = trunc(fs);
       int32_t result = static_cast<int32_t>(rounded);
-      set_fpu_register_word(fd_reg, result);
+      SetFPUWordResult(fd_reg(), result);
       if (set_fcsr_round_error(fs, rounded)) {
-        set_fpu_register(fd_reg, kFPUInvalidResult);
+        set_fpu_register_invalid_result(fs, rounded);
       }
     } break;
     case FLOOR_W_D:  // Round double to word towards negative infinity.
     {
       double rounded = std::floor(fs);
       int32_t result = static_cast<int32_t>(rounded);
-      set_fpu_register_word(fd_reg, result);
+      SetFPUWordResult(fd_reg(), result);
       if (set_fcsr_round_error(fs, rounded)) {
-        set_fpu_register(fd_reg, kFPUInvalidResult);
+        set_fpu_register_invalid_result(fs, rounded);
       }
     } break;
     case CEIL_W_D:  // Round double to word towards positive infinity.
     {
       double rounded = std::ceil(fs);
       int32_t result = static_cast<int32_t>(rounded);
-      set_fpu_register_word(fd_reg, result);
+      SetFPUWordResult2(fd_reg(), result);
       if (set_fcsr_round_error(fs, rounded)) {
-        set_fpu_register(fd_reg, kFPUInvalidResult);
+        set_fpu_register_invalid_result(fs, rounded);
       }
     } break;
     case CVT_S_D:  // Convert double to float (single).
-      set_fpu_register_float(fd_reg, static_cast<float>(fs));
+      SetFPUFloatResult(fd_reg(), static_cast<float>(fs));
       break;
     case CVT_L_D: {  // Mips64r2: Truncate double to 64-bit long-word.
       double rounded;
       int64_t result;
       round64_according_to_fcsr(fs, rounded, result, fs);
-      set_fpu_register(fd_reg, result);
+      SetFPUResult(fd_reg(), result);
       if (set_fcsr_round64_error(fs, rounded)) {
-        set_fpu_register(fd_reg, kFPU64InvalidResult);
+        set_fpu_register_invalid_result64(fs, rounded);
       }
       break;
     }
@@ -3339,36 +3129,36 @@ void Simulator::DecodeTypeRegisterDRsType(Instruction* instr,
         result--;
       }
       int64_t i64 = static_cast<int64_t>(result);
-      set_fpu_register(fd_reg, i64);
+      SetFPUResult(fd_reg(), i64);
       if (set_fcsr_round64_error(fs, rounded)) {
-        set_fpu_register(fd_reg, kFPU64InvalidResult);
+        set_fpu_register_invalid_result64(fs, rounded);
       }
       break;
     }
     case TRUNC_L_D: {  // Mips64r2 instruction.
       double rounded = trunc(fs);
       int64_t result = static_cast<int64_t>(rounded);
-      set_fpu_register(fd_reg, result);
+      SetFPUResult(fd_reg(), result);
       if (set_fcsr_round64_error(fs, rounded)) {
-        set_fpu_register(fd_reg, kFPU64InvalidResult);
+        set_fpu_register_invalid_result64(fs, rounded);
       }
       break;
     }
     case FLOOR_L_D: {  // Mips64r2 instruction.
       double rounded = floor(fs);
       int64_t result = static_cast<int64_t>(rounded);
-      set_fpu_register(fd_reg, result);
+      SetFPUResult(fd_reg(), result);
       if (set_fcsr_round64_error(fs, rounded)) {
-        set_fpu_register(fd_reg, kFPU64InvalidResult);
+        set_fpu_register_invalid_result64(fs, rounded);
       }
       break;
     }
     case CEIL_L_D: {  // Mips64r2 instruction.
       double rounded = ceil(fs);
       int64_t result = static_cast<int64_t>(rounded);
-      set_fpu_register(fd_reg, result);
+      SetFPUResult(fd_reg(), result);
       if (set_fcsr_round64_error(fs, rounded)) {
-        set_fpu_register(fd_reg, kFPU64InvalidResult);
+        set_fpu_register_invalid_result64(fs, rounded);
       }
       break;
     }
@@ -3433,12 +3223,12 @@ void Simulator::DecodeTypeRegisterDRsType(Instruction* instr,
       DCHECK(result != 0);
 
       dResult = bit_cast<double>(result);
-      set_fpu_register_double(fd_reg, dResult);
-
+      SetFPUDoubleResult(fd_reg(), dResult);
       break;
     }
     case C_F_D: {
       set_fcsr_bit(fcsr_cc, false);
+      TraceRegWr(test_fcsr_bit(fcsr_cc));
       break;
     }
     default:
@@ -3447,93 +3237,90 @@ void Simulator::DecodeTypeRegisterDRsType(Instruction* instr,
 }
 
 
-void Simulator::DecodeTypeRegisterWRsType(Instruction* instr,
-                                          const int32_t fs_reg,
-                                          const int32_t fd_reg,
-                                          const int32_t ft_reg,
-                                          int64_t& alu_out) {
-  float fs = get_fpu_register_float(fs_reg);
-  float ft = get_fpu_register_float(ft_reg);
-  switch (instr->FunctionFieldRaw()) {
+void Simulator::DecodeTypeRegisterWRsType() {
+  float fs = get_fpu_register_float(fs_reg());
+  float ft = get_fpu_register_float(ft_reg());
+  int64_t alu_out = 0x12345678;
+  switch (instr_.FunctionFieldRaw()) {
     case CVT_S_W:  // Convert word to float (single).
-      alu_out = get_fpu_register_signed_word(fs_reg);
-      set_fpu_register_float(fd_reg, static_cast<float>(alu_out));
+      alu_out = get_fpu_register_signed_word(fs_reg());
+      SetFPUFloatResult(fd_reg(), static_cast<float>(alu_out));
       break;
     case CVT_D_W:  // Convert word to double.
-      alu_out = get_fpu_register_signed_word(fs_reg);
-      set_fpu_register_double(fd_reg, static_cast<double>(alu_out));
+      alu_out = get_fpu_register_signed_word(fs_reg());
+      SetFPUDoubleResult(fd_reg(), static_cast<double>(alu_out));
       break;
     case CMP_AF:
-      set_fpu_register_word(fd_reg, 0);
+      SetFPUWordResult2(fd_reg(), 0);
       break;
     case CMP_UN:
       if (std::isnan(fs) || std::isnan(ft)) {
-        set_fpu_register_word(fd_reg, -1);
+        SetFPUWordResult2(fd_reg(), -1);
       } else {
-        set_fpu_register_word(fd_reg, 0);
+        SetFPUWordResult2(fd_reg(), 0);
       }
       break;
     case CMP_EQ:
       if (fs == ft) {
-        set_fpu_register_word(fd_reg, -1);
+        SetFPUWordResult2(fd_reg(), -1);
       } else {
-        set_fpu_register_word(fd_reg, 0);
+        SetFPUWordResult2(fd_reg(), 0);
       }
       break;
     case CMP_UEQ:
       if ((fs == ft) || (std::isnan(fs) || std::isnan(ft))) {
-        set_fpu_register_word(fd_reg, -1);
+        SetFPUWordResult2(fd_reg(), -1);
       } else {
-        set_fpu_register_word(fd_reg, 0);
+        SetFPUWordResult2(fd_reg(), 0);
       }
       break;
     case CMP_LT:
       if (fs < ft) {
-        set_fpu_register_word(fd_reg, -1);
+        SetFPUWordResult2(fd_reg(), -1);
       } else {
-        set_fpu_register_word(fd_reg, 0);
+        SetFPUWordResult2(fd_reg(), 0);
       }
       break;
     case CMP_ULT:
       if ((fs < ft) || (std::isnan(fs) || std::isnan(ft))) {
-        set_fpu_register_word(fd_reg, -1);
+        SetFPUWordResult2(fd_reg(), -1);
       } else {
-        set_fpu_register_word(fd_reg, 0);
+        SetFPUWordResult2(fd_reg(), 0);
       }
       break;
     case CMP_LE:
       if (fs <= ft) {
-        set_fpu_register_word(fd_reg, -1);
+        SetFPUWordResult2(fd_reg(), -1);
       } else {
-        set_fpu_register_word(fd_reg, 0);
+        SetFPUWordResult2(fd_reg(), 0);
       }
       break;
     case CMP_ULE:
       if ((fs <= ft) || (std::isnan(fs) || std::isnan(ft))) {
-        set_fpu_register_word(fd_reg, -1);
+        SetFPUWordResult2(fd_reg(), -1);
       } else {
-        set_fpu_register_word(fd_reg, 0);
+        SetFPUWordResult2(fd_reg(), 0);
       }
       break;
     case CMP_OR:
       if (!std::isnan(fs) && !std::isnan(ft)) {
-        set_fpu_register_word(fd_reg, -1);
+        SetFPUWordResult2(fd_reg(), -1);
       } else {
-        set_fpu_register_word(fd_reg, 0);
+        SetFPUWordResult2(fd_reg(), 0);
       }
       break;
     case CMP_UNE:
       if ((fs != ft) || (std::isnan(fs) || std::isnan(ft))) {
-        set_fpu_register_word(fd_reg, -1);
+        SetFPUWordResult2(fd_reg(), -1);
       } else {
-        set_fpu_register_word(fd_reg, 0);
+        SetFPUWordResult2(fd_reg(), 0);
       }
       break;
     case CMP_NE:
       if (fs != ft) {
-        set_fpu_register_word(fd_reg, -1);
+        SetFPUWordResult2(fd_reg(), -1);
       } else {
-        set_fpu_register_word(fd_reg, 0);
+        SetFPUWordResult2(fd_reg(), 0);
       }
       break;
     default:
@@ -3542,93 +3329,90 @@ void Simulator::DecodeTypeRegisterWRsType(Instruction* instr,
 }
 
 
-void Simulator::DecodeTypeRegisterLRsType(Instruction* instr,
-                                          const int32_t fs_reg,
-                                          const int32_t fd_reg,
-                                          const int32_t ft_reg) {
-  double fs = get_fpu_register_double(fs_reg);
-  double ft = get_fpu_register_double(ft_reg);
+void Simulator::DecodeTypeRegisterLRsType() {
+  double fs = get_fpu_register_double(fs_reg());
+  double ft = get_fpu_register_double(ft_reg());
   int64_t i64;
-  switch (instr->FunctionFieldRaw()) {
+  switch (instr_.FunctionFieldRaw()) {
     case CVT_D_L:  // Mips32r2 instruction.
-      i64 = get_fpu_register(fs_reg);
-      set_fpu_register_double(fd_reg, static_cast<double>(i64));
+      i64 = get_fpu_register(fs_reg());
+      SetFPUDoubleResult(fd_reg(), static_cast<double>(i64));
       break;
     case CVT_S_L:
-      i64 = get_fpu_register(fs_reg);
-      set_fpu_register_float(fd_reg, static_cast<float>(i64));
+      i64 = get_fpu_register(fs_reg());
+      SetFPUFloatResult(fd_reg(), static_cast<float>(i64));
       break;
     case CMP_AF:
-      set_fpu_register(fd_reg, 0);
+      SetFPUResult(fd_reg(), 0);
       break;
     case CMP_UN:
       if (std::isnan(fs) || std::isnan(ft)) {
-        set_fpu_register(fd_reg, -1);
+        SetFPUResult(fd_reg(), -1);
       } else {
-        set_fpu_register(fd_reg, 0);
+        SetFPUResult(fd_reg(), 0);
       }
       break;
     case CMP_EQ:
       if (fs == ft) {
-        set_fpu_register(fd_reg, -1);
+        SetFPUResult(fd_reg(), -1);
       } else {
-        set_fpu_register(fd_reg, 0);
+        SetFPUResult(fd_reg(), 0);
       }
       break;
     case CMP_UEQ:
       if ((fs == ft) || (std::isnan(fs) || std::isnan(ft))) {
-        set_fpu_register(fd_reg, -1);
+        SetFPUResult(fd_reg(), -1);
       } else {
-        set_fpu_register(fd_reg, 0);
+        SetFPUResult(fd_reg(), 0);
       }
       break;
     case CMP_LT:
       if (fs < ft) {
-        set_fpu_register(fd_reg, -1);
+        SetFPUResult(fd_reg(), -1);
       } else {
-        set_fpu_register(fd_reg, 0);
+        SetFPUResult(fd_reg(), 0);
       }
       break;
     case CMP_ULT:
       if ((fs < ft) || (std::isnan(fs) || std::isnan(ft))) {
-        set_fpu_register(fd_reg, -1);
+        SetFPUResult(fd_reg(), -1);
       } else {
-        set_fpu_register(fd_reg, 0);
+        SetFPUResult(fd_reg(), 0);
       }
       break;
     case CMP_LE:
       if (fs <= ft) {
-        set_fpu_register(fd_reg, -1);
+        SetFPUResult(fd_reg(), -1);
       } else {
-        set_fpu_register(fd_reg, 0);
+        SetFPUResult(fd_reg(), 0);
       }
       break;
     case CMP_ULE:
       if ((fs <= ft) || (std::isnan(fs) || std::isnan(ft))) {
-        set_fpu_register(fd_reg, -1);
+        SetFPUResult(fd_reg(), -1);
       } else {
-        set_fpu_register(fd_reg, 0);
+        SetFPUResult(fd_reg(), 0);
       }
       break;
     case CMP_OR:
       if (!std::isnan(fs) && !std::isnan(ft)) {
-        set_fpu_register(fd_reg, -1);
+        SetFPUResult(fd_reg(), -1);
       } else {
-        set_fpu_register(fd_reg, 0);
+        SetFPUResult(fd_reg(), 0);
       }
       break;
     case CMP_UNE:
       if ((fs != ft) || (std::isnan(fs) || std::isnan(ft))) {
-        set_fpu_register(fd_reg, -1);
+        SetFPUResult(fd_reg(), -1);
       } else {
-        set_fpu_register(fd_reg, 0);
+        SetFPUResult(fd_reg(), 0);
       }
       break;
     case CMP_NE:
       if (fs != ft && (!std::isnan(fs) && !std::isnan(ft))) {
-        set_fpu_register(fd_reg, -1);
+        SetFPUResult(fd_reg(), -1);
       } else {
-        set_fpu_register(fd_reg, 0);
+        SetFPUResult(fd_reg(), 0);
       }
       break;
     default:
@@ -3636,54 +3420,67 @@ void Simulator::DecodeTypeRegisterLRsType(Instruction* instr,
   }
 }
 
-void Simulator::DecodeTypeRegisterCOP1(
-    Instruction* instr, const int32_t rs_reg, const int64_t rs,
-    const uint64_t rs_u, const int32_t rt_reg, const int64_t rt,
-    const uint64_t rt_u, const int32_t rd_reg, const int32_t fr_reg,
-    const int32_t fs_reg, const int32_t ft_reg, const int32_t fd_reg,
-    int64_t& alu_out) {
-  switch (instr->RsFieldRaw()) {
+
+void Simulator::DecodeTypeRegisterCOP1() {
+  switch (instr_.RsFieldRaw()) {
     case BC1:  // Branch on coprocessor condition.
     case BC1EQZ:
     case BC1NEZ:
       UNREACHABLE();
       break;
     case CFC1:
-      set_register(rt_reg, alu_out);
+      // At the moment only FCSR is supported.
+      DCHECK(fs_reg() == kFCSRRegister);
+      SetResult(rt_reg(), FCSR_);
       break;
     case MFC1:
+      set_register(rt_reg(),
+                   static_cast<int64_t>(get_fpu_register_word(fs_reg())));
+      TraceRegWr(get_register(rt_reg()), WORD_DWORD);
+      break;
     case DMFC1:
+      SetResult(rt_reg(), get_fpu_register(fs_reg()));
+      break;
     case MFHC1:
-      set_register(rt_reg, alu_out);
+      SetResult(rt_reg(), get_fpu_register_hi_word(fs_reg()));
       break;
-    case CTC1:
+    case CTC1: {
       // At the moment only FCSR is supported.
-      DCHECK(fs_reg == kFCSRRegister);
-      FCSR_ = static_cast<uint32_t>(registers_[rt_reg]);
+      DCHECK(fs_reg() == kFCSRRegister);
+      uint32_t reg = static_cast<uint32_t>(rt());
+      if (kArchVariant == kMips64r6) {
+        FCSR_ = reg | kFCSRNaN2008FlagMask;
+      } else {
+        DCHECK(kArchVariant == kMips64r2);
+        FCSR_ = reg & ~kFCSRNaN2008FlagMask;
+      }
+      TraceRegWr(FCSR_);
       break;
+    }
     case MTC1:
       // Hardware writes upper 32-bits to zero on mtc1.
-      set_fpu_register_hi_word(fs_reg, 0);
-      set_fpu_register_word(fs_reg, static_cast<int32_t>(registers_[rt_reg]));
+      set_fpu_register_hi_word(fs_reg(), 0);
+      set_fpu_register_word(fs_reg(), static_cast<int32_t>(rt()));
+      TraceRegWr(get_fpu_register(fs_reg()), FLOAT_DOUBLE);
       break;
     case DMTC1:
-      set_fpu_register(fs_reg, registers_[rt_reg]);
+      SetFPUResult2(fs_reg(), rt());
       break;
     case MTHC1:
-      set_fpu_register_hi_word(fs_reg,
-                               static_cast<int32_t>(registers_[rt_reg]));
+      set_fpu_register_hi_word(fs_reg(), static_cast<int32_t>(rt()));
+      TraceRegWr(get_fpu_register(fs_reg()), DOUBLE);
       break;
     case S:
-      DecodeTypeRegisterSRsType(instr, fs_reg, ft_reg, fd_reg);
+      DecodeTypeRegisterSRsType();
       break;
     case D:
-      DecodeTypeRegisterDRsType(instr, fs_reg, ft_reg, fd_reg);
+      DecodeTypeRegisterDRsType();
       break;
     case W:
-      DecodeTypeRegisterWRsType(instr, fs_reg, fd_reg, ft_reg, alu_out);
+      DecodeTypeRegisterWRsType();
       break;
     case L:
-      DecodeTypeRegisterLRsType(instr, fs_reg, fd_reg, ft_reg);
+      DecodeTypeRegisterLRsType();
       break;
     default:
       UNREACHABLE();
@@ -3691,44 +3488,68 @@ void Simulator::DecodeTypeRegisterCOP1(
 }
 
 
-void Simulator::DecodeTypeRegisterCOP1X(Instruction* instr,
-                                        const int32_t fr_reg,
-                                        const int32_t fs_reg,
-                                        const int32_t ft_reg,
-                                        const int32_t fd_reg) {
-  switch (instr->FunctionFieldRaw()) {
-    case MADD_D:
+void Simulator::DecodeTypeRegisterCOP1X() {
+  switch (instr_.FunctionFieldRaw()) {
+    case MADD_S: {
+      DCHECK(kArchVariant == kMips64r2);
+      float fr, ft, fs;
+      fr = get_fpu_register_float(fr_reg());
+      fs = get_fpu_register_float(fs_reg());
+      ft = get_fpu_register_float(ft_reg());
+      SetFPUFloatResult(fd_reg(), fs * ft + fr);
+      break;
+    }
+    case MSUB_S: {
+      DCHECK(kArchVariant == kMips64r2);
+      float fr, ft, fs;
+      fr = get_fpu_register_float(fr_reg());
+      fs = get_fpu_register_float(fs_reg());
+      ft = get_fpu_register_float(ft_reg());
+      SetFPUFloatResult(fd_reg(), fs * ft - fr);
+      break;
+    }
+    case MADD_D: {
+      DCHECK(kArchVariant == kMips64r2);
       double fr, ft, fs;
-      fr = get_fpu_register_double(fr_reg);
-      fs = get_fpu_register_double(fs_reg);
-      ft = get_fpu_register_double(ft_reg);
-      set_fpu_register_double(fd_reg, fs * ft + fr);
+      fr = get_fpu_register_double(fr_reg());
+      fs = get_fpu_register_double(fs_reg());
+      ft = get_fpu_register_double(ft_reg());
+      SetFPUDoubleResult(fd_reg(), fs * ft + fr);
       break;
+    }
+    case MSUB_D: {
+      DCHECK(kArchVariant == kMips64r2);
+      double fr, ft, fs;
+      fr = get_fpu_register_double(fr_reg());
+      fs = get_fpu_register_double(fs_reg());
+      ft = get_fpu_register_double(ft_reg());
+      SetFPUDoubleResult(fd_reg(), fs * ft - fr);
+      break;
+    }
     default:
       UNREACHABLE();
   }
 }
 
 
-void Simulator::DecodeTypeRegisterSPECIAL(
-    Instruction* instr, const int32_t rs_reg, const int64_t rs,
-    const uint64_t rs_u, const int32_t rt_reg, const int64_t rt,
-    const uint64_t rt_u, const int32_t rd_reg, const int32_t fr_reg,
-    const int32_t fs_reg, const int32_t ft_reg, const int32_t fd_reg,
-    const int64_t i64hilo, const uint64_t u64hilo, const int64_t alu_out,
-    const bool do_interrupt, const int64_t current_pc, const int64_t next_pc,
-    const int32_t return_addr_reg, const int64_t i128resultH,
-    const int64_t i128resultL) {
-  switch (instr->FunctionFieldRaw()) {
+void Simulator::DecodeTypeRegisterSPECIAL() {
+  int64_t i64hilo;
+  uint64_t u64hilo;
+  int64_t alu_out;
+  bool do_interrupt = false;
+
+  switch (instr_.FunctionFieldRaw()) {
     case SELEQZ_S:
       DCHECK(kArchVariant == kMips64r6);
-      set_register(rd_reg, rt == 0 ? rs : 0);
+      SetResult(rd_reg(), rt() == 0 ? rs() : 0);
       break;
     case SELNEZ_S:
       DCHECK(kArchVariant == kMips64r6);
-      set_register(rd_reg, rt != 0 ? rs : 0);
+      SetResult(rd_reg(), rt() != 0 ? rs() : 0);
       break;
     case JR: {
+      int64_t next_pc = rs();
+      int64_t current_pc = get_pc();
       Instruction* branch_delay_instr =
           reinterpret_cast<Instruction*>(current_pc + Instruction::kInstrSize);
       BranchDelayInstructionDecode(branch_delay_instr);
@@ -3737,6 +3558,9 @@ void Simulator::DecodeTypeRegisterSPECIAL(
       break;
     }
     case JALR: {
+      int64_t next_pc = rs();
+      int64_t current_pc = get_pc();
+      int32_t return_addr_reg = rd_reg();
       Instruction* branch_delay_instr =
           reinterpret_cast<Instruction*>(current_pc + Instruction::kInstrSize);
       BranchDelayInstructionDecode(branch_delay_instr);
@@ -3745,18 +3569,169 @@ void Simulator::DecodeTypeRegisterSPECIAL(
       pc_modified_ = true;
       break;
     }
+    case SLL:
+      SetResult(rd_reg(), static_cast<int32_t>(rt()) << sa());
+      break;
+    case DSLL:
+      SetResult(rd_reg(), rt() << sa());
+      break;
+    case DSLL32:
+      SetResult(rd_reg(), rt() << sa() << 32);
+      break;
+    case SRL:
+      if (rs_reg() == 0) {
+        // Regular logical right shift of a word by a fixed number of
+        // bits instruction. RS field is always equal to 0.
+        // Sign-extend the 32-bit result.
+        alu_out = static_cast<int32_t>(static_cast<uint32_t>(rt_u()) >> sa());
+      } else if (rs_reg() == 1) {
+        // Logical right-rotate of a word by a fixed number of bits. This
+        // is special case of SRL instruction, added in MIPS32 Release 2.
+        // RS field is equal to 00001.
+        alu_out = static_cast<int32_t>(
+            base::bits::RotateRight32(static_cast<const uint32_t>(rt_u()),
+                                      static_cast<const uint32_t>(sa())));
+      } else {
+        UNREACHABLE();
+      }
+      SetResult(rd_reg(), alu_out);
+      break;
+    case DSRL:
+      if (rs_reg() == 0) {
+        // Regular logical right shift of a word by a fixed number of
+        // bits instruction. RS field is always equal to 0.
+        // Sign-extend the 64-bit result.
+        alu_out = static_cast<int64_t>(rt_u() >> sa());
+      } else if (rs_reg() == 1) {
+        // Logical right-rotate of a word by a fixed number of bits. This
+        // is special case of SRL instruction, added in MIPS32 Release 2.
+        // RS field is equal to 00001.
+        alu_out = static_cast<int64_t>(base::bits::RotateRight64(rt_u(), sa()));
+      } else {
+        UNREACHABLE();
+      }
+      SetResult(rd_reg(), alu_out);
+      break;
+    case DSRL32:
+      if (rs_reg() == 0) {
+        // Regular logical right shift of a word by a fixed number of
+        // bits instruction. RS field is always equal to 0.
+        // Sign-extend the 64-bit result.
+        alu_out = static_cast<int64_t>(rt_u() >> sa() >> 32);
+      } else if (rs_reg() == 1) {
+        // Logical right-rotate of a word by a fixed number of bits. This
+        // is special case of SRL instruction, added in MIPS32 Release 2.
+        // RS field is equal to 00001.
+        alu_out =
+            static_cast<int64_t>(base::bits::RotateRight64(rt_u(), sa() + 32));
+      } else {
+        UNREACHABLE();
+      }
+      SetResult(rd_reg(), alu_out);
+      break;
+    case SRA:
+      SetResult(rd_reg(), (int32_t)rt() >> sa());
+      break;
+    case DSRA:
+      SetResult(rd_reg(), rt() >> sa());
+      break;
+    case DSRA32:
+      SetResult(rd_reg(), rt() >> sa() >> 32);
+      break;
+    case SLLV:
+      SetResult(rd_reg(), (int32_t)rt() << rs());
+      break;
+    case DSLLV:
+      SetResult(rd_reg(), rt() << rs());
+      break;
+    case SRLV:
+      if (sa() == 0) {
+        // Regular logical right-shift of a word by a variable number of
+        // bits instruction. SA field is always equal to 0.
+        alu_out = static_cast<int32_t>((uint32_t)rt_u() >> rs());
+      } else {
+        // Logical right-rotate of a word by a variable number of bits.
+        // This is special case od SRLV instruction, added in MIPS32
+        // Release 2. SA field is equal to 00001.
+        alu_out = static_cast<int32_t>(
+            base::bits::RotateRight32(static_cast<const uint32_t>(rt_u()),
+                                      static_cast<const uint32_t>(rs_u())));
+      }
+      SetResult(rd_reg(), alu_out);
+      break;
+    case DSRLV:
+      if (sa() == 0) {
+        // Regular logical right-shift of a word by a variable number of
+        // bits instruction. SA field is always equal to 0.
+        alu_out = static_cast<int64_t>(rt_u() >> rs());
+      } else {
+        // Logical right-rotate of a word by a variable number of bits.
+        // This is special case od SRLV instruction, added in MIPS32
+        // Release 2. SA field is equal to 00001.
+        alu_out =
+            static_cast<int64_t>(base::bits::RotateRight64(rt_u(), rs_u()));
+      }
+      SetResult(rd_reg(), alu_out);
+      break;
+    case SRAV:
+      SetResult(rd_reg(), (int32_t)rt() >> rs());
+      break;
+    case DSRAV:
+      SetResult(rd_reg(), rt() >> rs());
+      break;
+    case LSA: {
+      DCHECK(kArchVariant == kMips64r6);
+      int8_t sa = lsa_sa() + 1;
+      int32_t _rt = static_cast<int32_t>(rt());
+      int32_t _rs = static_cast<int32_t>(rs());
+      int32_t res = _rs << sa;
+      res += _rt;
+      SetResult(rd_reg(), static_cast<int64_t>(res));
+      break;
+    }
+    case DLSA:
+      DCHECK(kArchVariant == kMips64r6);
+      SetResult(rd_reg(), (rs() << (lsa_sa() + 1)) + rt());
+      break;
+    case MFHI:  // MFHI == CLZ on R6.
+      if (kArchVariant != kMips64r6) {
+        DCHECK(sa() == 0);
+        alu_out = get_register(HI);
+      } else {
+        // MIPS spec: If no bits were set in GPR rs(), the result written to
+        // GPR rd() is 32.
+        DCHECK(sa() == 1);
+        alu_out = base::bits::CountLeadingZeros32(static_cast<int32_t>(rs_u()));
+      }
+      SetResult(rd_reg(), alu_out);
+      break;
+    case MFLO:  // MFLO == DCLZ on R6.
+      if (kArchVariant != kMips64r6) {
+        DCHECK(sa() == 0);
+        alu_out = get_register(LO);
+      } else {
+        // MIPS spec: If no bits were set in GPR rs(), the result written to
+        // GPR rd() is 64.
+        DCHECK(sa() == 1);
+        alu_out = base::bits::CountLeadingZeros64(static_cast<int64_t>(rs_u()));
+      }
+      SetResult(rd_reg(), alu_out);
+      break;
     // Instructions using HI and LO registers.
-    case MULT:
+    case MULT: {  // MULT == D_MUL_MUH.
+      int32_t rs_lo = static_cast<int32_t>(rs());
+      int32_t rt_lo = static_cast<int32_t>(rt());
+      i64hilo = static_cast<int64_t>(rs_lo) * static_cast<int64_t>(rt_lo);
       if (kArchVariant != kMips64r6) {
         set_register(LO, static_cast<int32_t>(i64hilo & 0xffffffff));
         set_register(HI, static_cast<int32_t>(i64hilo >> 32));
       } else {
-        switch (instr->SaValue()) {
+        switch (sa()) {
           case MUL_OP:
-            set_register(rd_reg, static_cast<int32_t>(i64hilo & 0xffffffff));
+            SetResult(rd_reg(), static_cast<int32_t>(i64hilo & 0xffffffff));
             break;
           case MUH_OP:
-            set_register(rd_reg, static_cast<int32_t>(i64hilo >> 32));
+            SetResult(rd_reg(), static_cast<int32_t>(i64hilo >> 32));
             break;
           default:
             UNIMPLEMENTED_MIPS();
@@ -3764,21 +3739,38 @@ void Simulator::DecodeTypeRegisterSPECIAL(
         }
       }
       break;
+    }
     case MULTU:
-      set_register(LO, static_cast<int32_t>(u64hilo & 0xffffffff));
-      set_register(HI, static_cast<int32_t>(u64hilo >> 32));
+      u64hilo = static_cast<uint64_t>(rs_u() & 0xffffffff) *
+                static_cast<uint64_t>(rt_u() & 0xffffffff);
+      if (kArchVariant != kMips64r6) {
+        set_register(LO, static_cast<int32_t>(u64hilo & 0xffffffff));
+        set_register(HI, static_cast<int32_t>(u64hilo >> 32));
+      } else {
+        switch (sa()) {
+          case MUL_OP:
+            SetResult(rd_reg(), static_cast<int32_t>(u64hilo & 0xffffffff));
+            break;
+          case MUH_OP:
+            SetResult(rd_reg(), static_cast<int32_t>(u64hilo >> 32));
+            break;
+          default:
+            UNIMPLEMENTED_MIPS();
+            break;
+        }
+      }
       break;
     case DMULT:  // DMULT == D_MUL_MUH.
       if (kArchVariant != kMips64r6) {
-        set_register(LO, static_cast<int64_t>(i128resultL));
-        set_register(HI, static_cast<int64_t>(i128resultH));
+        set_register(LO, rs() * rt());
+        set_register(HI, MultiplyHighSigned(rs(), rt()));
       } else {
-        switch (instr->SaValue()) {
+        switch (sa()) {
           case MUL_OP:
-            set_register(rd_reg, static_cast<int64_t>(i128resultL));
+            SetResult(rd_reg(), rs() * rt());
             break;
           case MUH_OP:
-            set_register(rd_reg, static_cast<int64_t>(i128resultH));
+            SetResult(rd_reg(), MultiplyHighSigned(rs(), rt()));
             break;
           default:
             UNIMPLEMENTED_MIPS();
@@ -3789,39 +3781,38 @@ void Simulator::DecodeTypeRegisterSPECIAL(
     case DMULTU:
       UNIMPLEMENTED_MIPS();
       break;
-    case DSLL:
-      set_register(rd_reg, alu_out);
-      break;
     case DIV:
-    case DDIV:
+    case DDIV: {
+      const int64_t int_min_value =
+          instr_.FunctionFieldRaw() == DIV ? INT_MIN : LONG_MIN;
       switch (kArchVariant) {
         case kMips64r2:
           // Divide by zero and overflow was not checked in the
           // configuration step - div and divu do not raise exceptions. On
           // division by 0 the result will be UNPREDICTABLE. On overflow
           // (INT_MIN/-1), return INT_MIN which is what the hardware does.
-          if (rs == INT_MIN && rt == -1) {
-            set_register(LO, INT_MIN);
+          if (rs() == int_min_value && rt() == -1) {
+            set_register(LO, int_min_value);
             set_register(HI, 0);
-          } else if (rt != 0) {
-            set_register(LO, rs / rt);
-            set_register(HI, rs % rt);
+          } else if (rt() != 0) {
+            set_register(LO, rs() / rt());
+            set_register(HI, rs() % rt());
           }
           break;
         case kMips64r6:
-          switch (instr->SaValue()) {
+          switch (sa()) {
             case DIV_OP:
-              if (rs == INT_MIN && rt == -1) {
-                set_register(rd_reg, INT_MIN);
-              } else if (rt != 0) {
-                set_register(rd_reg, rs / rt);
+              if (rs() == int_min_value && rt() == -1) {
+                SetResult(rd_reg(), int_min_value);
+              } else if (rt() != 0) {
+                SetResult(rd_reg(), rs() / rt());
               }
               break;
             case MOD_OP:
-              if (rs == INT_MIN && rt == -1) {
-                set_register(rd_reg, 0);
-              } else if (rt != 0) {
-                set_register(rd_reg, rs % rt);
+              if (rs() == int_min_value && rt() == -1) {
+                SetResult(rd_reg(), 0);
+              } else if (rt() != 0) {
+                SetResult(rd_reg(), rs() % rt());
               }
               break;
             default:
@@ -3833,291 +3824,621 @@ void Simulator::DecodeTypeRegisterSPECIAL(
           break;
       }
       break;
+    }
     case DIVU:
-      if (rt_u != 0) {
-        set_register(LO, rs_u / rt_u);
-        set_register(HI, rs_u % rt_u);
+      switch (kArchVariant) {
+        case kMips64r6: {
+          uint32_t rt_u_32 = static_cast<uint32_t>(rt_u());
+          uint32_t rs_u_32 = static_cast<uint32_t>(rs_u());
+          switch (sa()) {
+            case DIV_OP:
+              if (rt_u_32 != 0) {
+                SetResult(rd_reg(), rs_u_32 / rt_u_32);
+              }
+              break;
+            case MOD_OP:
+              if (rt_u() != 0) {
+                SetResult(rd_reg(), rs_u_32 % rt_u_32);
+              }
+              break;
+            default:
+              UNIMPLEMENTED_MIPS();
+              break;
+          }
+        } break;
+        default: {
+          if (rt_u() != 0) {
+            uint32_t rt_u_32 = static_cast<uint32_t>(rt_u());
+            uint32_t rs_u_32 = static_cast<uint32_t>(rs_u());
+            set_register(LO, rs_u_32 / rt_u_32);
+            set_register(HI, rs_u_32 % rt_u_32);
+          }
+        }
       }
+      break;
+    case DDIVU:
+      switch (kArchVariant) {
+        case kMips64r6: {
+          switch (instr_.SaValue()) {
+            case DIV_OP:
+              if (rt_u() != 0) {
+                SetResult(rd_reg(), rs_u() / rt_u());
+              }
+              break;
+            case MOD_OP:
+              if (rt_u() != 0) {
+                SetResult(rd_reg(), rs_u() % rt_u());
+              }
+              break;
+            default:
+              UNIMPLEMENTED_MIPS();
+              break;
+          }
+        } break;
+        default: {
+          if (rt_u() != 0) {
+            set_register(LO, rs_u() / rt_u());
+            set_register(HI, rs_u() % rt_u());
+          }
+        }
+      }
+      break;
+    case ADD:
+    case DADD:
+      if (HaveSameSign(rs(), rt())) {
+        if (rs() > 0) {
+          if (rs() > (Registers::kMaxValue - rt())) {
+            SignalException(kIntegerOverflow);
+          }
+        } else if (rs() < 0) {
+          if (rs() < (Registers::kMinValue - rt())) {
+            SignalException(kIntegerUnderflow);
+          }
+        }
+      }
+      SetResult(rd_reg(), rs() + rt());
+      break;
+    case ADDU: {
+      int32_t alu32_out = static_cast<int32_t>(rs() + rt());
+      // Sign-extend result of 32bit operation into 64bit register.
+      SetResult(rd_reg(), static_cast<int64_t>(alu32_out));
+      break;
+    }
+    case DADDU:
+      SetResult(rd_reg(), rs() + rt());
+      break;
+    case SUB:
+    case DSUB:
+      if (!HaveSameSign(rs(), rt())) {
+        if (rs() > 0) {
+          if (rs() > (Registers::kMaxValue + rt())) {
+            SignalException(kIntegerOverflow);
+          }
+        } else if (rs() < 0) {
+          if (rs() < (Registers::kMinValue + rt())) {
+            SignalException(kIntegerUnderflow);
+          }
+        }
+      }
+      SetResult(rd_reg(), rs() - rt());
+      break;
+    case SUBU: {
+      int32_t alu32_out = static_cast<int32_t>(rs() - rt());
+      // Sign-extend result of 32bit operation into 64bit register.
+      SetResult(rd_reg(), static_cast<int64_t>(alu32_out));
+      break;
+    }
+    case DSUBU:
+      SetResult(rd_reg(), rs() - rt());
+      break;
+    case AND:
+      SetResult(rd_reg(), rs() & rt());
+      break;
+    case OR:
+      SetResult(rd_reg(), rs() | rt());
+      break;
+    case XOR:
+      SetResult(rd_reg(), rs() ^ rt());
+      break;
+    case NOR:
+      SetResult(rd_reg(), ~(rs() | rt()));
+      break;
+    case SLT:
+      SetResult(rd_reg(), rs() < rt() ? 1 : 0);
+      break;
+    case SLTU:
+      SetResult(rd_reg(), rs_u() < rt_u() ? 1 : 0);
       break;
     // Break and trap instructions.
     case BREAK:
+      do_interrupt = true;
+      break;
     case TGE:
+      do_interrupt = rs() >= rt();
+      break;
     case TGEU:
+      do_interrupt = rs_u() >= rt_u();
+      break;
     case TLT:
+      do_interrupt = rs() < rt();
+      break;
     case TLTU:
+      do_interrupt = rs_u() < rt_u();
+      break;
     case TEQ:
+      do_interrupt = rs() == rt();
+      break;
     case TNE:
-      if (do_interrupt) {
-        SoftwareInterrupt(instr);
-      }
+      do_interrupt = rs() != rt();
+      break;
+    case SYNC:
+      // TODO(palfia): Ignore sync instruction for now.
       break;
     // Conditional moves.
     case MOVN:
-      if (rt) {
-        set_register(rd_reg, rs);
-        TraceRegWr(rs);
+      if (rt()) {
+        SetResult(rd_reg(), rs());
       }
       break;
     case MOVCI: {
-      uint32_t cc = instr->FBccValue();
+      uint32_t cc = instr_.FBccValue();
       uint32_t fcsr_cc = get_fcsr_condition_bit(cc);
-      if (instr->Bit(16)) {  // Read Tf bit.
-        if (test_fcsr_bit(fcsr_cc)) set_register(rd_reg, rs);
+      if (instr_.Bit(16)) {  // Read Tf bit.
+        if (test_fcsr_bit(fcsr_cc)) SetResult(rd_reg(), rs());
       } else {
-        if (!test_fcsr_bit(fcsr_cc)) set_register(rd_reg, rs);
+        if (!test_fcsr_bit(fcsr_cc)) SetResult(rd_reg(), rs());
       }
       break;
     }
     case MOVZ:
-      if (!rt) {
-        set_register(rd_reg, rs);
-        TraceRegWr(rs);
+      if (!rt()) {
+        SetResult(rd_reg(), rs());
       }
       break;
-    default:  // For other special opcodes we do the default operation.
-      set_register(rd_reg, alu_out);
-      TraceRegWr(alu_out);
+    default:
+      UNREACHABLE();
+  }
+  if (do_interrupt) {
+    SoftwareInterrupt();
   }
 }
 
 
-void Simulator::DecodeTypeRegisterSPECIAL2(Instruction* instr,
-                                           const int32_t rd_reg,
-                                           int64_t alu_out) {
-  switch (instr->FunctionFieldRaw()) {
+void Simulator::DecodeTypeRegisterSPECIAL2() {
+  int64_t alu_out;
+  switch (instr_.FunctionFieldRaw()) {
     case MUL:
-      set_register(rd_reg, alu_out);
-      TraceRegWr(alu_out);
+      alu_out = static_cast<int32_t>(rs_u()) * static_cast<int32_t>(rt_u());
+      SetResult(rd_reg(), alu_out);
       // HI and LO are UNPREDICTABLE after the operation.
       set_register(LO, Unpredictable);
       set_register(HI, Unpredictable);
       break;
-    default:  // For other special2 opcodes we do the default operation.
-      set_register(rd_reg, alu_out);
+    case CLZ:
+      // MIPS32 spec: If no bits were set in GPR rs(), the result written to
+      // GPR rd is 32.
+      alu_out = base::bits::CountLeadingZeros32(static_cast<uint32_t>(rs_u()));
+      SetResult(rd_reg(), alu_out);
+      break;
+    case DCLZ:
+      // MIPS64 spec: If no bits were set in GPR rs(), the result written to
+      // GPR rd is 64.
+      alu_out = base::bits::CountLeadingZeros64(static_cast<uint64_t>(rs_u()));
+      SetResult(rd_reg(), alu_out);
+      break;
+    default:
+      alu_out = 0x12345678;
+      UNREACHABLE();
   }
 }
 
 
-void Simulator::DecodeTypeRegisterSPECIAL3(Instruction* instr,
-                                           const int32_t rt_reg,
-                                           const int32_t rd_reg,
-                                           const int64_t alu_out) {
-  switch (instr->FunctionFieldRaw()) {
-    case INS:
-      // Ins instr leaves result in Rt, rather than Rd.
-      set_register(rt_reg, alu_out);
-      TraceRegWr(alu_out);
+void Simulator::DecodeTypeRegisterSPECIAL3() {
+  int64_t alu_out;
+  switch (instr_.FunctionFieldRaw()) {
+    case INS: {  // Mips64r2 instruction.
+      // Interpret rd field as 5-bit msb of insert.
+      uint16_t msb = rd_reg();
+      // Interpret sa field as 5-bit lsb of insert.
+      uint16_t lsb = sa();
+      uint16_t size = msb - lsb + 1;
+      uint64_t mask = (1ULL << size) - 1;
+      alu_out = static_cast<int32_t>((rt_u() & ~(mask << lsb)) |
+                                     ((rs_u() & mask) << lsb));
+      SetResult(rt_reg(), alu_out);
       break;
-    case EXT:
-    case DEXT:
-      // Dext/Ext instr leaves result in Rt, rather than Rd.
-      set_register(rt_reg, alu_out);
-      TraceRegWr(alu_out);
+    }
+    case DINS: {  // Mips64r2 instruction.
+      // Interpret rd field as 5-bit msb of insert.
+      uint16_t msb = rd_reg();
+      // Interpret sa field as 5-bit lsb of insert.
+      uint16_t lsb = sa();
+      uint16_t size = msb - lsb + 1;
+      uint64_t mask = (1ULL << size) - 1;
+      alu_out = (rt_u() & ~(mask << lsb)) | ((rs_u() & mask) << lsb);
+      SetResult(rt_reg(), alu_out);
       break;
-    case BSHFL:
-    case DBSHFL:
-      set_register(rd_reg, alu_out);
-      TraceRegWr(alu_out);
+    }
+    case EXT: {  // Mips64r2 instruction.
+      // Interpret rd field as 5-bit msb of extract.
+      uint16_t msb = rd_reg();
+      // Interpret sa field as 5-bit lsb of extract.
+      uint16_t lsb = sa();
+      uint16_t size = msb + 1;
+      uint64_t mask = (1ULL << size) - 1;
+      alu_out = static_cast<int32_t>((rs_u() & (mask << lsb)) >> lsb);
+      SetResult(rt_reg(), alu_out);
       break;
+    }
+    case DEXT: {  // Mips64r2 instruction.
+      // Interpret rd field as 5-bit msb of extract.
+      uint16_t msb = rd_reg();
+      // Interpret sa field as 5-bit lsb of extract.
+      uint16_t lsb = sa();
+      uint16_t size = msb + 1;
+      uint64_t mask = (1ULL << size) - 1;
+      alu_out = static_cast<int64_t>((rs_u() & (mask << lsb)) >> lsb);
+      SetResult(rt_reg(), alu_out);
+      break;
+    }
+    case DEXTM: {
+      // Interpret rd field as 5-bit msb of extract.
+      uint16_t msb = rd_reg();
+      // Interpret sa field as 5-bit lsb of extract.
+      uint16_t lsb = sa();
+      uint16_t size = msb + 33;
+      uint64_t mask = (1ULL << size) - 1;
+      alu_out = static_cast<int64_t>((rs_u() & (mask << lsb)) >> lsb);
+      SetResult(rt_reg(), alu_out);
+      break;
+    }
+    case DEXTU: {
+      // Interpret rd field as 5-bit msb of extract.
+      uint16_t msb = rd_reg();
+      // Interpret sa field as 5-bit lsb of extract.
+      uint16_t lsb = sa() + 32;
+      uint16_t size = msb + 1;
+      uint64_t mask = (1ULL << size) - 1;
+      alu_out = static_cast<int64_t>((rs_u() & (mask << lsb)) >> lsb);
+      SetResult(rt_reg(), alu_out);
+      break;
+    }
+    case BSHFL: {
+      int32_t sa = instr_.SaFieldRaw() >> kSaShift;
+      switch (sa) {
+        case BITSWAP: {
+          uint32_t input = static_cast<uint32_t>(rt());
+          uint32_t output = 0;
+          uint8_t i_byte, o_byte;
+
+          // Reverse the bit in byte for each individual byte
+          for (int i = 0; i < 4; i++) {
+            output = output >> 8;
+            i_byte = input & 0xff;
+
+            // Fast way to reverse bits in byte
+            // Devised by Sean Anderson, July 13, 2001
+            o_byte = static_cast<uint8_t>(((i_byte * 0x0802LU & 0x22110LU) |
+                                           (i_byte * 0x8020LU & 0x88440LU)) *
+                                              0x10101LU >>
+                                          16);
+
+            output = output | (static_cast<uint32_t>(o_byte << 24));
+            input = input >> 8;
+          }
+
+          alu_out = static_cast<int64_t>(static_cast<int32_t>(output));
+          break;
+        }
+        case SEB: {
+          uint8_t input = static_cast<uint8_t>(rt());
+          uint32_t output = input;
+          uint32_t mask = 0x00000080;
+
+          // Extending sign
+          if (mask & input) {
+            output |= 0xFFFFFF00;
+          }
+
+          alu_out = static_cast<int32_t>(output);
+          break;
+        }
+        case SEH: {
+          uint16_t input = static_cast<uint16_t>(rt());
+          uint32_t output = input;
+          uint32_t mask = 0x00008000;
+
+          // Extending sign
+          if (mask & input) {
+            output |= 0xFFFF0000;
+          }
+
+          alu_out = static_cast<int32_t>(output);
+          break;
+        }
+        case WSBH: {
+          uint32_t input = static_cast<uint32_t>(rt());
+          uint64_t output = 0;
+
+          uint32_t mask = 0xFF000000;
+          for (int i = 0; i < 4; i++) {
+            uint32_t tmp = mask & input;
+            if (i % 2 == 0) {
+              tmp = tmp >> 8;
+            } else {
+              tmp = tmp << 8;
+            }
+            output = output | tmp;
+            mask = mask >> 8;
+          }
+          mask = 0x80000000;
+
+          // Extending sign
+          if (mask & output) {
+            output |= 0xFFFFFFFF00000000;
+          }
+
+          alu_out = static_cast<int64_t>(output);
+          break;
+        }
+        default: {
+          const uint8_t bp2 = instr_.Bp2Value();
+          sa >>= kBp2Bits;
+          switch (sa) {
+            case ALIGN: {
+              if (bp2 == 0) {
+                alu_out = static_cast<int32_t>(rt());
+              } else {
+                uint64_t rt_hi = rt() << (8 * bp2);
+                uint64_t rs_lo = rs() >> (8 * (4 - bp2));
+                alu_out = static_cast<int32_t>(rt_hi | rs_lo);
+              }
+              break;
+            }
+            default:
+              alu_out = 0x12345678;
+              UNREACHABLE();
+              break;
+          }
+          break;
+        }
+      }
+      SetResult(rd_reg(), alu_out);
+      break;
+    }
+    case DBSHFL: {
+      int32_t sa = instr_.SaFieldRaw() >> kSaShift;
+      switch (sa) {
+        case DBITSWAP: {
+          switch (sa) {
+            case DBITSWAP_SA: {  // Mips64r6
+              uint64_t input = static_cast<uint64_t>(rt());
+              uint64_t output = 0;
+              uint8_t i_byte, o_byte;
+
+              // Reverse the bit in byte for each individual byte
+              for (int i = 0; i < 8; i++) {
+                output = output >> 8;
+                i_byte = input & 0xff;
+
+                // Fast way to reverse bits in byte
+                // Devised by Sean Anderson, July 13, 2001
+                o_byte =
+                    static_cast<uint8_t>(((i_byte * 0x0802LU & 0x22110LU) |
+                                          (i_byte * 0x8020LU & 0x88440LU)) *
+                                             0x10101LU >>
+                                         16);
+
+                output = output | ((static_cast<uint64_t>(o_byte) << 56));
+                input = input >> 8;
+              }
+
+              alu_out = static_cast<int64_t>(output);
+              break;
+            }
+          }
+          break;
+        }
+        case DSBH: {
+          uint64_t input = static_cast<uint64_t>(rt());
+          uint64_t output = 0;
+
+          uint64_t mask = 0xFF00000000000000;
+          for (int i = 0; i < 8; i++) {
+            uint64_t tmp = mask & input;
+            if (i % 2 == 0)
+              tmp = tmp >> 8;
+            else
+              tmp = tmp << 8;
+
+            output = output | tmp;
+            mask = mask >> 8;
+          }
+
+          alu_out = static_cast<int64_t>(output);
+          break;
+        }
+        case DSHD: {
+          uint64_t input = static_cast<uint64_t>(rt());
+          uint64_t output = 0;
+
+          uint64_t mask = 0xFFFF000000000000;
+          for (int i = 0; i < 4; i++) {
+            uint64_t tmp = mask & input;
+            if (i == 0)
+              tmp = tmp >> 48;
+            else if (i == 1)
+              tmp = tmp >> 16;
+            else if (i == 2)
+              tmp = tmp << 16;
+            else
+              tmp = tmp << 48;
+            output = output | tmp;
+            mask = mask >> 16;
+          }
+
+          alu_out = static_cast<int64_t>(output);
+          break;
+        }
+        default: {
+          const uint8_t bp3 = instr_.Bp3Value();
+          sa >>= kBp3Bits;
+          switch (sa) {
+            case DALIGN: {
+              if (bp3 == 0) {
+                alu_out = static_cast<int64_t>(rt());
+              } else {
+                uint64_t rt_hi = rt() << (8 * bp3);
+                uint64_t rs_lo = rs() >> (8 * (8 - bp3));
+                alu_out = static_cast<int64_t>(rt_hi | rs_lo);
+              }
+              break;
+            }
+            default:
+              alu_out = 0x12345678;
+              UNREACHABLE();
+              break;
+          }
+          break;
+        }
+      }
+      SetResult(rd_reg(), alu_out);
+      break;
+    }
+    default:
+      UNREACHABLE();
+  }
+}
+
+void Simulator::DecodeTypeRegister() {
+  // ---------- Execution.
+  switch (instr_.OpcodeFieldRaw()) {
+    case COP1:
+      DecodeTypeRegisterCOP1();
+      break;
+    case COP1X:
+      DecodeTypeRegisterCOP1X();
+      break;
+    case SPECIAL:
+      DecodeTypeRegisterSPECIAL();
+      break;
+    case SPECIAL2:
+      DecodeTypeRegisterSPECIAL2();
+      break;
+    case SPECIAL3:
+      DecodeTypeRegisterSPECIAL3();
+      break;
+    // Unimplemented opcodes raised an error in the configuration step before,
+    // so we can use the default here to set the destination register in common
+    // cases.
     default:
       UNREACHABLE();
   }
 }
 
 
-void Simulator::DecodeTypeRegister(Instruction* instr) {
+// Type 2: instructions using a 16, 21 or 26 bits immediate. (e.g. beq, beqc).
+void Simulator::DecodeTypeImmediate() {
   // Instruction fields.
-  const Opcode   op     = instr->OpcodeFieldRaw();
-  const int32_t  rs_reg = instr->RsValue();
-  const int64_t  rs     = get_register(rs_reg);
-  const uint64_t rs_u   = static_cast<uint32_t>(rs);
-  const int32_t  rt_reg = instr->RtValue();
-  const int64_t  rt     = get_register(rt_reg);
-  const uint64_t rt_u   = static_cast<uint32_t>(rt);
-  const int32_t  rd_reg = instr->RdValue();
+  Opcode op = instr_.OpcodeFieldRaw();
+  int32_t rs_reg = instr_.RsValue();
+  int64_t rs = get_register(instr_.RsValue());
+  uint64_t rs_u = static_cast<uint64_t>(rs);
+  int32_t rt_reg = instr_.RtValue();  // Destination register.
+  int64_t rt = get_register(rt_reg);
+  int16_t imm16 = instr_.Imm16Value();
+  int32_t imm18 = instr_.Imm18Value();
 
-  const int32_t fr_reg = instr->FrValue();
-  const int32_t fs_reg = instr->FsValue();
-  const int32_t ft_reg = instr->FtValue();
-  const int32_t fd_reg = instr->FdValue();
-  int64_t  i64hilo = 0;
-  uint64_t u64hilo = 0;
-
-  // ALU output.
-  // It should not be used as is. Instructions using it should always
-  // initialize it first.
-  int64_t alu_out = 0x12345678;
-
-  // For break and trap instructions.
-  bool do_interrupt = false;
-
-  // For jr and jalr.
-  // Get current pc.
-  int64_t current_pc = get_pc();
-  // Next pc
-  int64_t next_pc = 0;
-  int32_t return_addr_reg = 31;
-
-  int64_t i128resultH;
-  int64_t i128resultL;
-
-  // Set up the variables if needed before executing the instruction.
-  ConfigureTypeRegister(instr,
-                        &alu_out,
-                        &i64hilo,
-                        &u64hilo,
-                        &next_pc,
-                        &return_addr_reg,
-                        &do_interrupt,
-                        &i128resultH,
-                        &i128resultL);
-
-  // ---------- Raise exceptions triggered.
-  SignalExceptions();
-
-  // ---------- Execution.
-  switch (op) {
-    case COP1:
-      DecodeTypeRegisterCOP1(instr, rs_reg, rs, rs_u, rt_reg, rt, rt_u, rd_reg,
-                             fr_reg, fs_reg, ft_reg, fd_reg, alu_out);
-      break;
-    case COP1X:
-      DecodeTypeRegisterCOP1X(instr, fr_reg, fs_reg, ft_reg, fd_reg);
-      break;
-    case SPECIAL:
-      DecodeTypeRegisterSPECIAL(
-          instr, rs_reg, rs, rs_u, rt_reg, rt, rt_u, rd_reg, fr_reg, fs_reg,
-          ft_reg, fd_reg, i64hilo, u64hilo, alu_out, do_interrupt, current_pc,
-          next_pc, return_addr_reg, i128resultH, i128resultL);
-      break;
-    case SPECIAL2:
-      DecodeTypeRegisterSPECIAL2(instr, rd_reg, alu_out);
-      break;
-    case SPECIAL3:
-      switch (instr->FunctionFieldRaw()) {
-        case BSHFL: {
-          int sa = instr->SaValue();
-          sa >>= kBp2Bits;
-          switch (sa) {
-            case ALIGN: {
-              DecodeTypeRegisterSPECIAL3(instr, rt_reg, rd_reg, alu_out);
-              break;
-            }
-          }
-        }
-        case DBSHFL: {
-          int sa = instr->SaValue();
-          sa >>= kBp3Bits;
-          switch (sa) {
-            case DALIGN: {
-              DecodeTypeRegisterSPECIAL3(instr, rt_reg, rd_reg, alu_out);
-              break;
-            }
-          }
-        }
-        default:
-          DecodeTypeRegisterSPECIAL3(instr, rt_reg, rd_reg, alu_out);
-          break;
-      }
-      break;
-    // Unimplemented opcodes raised an error in the configuration step before,
-    // so we can use the default here to set the destination register in common
-    // cases.
-    default:
-      set_register(rd_reg, alu_out);
-      TraceRegWr(alu_out);
-  }
-}
-
-
-// Type 2: instructions using a 16 bytes immediate. (e.g. addi, beq).
-void Simulator::DecodeTypeImmediate(Instruction* instr) {
-  // Instruction fields.
-  Opcode   op     = instr->OpcodeFieldRaw();
-  int32_t rs_reg = instr->RsValue();
-  int64_t  rs     = get_register(instr->RsValue());
-  uint64_t rs_u   = static_cast<uint64_t>(rs);
-  int32_t  rt_reg = instr->RtValue();  // Destination register.
-  int64_t  rt     = get_register(rt_reg);
-  int16_t  imm16  = instr->Imm16Value();
-  int32_t imm18 = instr->Imm18Value();
-  int32_t imm19 = instr->Imm19Value();
-  int32_t imm21 = instr->Imm21Value();
-  int32_t imm26 = instr->Imm26Value();
-
-  int32_t  ft_reg = instr->FtValue();  // Destination register.
-  int64_t  ft     = get_fpu_register(ft_reg);
+  int32_t ft_reg = instr_.FtValue();  // Destination register.
 
   // Zero extended immediate.
   uint64_t oe_imm16 = 0xffff & imm16;
   // Sign extended immediate.
   int64_t se_imm16 = imm16;
   int64_t se_imm18 = imm18 | ((imm18 & 0x20000) ? 0xfffffffffffc0000 : 0);
-  int64_t se_imm19 = imm19 | ((imm19 & 0x40000) ? 0xfffffffffff80000 : 0);
-  int64_t se_imm26 = imm26 | ((imm26 & 0x2000000) ? 0xfffffffffc000000 : 0);
 
-
-  // Get current pc.
-  int64_t current_pc = get_pc();
   // Next pc.
   int64_t next_pc = bad_ra;
-  // pc increment
-  int16_t pc_increment;
 
   // Used for conditional branch instructions.
-  bool do_branch = false;
   bool execute_branch_delay_instruction = false;
 
   // Used for arithmetic instructions.
   int64_t alu_out = 0;
-  // Floating point.
-  double fp_out = 0.0;
-  uint32_t cc, cc_value, fcsr_cc;
 
   // Used for memory instructions.
   int64_t addr = 0x0;
-  // Value to be written in memory.
-  uint64_t mem_value = 0x0;
   // Alignment for 32-bit integers used in LWL, LWR, etc.
   const int kInt32AlignmentMask = sizeof(uint32_t) - 1;
+  // Alignment for 64-bit integers used in LDL, LDR, etc.
+  const int kInt64AlignmentMask = sizeof(uint64_t) - 1;
 
-  // ---------- Configuration (and execution for REGIMM).
+  // Branch instructions common part.
+  auto BranchAndLinkHelper =
+      [this, &next_pc, &execute_branch_delay_instruction](bool do_branch) {
+        execute_branch_delay_instruction = true;
+        int64_t current_pc = get_pc();
+        if (do_branch) {
+          int16_t imm16 = instr_.Imm16Value();
+          next_pc = current_pc + (imm16 << 2) + Instruction::kInstrSize;
+          set_register(31, current_pc + 2 * Instruction::kInstrSize);
+        } else {
+          next_pc = current_pc + 2 * Instruction::kInstrSize;
+        }
+      };
+
+  auto BranchHelper = [this, &next_pc,
+                       &execute_branch_delay_instruction](bool do_branch) {
+    execute_branch_delay_instruction = true;
+    int64_t current_pc = get_pc();
+    if (do_branch) {
+      int16_t imm16 = instr_.Imm16Value();
+      next_pc = current_pc + (imm16 << 2) + Instruction::kInstrSize;
+    } else {
+      next_pc = current_pc + 2 * Instruction::kInstrSize;
+    }
+  };
+
+  auto BranchAndLinkCompactHelper = [this, &next_pc](bool do_branch, int bits) {
+    int64_t current_pc = get_pc();
+    CheckForbiddenSlot(current_pc);
+    if (do_branch) {
+      int32_t imm = instr_.ImmValue(bits);
+      imm <<= 32 - bits;
+      imm >>= 32 - bits;
+      next_pc = current_pc + (imm << 2) + Instruction::kInstrSize;
+      set_register(31, current_pc + Instruction::kInstrSize);
+    }
+  };
+
+  auto BranchCompactHelper = [this, &next_pc](bool do_branch, int bits) {
+    int64_t current_pc = get_pc();
+    CheckForbiddenSlot(current_pc);
+    if (do_branch) {
+      int32_t imm = instr_.ImmValue(bits);
+      imm <<= 32 - bits;
+      imm >>= 32 - bits;
+      next_pc = get_pc() + (imm << 2) + Instruction::kInstrSize;
+    }
+  };
+
   switch (op) {
     // ------------- COP1. Coprocessor instructions.
     case COP1:
-      switch (instr->RsFieldRaw()) {
-        case BC1:   // Branch on coprocessor condition.
-          cc = instr->FBccValue();
-          fcsr_cc = get_fcsr_condition_bit(cc);
-          cc_value = test_fcsr_bit(fcsr_cc);
-          do_branch = (instr->FBtrueValue()) ? cc_value : !cc_value;
-          execute_branch_delay_instruction = true;
-          // Set next_pc.
-          if (do_branch) {
-            next_pc = current_pc + (imm16 << 2) + Instruction::kInstrSize;
-          } else {
-            next_pc = current_pc + kBranchReturnOffset;
-          }
+      switch (instr_.RsFieldRaw()) {
+        case BC1: {  // Branch on coprocessor condition.
+          uint32_t cc = instr_.FBccValue();
+          uint32_t fcsr_cc = get_fcsr_condition_bit(cc);
+          uint32_t cc_value = test_fcsr_bit(fcsr_cc);
+          bool do_branch = (instr_.FBtrueValue()) ? cc_value : !cc_value;
+          BranchHelper(do_branch);
           break;
+        }
         case BC1EQZ:
-          do_branch = (ft & 0x1) ? false : true;
-          execute_branch_delay_instruction = true;
-          // Set next_pc.
-          if (do_branch) {
-            next_pc = current_pc + (imm16 << 2) + Instruction::kInstrSize;
-          } else {
-            next_pc = current_pc + kBranchReturnOffset;
-          }
+          BranchHelper(!(get_fpu_register(ft_reg) & 0x1));
           break;
         case BC1NEZ:
-          do_branch = (ft & 0x1) ? true : false;
-          execute_branch_delay_instruction = true;
-          // Set next_pc.
-          if (do_branch) {
-            next_pc = current_pc + (imm16 << 2) + Instruction::kInstrSize;
-          } else {
-            next_pc = current_pc + kBranchReturnOffset;
-          }
+          BranchHelper(get_fpu_register(ft_reg) & 0x1);
           break;
         default:
           UNREACHABLE();
@@ -4125,135 +4446,225 @@ void Simulator::DecodeTypeImmediate(Instruction* instr) {
       break;
     // ------------- REGIMM class.
     case REGIMM:
-      switch (instr->RtFieldRaw()) {
+      switch (instr_.RtFieldRaw()) {
         case BLTZ:
-          do_branch = (rs  < 0);
-          break;
-        case BLTZAL:
-          do_branch = rs  < 0;
+          BranchHelper(rs < 0);
           break;
         case BGEZ:
-          do_branch = rs >= 0;
+          BranchHelper(rs >= 0);
+          break;
+        case BLTZAL:
+          BranchAndLinkHelper(rs < 0);
           break;
         case BGEZAL:
-          do_branch = rs >= 0;
+          BranchAndLinkHelper(rs >= 0);
+          break;
+        case DAHI:
+          SetResult(rs_reg, rs + (se_imm16 << 32));
+          break;
+        case DATI:
+          SetResult(rs_reg, rs + (se_imm16 << 48));
           break;
         default:
           UNREACHABLE();
       }
-      switch (instr->RtFieldRaw()) {
-        case BLTZ:
-        case BLTZAL:
-        case BGEZ:
-        case BGEZAL:
-          // Branch instructions common part.
-          execute_branch_delay_instruction = true;
-          // Set next_pc.
-          if (do_branch) {
-            next_pc = current_pc + (imm16 << 2) + Instruction::kInstrSize;
-            if (instr->IsLinkingInstruction()) {
-              set_register(31, current_pc + kBranchReturnOffset);
-            }
-          } else {
-            next_pc = current_pc + kBranchReturnOffset;
-          }
-        default:
-          break;
-        }
-    break;  // case REGIMM.
+      break;  // case REGIMM.
     // ------------- Branch instructions.
     // When comparing to zero, the encoding of rt field is always 0, so we don't
     // need to replace rt with zero.
     case BEQ:
-      do_branch = (rs == rt);
+      BranchHelper(rs == rt);
       break;
     case BNE:
-      do_branch = rs != rt;
+      BranchHelper(rs != rt);
       break;
-    case BLEZ:
-      do_branch = rs <= 0;
+    case POP06:  // BLEZALC, BGEZALC, BGEUC, BLEZ (pre-r6)
+      if (kArchVariant == kMips64r6) {
+        if (rt_reg != 0) {
+          if (rs_reg == 0) {  // BLEZALC
+            BranchAndLinkCompactHelper(rt <= 0, 16);
+          } else {
+            if (rs_reg == rt_reg) {  // BGEZALC
+              BranchAndLinkCompactHelper(rt >= 0, 16);
+            } else {  // BGEUC
+              BranchCompactHelper(
+                  static_cast<uint64_t>(rs) >= static_cast<uint64_t>(rt), 16);
+            }
+          }
+        } else {  // BLEZ
+          BranchHelper(rs <= 0);
+        }
+      } else {  // BLEZ
+        BranchHelper(rs <= 0);
+      }
       break;
-    case BGTZ:
-      do_branch = rs  > 0;
+    case POP07:  // BGTZALC, BLTZALC, BLTUC, BGTZ (pre-r6)
+      if (kArchVariant == kMips64r6) {
+        if (rt_reg != 0) {
+          if (rs_reg == 0) {  // BGTZALC
+            BranchAndLinkCompactHelper(rt > 0, 16);
+          } else {
+            if (rt_reg == rs_reg) {  // BLTZALC
+              BranchAndLinkCompactHelper(rt < 0, 16);
+            } else {  // BLTUC
+              BranchCompactHelper(
+                  static_cast<uint64_t>(rs) < static_cast<uint64_t>(rt), 16);
+            }
+          }
+        } else {  // BGTZ
+          BranchHelper(rs > 0);
+        }
+      } else {  // BGTZ
+        BranchHelper(rs > 0);
+      }
       break;
-    case POP66: {
-      if (rs_reg) {  // BEQZC
-        int32_t se_imm21 =
-            static_cast<int32_t>(imm21 << (kOpcodeBits + kRsBits));
-        se_imm21 = se_imm21 >> (kOpcodeBits + kRsBits);
-        if (rs == 0)
-          next_pc = current_pc + 4 + (se_imm21 << 2);
-        else
-          next_pc = current_pc + 4;
+    case POP26:  // BLEZC, BGEZC, BGEC/BLEC / BLEZL (pre-r6)
+      if (kArchVariant == kMips64r6) {
+        if (rt_reg != 0) {
+          if (rs_reg == 0) {  // BLEZC
+            BranchCompactHelper(rt <= 0, 16);
+          } else {
+            if (rs_reg == rt_reg) {  // BGEZC
+              BranchCompactHelper(rt >= 0, 16);
+            } else {  // BGEC/BLEC
+              BranchCompactHelper(rs >= rt, 16);
+            }
+          }
+        }
+      } else {  // BLEZL
+        BranchAndLinkHelper(rs <= 0);
+      }
+      break;
+    case POP27:  // BGTZC, BLTZC, BLTC/BGTC / BGTZL (pre-r6)
+      if (kArchVariant == kMips64r6) {
+        if (rt_reg != 0) {
+          if (rs_reg == 0) {  // BGTZC
+            BranchCompactHelper(rt > 0, 16);
+          } else {
+            if (rs_reg == rt_reg) {  // BLTZC
+              BranchCompactHelper(rt < 0, 16);
+            } else {  // BLTC/BGTC
+              BranchCompactHelper(rs < rt, 16);
+            }
+          }
+        }
+      } else {  // BGTZL
+        BranchAndLinkHelper(rs > 0);
+      }
+      break;
+    case POP66:           // BEQZC, JIC
+      if (rs_reg != 0) {  // BEQZC
+        BranchCompactHelper(rs == 0, 21);
       } else {  // JIC
         next_pc = rt + imm16;
       }
       break;
-    }
-    case BC: {
-      next_pc = current_pc + 4 + (se_imm26 << 2);
-      set_pc(next_pc);
-      pc_modified_ = true;
+    case POP76:           // BNEZC, JIALC
+      if (rs_reg != 0) {  // BNEZC
+        BranchCompactHelper(rs != 0, 21);
+      } else {  // JIALC
+        int64_t current_pc = get_pc();
+        set_register(31, current_pc + Instruction::kInstrSize);
+        next_pc = rt + imm16;
+      }
       break;
-    }
-    case BALC: {
-      set_register(31, current_pc + 4);
-      next_pc = current_pc + 4 + (se_imm26 << 2);
-      set_pc(next_pc);
-      pc_modified_ = true;
+    case BC:
+      BranchCompactHelper(true, 26);
       break;
-    }
-    // ------------- Arithmetic instructions.
-    case ADDI:
-    case DADDI:
-      if (HaveSameSign(rs, se_imm16)) {
-        if (rs > 0) {
-          exceptions[kIntegerOverflow] = rs > (Registers::kMaxValue - se_imm16);
-        } else if (rs < 0) {
-          exceptions[kIntegerUnderflow] =
-              rs < (Registers::kMinValue - se_imm16);
+    case BALC:
+      BranchAndLinkCompactHelper(true, 26);
+      break;
+    case POP10:  // BOVC, BEQZALC, BEQC / ADDI (pre-r6)
+      if (kArchVariant == kMips64r6) {
+        if (rs_reg >= rt_reg) {  // BOVC
+          bool condition = !is_int32(rs) || !is_int32(rt) || !is_int32(rs + rt);
+          BranchCompactHelper(condition, 16);
+        } else {
+          if (rs_reg == 0) {  // BEQZALC
+            BranchAndLinkCompactHelper(rt == 0, 16);
+          } else {  // BEQC
+            BranchCompactHelper(rt == rs, 16);
+          }
+        }
+      } else {  // ADDI
+        if (HaveSameSign(rs, se_imm16)) {
+          if (rs > 0) {
+            if (rs <= Registers::kMaxValue - se_imm16) {
+              SignalException(kIntegerOverflow);
+            }
+          } else if (rs < 0) {
+            if (rs >= Registers::kMinValue - se_imm16) {
+              SignalException(kIntegerUnderflow);
+            }
+          }
+        }
+        SetResult(rt_reg, rs + se_imm16);
+      }
+      break;
+    case POP30:  // BNVC, BNEZALC, BNEC / DADDI (pre-r6)
+      if (kArchVariant == kMips64r6) {
+        if (rs_reg >= rt_reg) {  // BNVC
+          bool condition = is_int32(rs) && is_int32(rt) && is_int32(rs + rt);
+          BranchCompactHelper(condition, 16);
+        } else {
+          if (rs_reg == 0) {  // BNEZALC
+            BranchAndLinkCompactHelper(rt != 0, 16);
+          } else {  // BNEC
+            BranchCompactHelper(rt != rs, 16);
+          }
         }
       }
-      alu_out = rs + se_imm16;
       break;
+    // ------------- Arithmetic instructions.
     case ADDIU: {
+      DCHECK(is_int32(rs));
       int32_t alu32_out = static_cast<int32_t>(rs + se_imm16);
       // Sign-extend result of 32bit operation into 64bit register.
-      alu_out = static_cast<int64_t>(alu32_out);
+      SetResult(rt_reg, static_cast<int64_t>(alu32_out));
       break;
     }
     case DADDIU:
-      alu_out = rs + se_imm16;
+      SetResult(rt_reg, rs + se_imm16);
       break;
     case SLTI:
-      alu_out = (rs < se_imm16) ? 1 : 0;
+      SetResult(rt_reg, rs < se_imm16 ? 1 : 0);
       break;
     case SLTIU:
-      alu_out = (rs_u < static_cast<uint64_t>(se_imm16)) ? 1 : 0;
+      SetResult(rt_reg, rs_u < static_cast<uint64_t>(se_imm16) ? 1 : 0);
       break;
     case ANDI:
-      alu_out = rs & oe_imm16;
+      SetResult(rt_reg, rs & oe_imm16);
       break;
     case ORI:
-      alu_out = rs | oe_imm16;
+      SetResult(rt_reg, rs | oe_imm16);
       break;
     case XORI:
-      alu_out = rs ^ oe_imm16;
+      SetResult(rt_reg, rs ^ oe_imm16);
       break;
-    case LUI: {
-      int32_t alu32_out = static_cast<int32_t>(oe_imm16 << 16);
-      // Sign-extend result of 32bit operation into 64bit register.
-      alu_out = static_cast<int64_t>(alu32_out);
+    case LUI:
+      if (rs_reg != 0) {
+        // AUI instruction.
+        DCHECK(kArchVariant == kMips64r6);
+        int32_t alu32_out = static_cast<int32_t>(rs + (se_imm16 << 16));
+        SetResult(rt_reg, static_cast<int64_t>(alu32_out));
+      } else {
+        // LUI instruction.
+        int32_t alu32_out = static_cast<int32_t>(oe_imm16 << 16);
+        // Sign-extend result of 32bit operation into 64bit register.
+        SetResult(rt_reg, static_cast<int64_t>(alu32_out));
+      }
       break;
-    }
+    case DAUI:
+      DCHECK(kArchVariant == kMips64r6);
+      DCHECK(rs_reg != 0);
+      SetResult(rt_reg, rs + (se_imm16 << 16));
+      break;
     // ------------- Memory instructions.
     case LB:
-      addr = rs + se_imm16;
-      alu_out = ReadB(addr);
+      set_register(rt_reg, ReadB(rs + se_imm16));
       break;
     case LH:
-      addr = rs + se_imm16;
-      alu_out = ReadH(addr, instr);
+      set_register(rt_reg, ReadH(rs + se_imm16, instr_.instr()));
       break;
     case LWL: {
       // al_offset is offset of the effective address within an aligned word.
@@ -4261,30 +4672,26 @@ void Simulator::DecodeTypeImmediate(Instruction* instr) {
       uint8_t byte_shift = kInt32AlignmentMask - al_offset;
       uint32_t mask = (1 << byte_shift * 8) - 1;
       addr = rs + se_imm16 - al_offset;
-      alu_out = ReadW(addr, instr);
-      alu_out <<= byte_shift * 8;
-      alu_out |= rt & mask;
+      int32_t val = ReadW(addr, instr_.instr());
+      val <<= byte_shift * 8;
+      val |= rt & mask;
+      set_register(rt_reg, static_cast<int64_t>(val));
       break;
     }
     case LW:
-      addr = rs + se_imm16;
-      alu_out = ReadW(addr, instr);
+      set_register(rt_reg, ReadW(rs + se_imm16, instr_.instr()));
       break;
     case LWU:
-      addr = rs + se_imm16;
-      alu_out = ReadWU(addr, instr);
+      set_register(rt_reg, ReadWU(rs + se_imm16, instr_.instr()));
       break;
     case LD:
-      addr = rs + se_imm16;
-      alu_out = Read2W(addr, instr);
+      set_register(rt_reg, Read2W(rs + se_imm16, instr_.instr()));
       break;
     case LBU:
-      addr = rs + se_imm16;
-      alu_out = ReadBU(addr);
+      set_register(rt_reg, ReadBU(rs + se_imm16));
       break;
     case LHU:
-      addr = rs + se_imm16;
-      alu_out = ReadHU(addr, instr);
+      set_register(rt_reg, ReadHU(rs + se_imm16, instr_.instr()));
       break;
     case LWR: {
       // al_offset is offset of the effective address within an aligned word.
@@ -4292,65 +4699,109 @@ void Simulator::DecodeTypeImmediate(Instruction* instr) {
       uint8_t byte_shift = kInt32AlignmentMask - al_offset;
       uint32_t mask = al_offset ? (~0 << (byte_shift + 1) * 8) : 0;
       addr = rs + se_imm16 - al_offset;
-      alu_out = ReadW(addr, instr);
+      alu_out = ReadW(addr, instr_.instr());
       alu_out = static_cast<uint32_t> (alu_out) >> al_offset * 8;
       alu_out |= rt & mask;
+      set_register(rt_reg, alu_out);
+      break;
+    }
+    case LDL: {
+      // al_offset is offset of the effective address within an aligned word.
+      uint8_t al_offset = (rs + se_imm16) & kInt64AlignmentMask;
+      uint8_t byte_shift = kInt64AlignmentMask - al_offset;
+      uint64_t mask = (1UL << byte_shift * 8) - 1;
+      addr = rs + se_imm16 - al_offset;
+      alu_out = Read2W(addr, instr_.instr());
+      alu_out <<= byte_shift * 8;
+      alu_out |= rt & mask;
+      set_register(rt_reg, alu_out);
+      break;
+    }
+    case LDR: {
+      // al_offset is offset of the effective address within an aligned word.
+      uint8_t al_offset = (rs + se_imm16) & kInt64AlignmentMask;
+      uint8_t byte_shift = kInt64AlignmentMask - al_offset;
+      uint64_t mask = al_offset ? (~0UL << (byte_shift + 1) * 8) : 0UL;
+      addr = rs + se_imm16 - al_offset;
+      alu_out = Read2W(addr, instr_.instr());
+      alu_out = alu_out >> al_offset * 8;
+      alu_out |= rt & mask;
+      set_register(rt_reg, alu_out);
       break;
     }
     case SB:
-      addr = rs + se_imm16;
+      WriteB(rs + se_imm16, static_cast<int8_t>(rt));
       break;
     case SH:
-      addr = rs + se_imm16;
+      WriteH(rs + se_imm16, static_cast<uint16_t>(rt), instr_.instr());
       break;
     case SWL: {
       uint8_t al_offset = (rs + se_imm16) & kInt32AlignmentMask;
       uint8_t byte_shift = kInt32AlignmentMask - al_offset;
       uint32_t mask = byte_shift ? (~0 << (al_offset + 1) * 8) : 0;
       addr = rs + se_imm16 - al_offset;
-      mem_value = ReadW(addr, instr) & mask;
+      uint64_t mem_value = ReadW(addr, instr_.instr()) & mask;
       mem_value |= static_cast<uint32_t>(rt) >> byte_shift * 8;
+      WriteW(addr, static_cast<int32_t>(mem_value), instr_.instr());
       break;
     }
     case SW:
+      WriteW(rs + se_imm16, static_cast<int32_t>(rt), instr_.instr());
+      break;
     case SD:
-      addr = rs + se_imm16;
+      Write2W(rs + se_imm16, rt, instr_.instr());
       break;
     case SWR: {
       uint8_t al_offset = (rs + se_imm16) & kInt32AlignmentMask;
       uint32_t mask = (1 << al_offset * 8) - 1;
       addr = rs + se_imm16 - al_offset;
-      mem_value = ReadW(addr, instr);
+      uint64_t mem_value = ReadW(addr, instr_.instr());
       mem_value = (rt << al_offset * 8) | (mem_value & mask);
+      WriteW(addr, static_cast<int32_t>(mem_value), instr_.instr());
+      break;
+    }
+    case SDL: {
+      uint8_t al_offset = (rs + se_imm16) & kInt64AlignmentMask;
+      uint8_t byte_shift = kInt64AlignmentMask - al_offset;
+      uint64_t mask = byte_shift ? (~0UL << (al_offset + 1) * 8) : 0;
+      addr = rs + se_imm16 - al_offset;
+      uint64_t mem_value = Read2W(addr, instr_.instr()) & mask;
+      mem_value |= rt >> byte_shift * 8;
+      Write2W(addr, mem_value, instr_.instr());
+      break;
+    }
+    case SDR: {
+      uint8_t al_offset = (rs + se_imm16) & kInt64AlignmentMask;
+      uint64_t mask = (1UL << al_offset * 8) - 1;
+      addr = rs + se_imm16 - al_offset;
+      uint64_t mem_value = Read2W(addr, instr_.instr());
+      mem_value = (rt << al_offset * 8) | (mem_value & mask);
+      Write2W(addr, mem_value, instr_.instr());
       break;
     }
     case LWC1:
-      addr = rs + se_imm16;
-      alu_out = ReadW(addr, instr);
+      set_fpu_register(ft_reg, kFPUInvalidResult);  // Trash upper 32 bits.
+      set_fpu_register_word(ft_reg,
+                            ReadW(rs + se_imm16, instr_.instr(), FLOAT_DOUBLE));
       break;
     case LDC1:
-      addr = rs + se_imm16;
-      fp_out = ReadD(addr, instr);
+      set_fpu_register_double(ft_reg, ReadD(rs + se_imm16, instr_.instr()));
+      TraceMemRd(addr, get_fpu_register(ft_reg), DOUBLE);
       break;
-    case SWC1:
+    case SWC1: {
+      int32_t alu_out_32 = static_cast<int32_t>(get_fpu_register(ft_reg));
+      WriteW(rs + se_imm16, alu_out_32, instr_.instr());
+      break;
+    }
     case SDC1:
-      addr = rs + se_imm16;
-      break;
-    // ------------- JIALC and BNEZC instructions.
-    case POP76:
-      // Next pc.
-      next_pc = rt + se_imm16;
-      // The instruction after the jump is NOT executed.
-      pc_increment = Instruction::kInstrSize;
-      if (instr->IsLinkingInstruction()) {
-        set_register(31, current_pc + pc_increment);
-      }
-      set_pc(next_pc);
-      pc_modified_ = true;
+      WriteD(rs + se_imm16, get_fpu_register_double(ft_reg), instr_.instr());
+      TraceMemWr(rs + se_imm16, get_fpu_register(ft_reg), DWORD);
       break;
     // ------------- PC-Relative instructions.
     case PCREL: {
       // rt field: checking 5-bits.
+      int32_t imm21 = instr_.Imm21Value();
+      int64_t current_pc = get_pc();
       uint8_t rt = (imm21 >> kImm16Bits);
       switch (rt) {
         case ALUIPC:
@@ -4361,41 +4812,43 @@ void Simulator::DecodeTypeImmediate(Instruction* instr) {
           alu_out = current_pc + (se_imm16 << 16);
           break;
         default: {
+          int32_t imm19 = instr_.Imm19Value();
           // rt field: checking the most significant 3-bits.
           rt = (imm21 >> kImm18Bits);
           switch (rt) {
             case LDPC:
               addr =
                   (current_pc & static_cast<int64_t>(~0x7)) + (se_imm18 << 3);
-              alu_out = Read2W(addr, instr);
+              alu_out = Read2W(addr, instr_.instr());
               break;
             default: {
               // rt field: checking the most significant 2-bits.
               rt = (imm21 >> kImm19Bits);
               switch (rt) {
                 case LWUPC: {
-                  int32_t offset = imm19;
                   // Set sign.
-                  offset <<= (kOpcodeBits + kRsBits + 2);
-                  offset >>= (kOpcodeBits + kRsBits + 2);
-                  addr = current_pc + (offset << 2);
+                  imm19 <<= (kOpcodeBits + kRsBits + 2);
+                  imm19 >>= (kOpcodeBits + kRsBits + 2);
+                  addr = current_pc + (imm19 << 2);
                   uint32_t* ptr = reinterpret_cast<uint32_t*>(addr);
                   alu_out = *ptr;
                   break;
                 }
                 case LWPC: {
-                  int32_t offset = imm19;
                   // Set sign.
-                  offset <<= (kOpcodeBits + kRsBits + 2);
-                  offset >>= (kOpcodeBits + kRsBits + 2);
-                  addr = current_pc + (offset << 2);
+                  imm19 <<= (kOpcodeBits + kRsBits + 2);
+                  imm19 >>= (kOpcodeBits + kRsBits + 2);
+                  addr = current_pc + (imm19 << 2);
                   int32_t* ptr = reinterpret_cast<int32_t*>(addr);
                   alu_out = *ptr;
                   break;
                 }
-                case ADDIUPC:
+                case ADDIUPC: {
+                  int64_t se_imm19 =
+                      imm19 | ((imm19 & 0x40000) ? 0xfffffffffff80000 : 0);
                   alu_out = current_pc + (se_imm19 << 2);
                   break;
+                }
                 default:
                   UNREACHABLE();
                   break;
@@ -4406,107 +4859,19 @@ void Simulator::DecodeTypeImmediate(Instruction* instr) {
           break;
         }
       }
+      SetResult(rs_reg, alu_out);
       break;
     }
     default:
       UNREACHABLE();
   }
 
-
-  // ---------- Raise exceptions triggered.
-  SignalExceptions();
-
-  // ---------- Execution.
-  switch (op) {
-    // ------------- Branch instructions.
-    case BEQ:
-    case BNE:
-    case BLEZ:
-    case BGTZ:
-      // Branch instructions common part.
-      execute_branch_delay_instruction = true;
-      // Set next_pc.
-      if (do_branch) {
-        next_pc = current_pc + (imm16 << 2) + Instruction::kInstrSize;
-        if (instr->IsLinkingInstruction()) {
-          set_register(31, current_pc + 2* Instruction::kInstrSize);
-        }
-      } else {
-        next_pc = current_pc + 2 * Instruction::kInstrSize;
-      }
-      break;
-    // ------------- Arithmetic instructions.
-    case ADDI:
-    case DADDI:
-    case ADDIU:
-    case DADDIU:
-    case SLTI:
-    case SLTIU:
-    case ANDI:
-    case ORI:
-    case XORI:
-    case LUI:
-      set_register(rt_reg, alu_out);
-      TraceRegWr(alu_out);
-      break;
-    // ------------- Memory instructions.
-    case LB:
-    case LH:
-    case LWL:
-    case LW:
-    case LWU:
-    case LD:
-    case LBU:
-    case LHU:
-    case LWR:
-      set_register(rt_reg, alu_out);
-      break;
-    case SB:
-      WriteB(addr, static_cast<int8_t>(rt));
-      break;
-    case SH:
-      WriteH(addr, static_cast<uint16_t>(rt), instr);
-      break;
-    case SWL:
-      WriteW(addr, static_cast<int32_t>(mem_value), instr);
-      break;
-    case SW:
-      WriteW(addr, static_cast<int32_t>(rt), instr);
-      break;
-    case SD:
-      Write2W(addr, rt, instr);
-      break;
-    case SWR:
-      WriteW(addr, static_cast<int32_t>(mem_value), instr);
-      break;
-    case LWC1:
-      set_fpu_register(ft_reg, kFPUInvalidResult);  // Trash upper 32 bits.
-      set_fpu_register_word(ft_reg, static_cast<int32_t>(alu_out));
-      break;
-    case LDC1:
-      set_fpu_register_double(ft_reg, fp_out);
-      break;
-    case SWC1:
-      addr = rs + se_imm16;
-      WriteW(addr, static_cast<int32_t>(get_fpu_register(ft_reg)), instr);
-      break;
-    case SDC1:
-      addr = rs + se_imm16;
-      WriteD(addr, get_fpu_register_double(ft_reg), instr);
-      break;
-    case PCREL:
-      set_register(rs_reg, alu_out);
-    default:
-      break;
-  }
-
-
   if (execute_branch_delay_instruction) {
     // Execute branch delay slot
     // We don't check for end_sim_pc. First it should not be met as the current
     // pc is valid. Secondly a jump should always execute its branch delay slot.
     Instruction* branch_delay_instr =
-      reinterpret_cast<Instruction*>(current_pc+Instruction::kInstrSize);
+        reinterpret_cast<Instruction*>(get_pc() + Instruction::kInstrSize);
     BranchDelayInstructionDecode(branch_delay_instr);
   }
 
@@ -4518,13 +4883,14 @@ void Simulator::DecodeTypeImmediate(Instruction* instr) {
 
 
 // Type 3: instructions using a 26 bytes immediate. (e.g. j, jal).
-void Simulator::DecodeTypeJump(Instruction* instr) {
+void Simulator::DecodeTypeJump() {
+  SimInstruction simInstr = instr_;
   // Get current pc.
   int64_t current_pc = get_pc();
   // Get unchanged bits of pc.
   int64_t pc_high_bits = current_pc & 0xfffffffff0000000;
   // Next pc.
-  int64_t next_pc = pc_high_bits | (instr->Imm26Value() << 2);
+  int64_t next_pc = pc_high_bits | (simInstr.Imm26Value() << 2);
 
   // Execute branch delay slot.
   // We don't check for end_sim_pc. First it should not be met as the current pc
@@ -4535,7 +4901,7 @@ void Simulator::DecodeTypeJump(Instruction* instr) {
 
   // Update pc and ra if necessary.
   // Do this after the branch delay execution.
-  if (instr->IsLinkingInstruction()) {
+  if (simInstr.IsLinkingInstruction()) {
     set_register(31, current_pc + 2 * Instruction::kInstrSize);
   }
   set_pc(next_pc);
@@ -4560,23 +4926,25 @@ void Simulator::InstructionDecode(Instruction* instr) {
     dasm.InstructionDecode(buffer, reinterpret_cast<byte*>(instr));
   }
 
-  switch (instr->InstructionType()) {
+  instr_ = instr;
+  switch (instr_.InstructionType()) {
     case Instruction::kRegisterType:
-      DecodeTypeRegister(instr);
+      DecodeTypeRegister();
       break;
     case Instruction::kImmediateType:
-      DecodeTypeImmediate(instr);
+      DecodeTypeImmediate();
       break;
     case Instruction::kJumpType:
-      DecodeTypeJump(instr);
+      DecodeTypeJump();
       break;
     default:
       UNSUPPORTED();
   }
 
   if (::v8::internal::FLAG_trace_sim) {
-    PrintF("  0x%08lx  %-44s   %s\n", reinterpret_cast<intptr_t>(instr),
-        buffer.start(), trace_buf_.start());
+    PrintF("  0x%08" PRIxPTR "   %-44s   %s\n",
+           reinterpret_cast<intptr_t>(instr), buffer.start(),
+           trace_buf_.start());
   }
 
   if (!pc_modified_) {
@@ -4619,6 +4987,9 @@ void Simulator::Execute() {
 
 
 void Simulator::CallInternal(byte* entry) {
+  // Adjust JS-based stack limit to C-based stack limit.
+  isolate_->stack_guard()->AdjustStackLimitForSimulator();
+
   // Prepare to execute the code at entry.
   set_register(pc, reinterpret_cast<int64_t>(entry));
   // Put down marker for end of simulation. The simulator will stop simulation
@@ -4686,7 +5057,7 @@ void Simulator::CallInternal(byte* entry) {
 
 
 int64_t Simulator::Call(byte* entry, int argument_count, ...) {
-  const int kRegisterPassedArguments = (kMipsAbi == kN64) ? 8 : 4;
+  const int kRegisterPassedArguments = 8;
   va_list parameters;
   va_start(parameters, argument_count);
   // Set up arguments.
@@ -4698,14 +5069,12 @@ int64_t Simulator::Call(byte* entry, int argument_count, ...) {
   set_register(a2, va_arg(parameters, int64_t));
   set_register(a3, va_arg(parameters, int64_t));
 
-  if (kMipsAbi == kN64) {
-    // Up to eight arguments passed in registers in N64 ABI.
-    // TODO(plind): N64 ABI calls these regs a4 - a7. Clarify this.
-    if (argument_count >= 5) set_register(a4, va_arg(parameters, int64_t));
-    if (argument_count >= 6) set_register(a5, va_arg(parameters, int64_t));
-    if (argument_count >= 7) set_register(a6, va_arg(parameters, int64_t));
-    if (argument_count >= 8) set_register(a7, va_arg(parameters, int64_t));
-  }
+  // Up to eight arguments passed in registers in N64 ABI.
+  // TODO(plind): N64 ABI calls these regs a4 - a7. Clarify this.
+  if (argument_count >= 5) set_register(a4, va_arg(parameters, int64_t));
+  if (argument_count >= 6) set_register(a5, va_arg(parameters, int64_t));
+  if (argument_count >= 7) set_register(a6, va_arg(parameters, int64_t));
+  if (argument_count >= 8) set_register(a7, va_arg(parameters, int64_t));
 
   // Remaining arguments passed on stack.
   int64_t original_stack = get_register(sp);
@@ -4740,7 +5109,7 @@ int64_t Simulator::Call(byte* entry, int argument_count, ...) {
 
 double Simulator::CallFP(byte* entry, double d0, double d1) {
   if (!IsMipsSoftFloatABI) {
-    const FPURegister fparg2 = (kMipsAbi == kN64) ? f13 : f14;
+    const FPURegister fparg2 = f13;
     set_fpu_register_double(f12, d0);
     set_fpu_register_double(fparg2, d1);
   } else {

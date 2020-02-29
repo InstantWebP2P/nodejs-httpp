@@ -5,7 +5,7 @@
 #ifndef V8_EXTENSIONS_EXTERNALIZE_STRING_EXTENSION_H_
 #define V8_EXTENSIONS_EXTERNALIZE_STRING_EXTENSION_H_
 
-#include "src/v8.h"
+#include "include/v8.h"
 
 namespace v8 {
 namespace internal {
@@ -22,6 +22,7 @@ class ExternalizeStringExtension : public v8::Extension {
   static const char* const kSource;
 };
 
-} }  // namespace v8::internal
+}  // namespace internal
+}  // namespace v8
 
 #endif  // V8_EXTENSIONS_EXTERNALIZE_STRING_EXTENSION_H_

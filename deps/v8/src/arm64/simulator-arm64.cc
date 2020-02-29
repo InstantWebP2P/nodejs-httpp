@@ -5,7 +5,6 @@
 #include <stdlib.h>
 #include <cmath>
 #include <cstdarg>
-#include "src/v8.h"
 
 #if V8_TARGET_ARCH_ARM64
 
@@ -16,6 +15,7 @@
 #include "src/disasm.h"
 #include "src/macro-assembler.h"
 #include "src/ostreams.h"
+#include "src/runtime/runtime-utils.h"
 
 namespace v8 {
 namespace internal {
@@ -178,14 +178,14 @@ double Simulator::CallDouble(byte* entry, CallArgument* args) {
 
 
 int64_t Simulator::CallJS(byte* entry,
-                          byte* function_entry,
-                          JSFunction* func,
+                          Object* new_target,
+                          Object* target,
                           Object* revc,
                           int64_t argc,
                           Object*** argv) {
   CallArgument args[] = {
-    CallArgument(function_entry),
-    CallArgument(func),
+    CallArgument(new_target),
+    CallArgument(target),
     CallArgument(revc),
     CallArgument(argc),
     CallArgument(argv),
@@ -193,6 +193,7 @@ int64_t Simulator::CallJS(byte* entry,
   };
   return CallInt64(entry, args);
 }
+
 
 int64_t Simulator::CallRegExp(byte* entry,
                               String* input,
@@ -223,6 +224,9 @@ int64_t Simulator::CallRegExp(byte* entry,
 
 
 void Simulator::CheckPCSComplianceAndRun() {
+  // Adjust JS-based stack limit to C-based stack limit.
+  isolate_->stack_guard()->AdjustStackLimitForSimulator();
+
 #ifdef DEBUG
   CHECK_EQ(kNumberOfCalleeSavedRegisters, kCalleeSaved.Count());
   CHECK_EQ(kNumberOfCalleeSavedFPRegisters, kCalleeSavedFP.Count());
@@ -333,9 +337,15 @@ uintptr_t Simulator::PopAddress() {
 
 
 // Returns the limit of the stack area to enable checking for stack overflows.
-uintptr_t Simulator::StackLimit() const {
-  // Leave a safety margin of 1024 bytes to prevent overrunning the stack when
-  // pushing values.
+uintptr_t Simulator::StackLimit(uintptr_t c_limit) const {
+  // The simulator uses a separate JS stack. If we have exhausted the C stack,
+  // we also drop down the JS limit to reflect the exhaustion on the JS stack.
+  if (GetCurrentStackPosition() < c_limit) {
+    return reinterpret_cast<uintptr_t>(get_sp());
+  }
+
+  // Otherwise the limit is the JS stack. Leave a safety margin of 1024 bytes
+  // to prevent overrunning the stack when pushing values.
   return stack_limit_ + 1024;
 }
 
@@ -453,13 +463,11 @@ void Simulator::RunFrom(Instruction* start) {
 // offset from the svc instruction so the simulator knows what to call.
 class Redirection {
  public:
-  Redirection(void* external_function, ExternalReference::Type type)
-      : external_function_(external_function),
-        type_(type),
-        next_(NULL) {
+  Redirection(Isolate* isolate, void* external_function,
+              ExternalReference::Type type)
+      : external_function_(external_function), type_(type), next_(NULL) {
     redirect_call_.SetInstructionBits(
         HLT | Assembler::ImmException(kImmExceptionIsRedirectedCall));
-    Isolate* isolate = Isolate::Current();
     next_ = isolate->simulator_redirection();
     // TODO(all): Simulator flush I cache
     isolate->set_simulator_redirection(this);
@@ -474,9 +482,8 @@ class Redirection {
 
   ExternalReference::Type type() { return type_; }
 
-  static Redirection* Get(void* external_function,
+  static Redirection* Get(Isolate* isolate, void* external_function,
                           ExternalReference::Type type) {
-    Isolate* isolate = Isolate::Current();
     Redirection* current = isolate->simulator_redirection();
     for (; current != NULL; current = current->next_) {
       if (current->external_function_ == external_function) {
@@ -484,7 +491,7 @@ class Redirection {
         return current;
       }
     }
-    return new Redirection(external_function, type);
+    return new Redirection(isolate, external_function, type);
   }
 
   static Redirection* FromHltInstruction(Instruction* redirect_call) {
@@ -517,7 +524,8 @@ class Redirection {
 
 
 // static
-void Simulator::TearDown(HashMap* i_cache, Redirection* first) {
+void Simulator::TearDown(base::CustomMatcherHashMap* i_cache,
+                         Redirection* first) {
   Redirection::DeleteChain(first);
 }
 
@@ -527,12 +535,6 @@ void Simulator::TearDown(HashMap* i_cache, Redirection* first) {
 // uses the ObjectPair structure.
 // The simulator assumes all runtime calls return two 64-bits values. If they
 // don't, register x1 is clobbered. This is fine because x1 is caller-saved.
-struct ObjectPair {
-  int64_t res0;
-  int64_t res1;
-};
-
-
 typedef ObjectPair (*SimulatorRuntimeCall)(int64_t arg0,
                                            int64_t arg1,
                                            int64_t arg2,
@@ -541,6 +543,11 @@ typedef ObjectPair (*SimulatorRuntimeCall)(int64_t arg0,
                                            int64_t arg5,
                                            int64_t arg6,
                                            int64_t arg7);
+
+typedef ObjectTriple (*SimulatorRuntimeTripleCall)(int64_t arg0, int64_t arg1,
+                                                   int64_t arg2, int64_t arg3,
+                                                   int64_t arg4, int64_t arg5,
+                                                   int64_t arg6, int64_t arg7);
 
 typedef int64_t (*SimulatorRuntimeCompareCall)(double arg1, double arg2);
 typedef double (*SimulatorRuntimeFPFPCall)(double arg1, double arg2);
@@ -583,8 +590,10 @@ void Simulator::DoRuntimeCall(Instruction* instr) {
       UNREACHABLE();
       break;
 
-    case ExternalReference::BUILTIN_CALL: {
-      // Object* f(v8::internal::Arguments).
+    case ExternalReference::BUILTIN_CALL:
+    case ExternalReference::BUILTIN_CALL_PAIR: {
+      // Object* f(v8::internal::Arguments) or
+      // ObjectPair f(v8::internal::Arguments).
       TraceSim("Type: BUILTIN_CALL\n");
       SimulatorRuntimeCall target =
         reinterpret_cast<SimulatorRuntimeCall>(external);
@@ -601,13 +610,43 @@ void Simulator::DoRuntimeCall(Instruction* instr) {
                xreg(4), xreg(5), xreg(6), xreg(7));
       ObjectPair result = target(xreg(0), xreg(1), xreg(2), xreg(3),
                                  xreg(4), xreg(5), xreg(6), xreg(7));
-      TraceSim("Returned: {0x%" PRIx64 ", 0x%" PRIx64 "}\n",
-               result.res0, result.res1);
+      TraceSim("Returned: {%p, %p}\n", static_cast<void*>(result.x),
+               static_cast<void*>(result.y));
 #ifdef DEBUG
       CorruptAllCallerSavedCPURegisters();
 #endif
-      set_xreg(0, result.res0);
-      set_xreg(1, result.res1);
+      set_xreg(0, reinterpret_cast<int64_t>(result.x));
+      set_xreg(1, reinterpret_cast<int64_t>(result.y));
+      break;
+    }
+
+    case ExternalReference::BUILTIN_CALL_TRIPLE: {
+      // ObjectTriple f(v8::internal::Arguments).
+      TraceSim("Type: BUILTIN_CALL TRIPLE\n");
+      SimulatorRuntimeTripleCall target =
+          reinterpret_cast<SimulatorRuntimeTripleCall>(external);
+
+      // We don't know how many arguments are being passed, but we can
+      // pass 8 without touching the stack. They will be ignored by the
+      // host function if they aren't used.
+      TraceSim(
+          "Arguments: "
+          "0x%016" PRIx64 ", 0x%016" PRIx64 ", "
+          "0x%016" PRIx64 ", 0x%016" PRIx64 ", "
+          "0x%016" PRIx64 ", 0x%016" PRIx64 ", "
+          "0x%016" PRIx64 ", 0x%016" PRIx64,
+          xreg(0), xreg(1), xreg(2), xreg(3), xreg(4), xreg(5), xreg(6),
+          xreg(7));
+      // Return location passed in x8.
+      ObjectTriple* sim_result = reinterpret_cast<ObjectTriple*>(xreg(8));
+      ObjectTriple result = target(xreg(0), xreg(1), xreg(2), xreg(3), xreg(4),
+                                   xreg(5), xreg(6), xreg(7));
+      TraceSim("Returned: {%p, %p, %p}\n", static_cast<void*>(result.x),
+               static_cast<void*>(result.y), static_cast<void*>(result.z));
+#ifdef DEBUG
+      CorruptAllCallerSavedCPURegisters();
+#endif
+      *sim_result = result;
       break;
     }
 
@@ -739,9 +778,10 @@ void Simulator::DoRuntimeCall(Instruction* instr) {
 }
 
 
-void* Simulator::RedirectExternalReference(void* external_function,
+void* Simulator::RedirectExternalReference(Isolate* isolate,
+                                           void* external_function,
                                            ExternalReference::Type type) {
-  Redirection* redirection = Redirection::Get(external_function, type);
+  Redirection* redirection = Redirection::Get(isolate, external_function, type);
   return redirection->address_of_redirect_call();
 }
 
@@ -849,36 +889,31 @@ int Simulator::CodeFromName(const char* name) {
 
 // Helpers ---------------------------------------------------------------------
 template <typename T>
-T Simulator::AddWithCarry(bool set_flags,
-                          T src1,
-                          T src2,
-                          T carry_in) {
-  typedef typename make_unsigned<T>::type unsignedT;
+T Simulator::AddWithCarry(bool set_flags, T left, T right, int carry_in) {
+  // Use unsigned types to avoid implementation-defined overflow behaviour.
+  static_assert(std::is_unsigned<T>::value, "operands must be unsigned");
+  static_assert((sizeof(T) == kWRegSize) || (sizeof(T) == kXRegSize),
+                "Only W- or X-sized operands are tested");
+
   DCHECK((carry_in == 0) || (carry_in == 1));
-
-  T signed_sum = src1 + src2 + carry_in;
-  T result = signed_sum;
-
-  bool N, Z, C, V;
-
-  // Compute the C flag
-  unsignedT u1 = static_cast<unsignedT>(src1);
-  unsignedT u2 = static_cast<unsignedT>(src2);
-  unsignedT urest = std::numeric_limits<unsignedT>::max() - u1;
-  C = (u2 > urest) || (carry_in && (((u2 + 1) > urest) || (u2 > (urest - 1))));
-
-  // Overflow iff the sign bit is the same for the two inputs and different
-  // for the result.
-  V = ((src1 ^ src2) >= 0) && ((src1 ^ result) < 0);
-
-  N = CalcNFlag(result);
-  Z = CalcZFlag(result);
+  T result = left + right + carry_in;
 
   if (set_flags) {
-    nzcv().SetN(N);
-    nzcv().SetZ(Z);
-    nzcv().SetC(C);
-    nzcv().SetV(V);
+    nzcv().SetN(CalcNFlag(result));
+    nzcv().SetZ(CalcZFlag(result));
+
+    // Compute the C flag by comparing the result to the max unsigned integer.
+    T max_uint_2op = std::numeric_limits<T>::max() - carry_in;
+    nzcv().SetC((left > max_uint_2op) || ((max_uint_2op - left) < right));
+
+    // Overflow iff the sign bit is the same for the two inputs and different
+    // for the result.
+    T sign_mask = T(1) << (sizeof(T) * 8 - 1);
+    T left_sign = left & sign_mask;
+    T right_sign = right & sign_mask;
+    T result_sign = result & sign_mask;
+    nzcv().SetV((left_sign == right_sign) && (left_sign != result_sign));
+
     LogSystemRegister(NZCV);
   }
   return result;
@@ -887,6 +922,9 @@ T Simulator::AddWithCarry(bool set_flags,
 
 template<typename T>
 void Simulator::AddSubWithCarry(Instruction* instr) {
+  // Use unsigned types to avoid implementation-defined overflow behaviour.
+  static_assert(std::is_unsigned<T>::value, "operands must be unsigned");
+
   T op2 = reg<T>(instr->Rm());
   T new_val;
 
@@ -1379,6 +1417,9 @@ void Simulator::VisitCompareBranch(Instruction* instr) {
 
 template<typename T>
 void Simulator::AddSubHelper(Instruction* instr, T op2) {
+  // Use unsigned types to avoid implementation-defined overflow behaviour.
+  static_assert(std::is_unsigned<T>::value, "operands must be unsigned");
+
   bool set_flags = instr->FlagsUpdate();
   T new_val = 0;
   Instr operation = instr->Mask(AddSubOpMask);
@@ -1411,11 +1452,10 @@ void Simulator::VisitAddSubShifted(Instruction* instr) {
   unsigned shift_amount = instr->ImmDPShift();
 
   if (instr->SixtyFourBits()) {
-    int64_t op2 = ShiftOperand(xreg(instr->Rm()), shift_type, shift_amount);
+    uint64_t op2 = ShiftOperand(xreg(instr->Rm()), shift_type, shift_amount);
     AddSubHelper(instr, op2);
   } else {
-    int32_t op2 = static_cast<int32_t>(
-        ShiftOperand(wreg(instr->Rm()), shift_type, shift_amount));
+    uint32_t op2 = ShiftOperand(wreg(instr->Rm()), shift_type, shift_amount);
     AddSubHelper(instr, op2);
   }
 }
@@ -1424,9 +1464,9 @@ void Simulator::VisitAddSubShifted(Instruction* instr) {
 void Simulator::VisitAddSubImmediate(Instruction* instr) {
   int64_t op2 = instr->ImmAddSub() << ((instr->ShiftAddSub() == 1) ? 12 : 0);
   if (instr->SixtyFourBits()) {
-    AddSubHelper<int64_t>(instr, op2);
+    AddSubHelper(instr, static_cast<uint64_t>(op2));
   } else {
-    AddSubHelper<int32_t>(instr, static_cast<int32_t>(op2));
+    AddSubHelper(instr, static_cast<uint32_t>(op2));
   }
 }
 
@@ -1435,10 +1475,10 @@ void Simulator::VisitAddSubExtended(Instruction* instr) {
   Extend ext = static_cast<Extend>(instr->ExtendMode());
   unsigned left_shift = instr->ImmExtendShift();
   if (instr->SixtyFourBits()) {
-    int64_t op2 = ExtendValue(xreg(instr->Rm()), ext, left_shift);
+    uint64_t op2 = ExtendValue(xreg(instr->Rm()), ext, left_shift);
     AddSubHelper(instr, op2);
   } else {
-    int32_t op2 = ExtendValue(wreg(instr->Rm()), ext, left_shift);
+    uint32_t op2 = ExtendValue(wreg(instr->Rm()), ext, left_shift);
     AddSubHelper(instr, op2);
   }
 }
@@ -1446,9 +1486,9 @@ void Simulator::VisitAddSubExtended(Instruction* instr) {
 
 void Simulator::VisitAddSubWithCarry(Instruction* instr) {
   if (instr->SixtyFourBits()) {
-    AddSubWithCarry<int64_t>(instr);
+    AddSubWithCarry<uint64_t>(instr);
   } else {
-    AddSubWithCarry<int32_t>(instr);
+    AddSubWithCarry<uint32_t>(instr);
   }
 }
 
@@ -1458,22 +1498,22 @@ void Simulator::VisitLogicalShifted(Instruction* instr) {
   unsigned shift_amount = instr->ImmDPShift();
 
   if (instr->SixtyFourBits()) {
-    int64_t op2 = ShiftOperand(xreg(instr->Rm()), shift_type, shift_amount);
+    uint64_t op2 = ShiftOperand(xreg(instr->Rm()), shift_type, shift_amount);
     op2 = (instr->Mask(NOT) == NOT) ? ~op2 : op2;
-    LogicalHelper<int64_t>(instr, op2);
+    LogicalHelper(instr, op2);
   } else {
-    int32_t op2 = ShiftOperand(wreg(instr->Rm()), shift_type, shift_amount);
+    uint32_t op2 = ShiftOperand(wreg(instr->Rm()), shift_type, shift_amount);
     op2 = (instr->Mask(NOT) == NOT) ? ~op2 : op2;
-    LogicalHelper<int32_t>(instr, op2);
+    LogicalHelper(instr, op2);
   }
 }
 
 
 void Simulator::VisitLogicalImmediate(Instruction* instr) {
   if (instr->SixtyFourBits()) {
-    LogicalHelper<int64_t>(instr, instr->ImmLogical());
+    LogicalHelper(instr, static_cast<uint64_t>(instr->ImmLogical()));
   } else {
-    LogicalHelper<int32_t>(instr, static_cast<int32_t>(instr->ImmLogical()));
+    LogicalHelper(instr, static_cast<uint32_t>(instr->ImmLogical()));
   }
 }
 
@@ -1509,24 +1549,27 @@ void Simulator::LogicalHelper(Instruction* instr, T op2) {
 
 void Simulator::VisitConditionalCompareRegister(Instruction* instr) {
   if (instr->SixtyFourBits()) {
-    ConditionalCompareHelper(instr, xreg(instr->Rm()));
+    ConditionalCompareHelper(instr, static_cast<uint64_t>(xreg(instr->Rm())));
   } else {
-    ConditionalCompareHelper(instr, wreg(instr->Rm()));
+    ConditionalCompareHelper(instr, static_cast<uint32_t>(wreg(instr->Rm())));
   }
 }
 
 
 void Simulator::VisitConditionalCompareImmediate(Instruction* instr) {
   if (instr->SixtyFourBits()) {
-    ConditionalCompareHelper<int64_t>(instr, instr->ImmCondCmp());
+    ConditionalCompareHelper(instr, static_cast<uint64_t>(instr->ImmCondCmp()));
   } else {
-    ConditionalCompareHelper<int32_t>(instr, instr->ImmCondCmp());
+    ConditionalCompareHelper(instr, static_cast<uint32_t>(instr->ImmCondCmp()));
   }
 }
 
 
 template<typename T>
 void Simulator::ConditionalCompareHelper(Instruction* instr, T op2) {
+  // Use unsigned types to avoid implementation-defined overflow behaviour.
+  static_assert(std::is_unsigned<T>::value, "operands must be unsigned");
+
   T op1 = reg<T>(instr->Rn());
 
   if (ConditionPassed(static_cast<Condition>(instr->Condition()))) {
@@ -1673,11 +1716,6 @@ void Simulator::VisitLoadStorePairPreIndex(Instruction* instr) {
 
 void Simulator::VisitLoadStorePairPostIndex(Instruction* instr) {
   LoadStorePairHelper(instr, PostIndex);
-}
-
-
-void Simulator::VisitLoadStorePairNonTemporal(Instruction* instr) {
-  LoadStorePairHelper(instr, Offset);
 }
 
 
@@ -1868,6 +1906,9 @@ void Simulator::LoadStoreWriteBack(unsigned addr_reg,
   }
 }
 
+void Simulator::VisitLoadStoreAcquireRelease(Instruction* instr) {
+  // TODO(binji)
+}
 
 void Simulator::CheckMemoryAccess(uintptr_t address, uintptr_t stack) {
   if ((address >= stack_limit_) && (address < stack)) {
@@ -1964,10 +2005,10 @@ void Simulator::VisitDataProcessing1Source(Instruction* instr) {
 
   switch (instr->Mask(DataProcessing1SourceMask)) {
     case RBIT_w:
-      set_wreg(dst, ReverseBits(wreg(src)));
+      set_wreg(dst, base::bits::ReverseBits(wreg(src)));
       break;
     case RBIT_x:
-      set_xreg(dst, ReverseBits(xreg(src)));
+      set_xreg(dst, base::bits::ReverseBits(xreg(src)));
       break;
     case REV16_w:
       set_wreg(dst, ReverseBytes(wreg(src), 1));
@@ -2757,7 +2798,7 @@ double Simulator::FPRoundInt(double value, FPRounding round_mode) {
       // If the error is greater than 0.5, or is equal to 0.5 and the integer
       // result is odd, round up.
       } else if ((error > 0.5) ||
-          ((error == 0.5) && (fmod(int_result, 2) != 0))) {
+                 ((error == 0.5) && (modulo(int_result, 2) != 0))) {
         int_result++;
       }
       break;
@@ -3103,7 +3144,8 @@ T Simulator::FPSqrt(T op) {
   } else if (op < 0.0) {
     return FPDefaultNaN<T>();
   } else {
-    return fast_sqrt(op);
+    lazily_initialize_fast_sqrt(isolate_);
+    return fast_sqrt(op, isolate_);
   }
 }
 
@@ -3506,8 +3548,9 @@ void Simulator::Debug() {
                  reinterpret_cast<uint64_t>(cur), *cur, *cur);
           HeapObject* obj = reinterpret_cast<HeapObject*>(*cur);
           int64_t value = *cur;
-          Heap* current_heap = v8::internal::Isolate::Current()->heap();
-          if (((value & 1) == 0) || current_heap->Contains(obj)) {
+          Heap* current_heap = isolate_->heap();
+          if (((value & 1) == 0) ||
+              current_heap->ContainsSlow(obj->address())) {
             PrintF(" (");
             if ((value & kSmiTagMask) == 0) {
               STATIC_ASSERT(kSmiValueSize == 32);

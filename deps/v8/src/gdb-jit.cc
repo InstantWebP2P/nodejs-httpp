@@ -2,20 +2,21 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "src/v8.h"
+#include "src/gdb-jit.h"
+
+#include <memory>
 
 #include "src/base/bits.h"
 #include "src/base/platform/platform.h"
 #include "src/bootstrapper.h"
-#include "src/compiler.h"
 #include "src/frames-inl.h"
 #include "src/frames.h"
-#include "src/gdb-jit.h"
 #include "src/global-handles.h"
 #include "src/messages.h"
 #include "src/objects.h"
 #include "src/ostreams.h"
 #include "src/snapshot/natives.h"
+#include "src/splay-tree-inl.h"
 
 namespace v8 {
 namespace internal {
@@ -355,17 +356,13 @@ class ELFSection : public DebugSectionBase<ELFSectionHeader> {
 #if defined(__MACH_O)
 class MachOTextSection : public MachOSection {
  public:
-  MachOTextSection(uintptr_t align,
-                   uintptr_t addr,
-                   uintptr_t size)
-      : MachOSection("__text",
-                     "__TEXT",
-                     align,
+  MachOTextSection(uint32_t align, uintptr_t addr, uintptr_t size)
+      : MachOSection("__text", "__TEXT", align,
                      MachOSection::S_REGULAR |
                          MachOSection::S_ATTR_SOME_INSTRUCTIONS |
                          MachOSection::S_ATTR_PURE_INSTRUCTIONS),
         addr_(addr),
-        size_(size) { }
+        size_(size) {}
 
  protected:
   virtual void PopulateHeader(Writer::Slot<Header> header) {
@@ -588,7 +585,8 @@ class MachO BASE_EMBEDDED {
     Writer::Slot<MachOSection::Header> headers =
         w->CreateSlotsHere<MachOSection::Header>(sections_.length());
     cmd->fileoff = w->position();
-    header->sizeofcmds = w->position() - load_command_start;
+    header->sizeofcmds =
+        static_cast<uint32_t>(w->position() - load_command_start);
     for (int section = 0; section < sections_.length(); ++section) {
       sections_[section]->PopulateHeader(headers.at(section));
       sections_[section]->WriteBody(headers.at(section), w);
@@ -652,9 +650,19 @@ class ELF BASE_EMBEDDED {
      (V8_TARGET_ARCH_X64 && V8_TARGET_ARCH_32_BIT))
     const uint8_t ident[16] =
         { 0x7f, 'E', 'L', 'F', 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0};
-#elif V8_TARGET_ARCH_X64 && V8_TARGET_ARCH_64_BIT
+#elif(V8_TARGET_ARCH_X64 && V8_TARGET_ARCH_64_BIT) || \
+    (V8_TARGET_ARCH_PPC64 && V8_TARGET_LITTLE_ENDIAN)
     const uint8_t ident[16] =
         { 0x7f, 'E', 'L', 'F', 2, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+#elif V8_TARGET_ARCH_PPC64 && V8_TARGET_BIG_ENDIAN && V8_OS_LINUX
+    const uint8_t ident[16] = {0x7f, 'E', 'L', 'F', 2, 2, 1, 0,
+                               0,    0,   0,   0,   0, 0, 0, 0};
+#elif V8_TARGET_ARCH_S390X
+    const uint8_t ident[16] = {0x7f, 'E', 'L', 'F', 2, 2, 1, 3,
+                               0,    0,   0,   0,   0, 0, 0, 0};
+#elif V8_TARGET_ARCH_S390
+    const uint8_t ident[16] = {0x7f, 'E', 'L', 'F', 1, 2, 1, 3,
+                               0,    0,   0,   0,   0, 0, 0, 0};
 #else
 #error Unsupported target architecture.
 #endif
@@ -671,6 +679,19 @@ class ELF BASE_EMBEDDED {
     // Set to EM_ARM, defined as 40, in "ARM ELF File Format" at
     // infocenter.arm.com/help/topic/com.arm.doc.dui0101a/DUI0101A_Elf.pdf
     header->machine = 40;
+#elif V8_TARGET_ARCH_PPC64 && V8_OS_LINUX
+    // Set to EM_PPC64, defined as 21, in Power ABI,
+    // Join the next 4 lines, omitting the spaces and double-slashes.
+    // https://www-03.ibm.com/technologyconnect/tgcm/TGCMFileServlet.wss/
+    // ABI64BitOpenPOWERv1.1_16July2015_pub.pdf?
+    // id=B81AEC1A37F5DAF185257C3E004E8845&linkid=1n0000&c_t=
+    // c9xw7v5dzsj7gt1ifgf4cjbcnskqptmr
+    header->machine = 21;
+#elif V8_TARGET_ARCH_S390
+    // Processor identification value is 22 (EM_S390) as defined in the ABI:
+    // http://refspecs.linuxbase.org/ELF/zSeries/lzsabi0_s390.html#AEN1691
+    // http://refspecs.linuxbase.org/ELF/zSeries/lzsabi0_zSeries.html#AEN1599
+    header->machine = 22;
 #else
 #error Unsupported target architecture.
 #endif
@@ -763,7 +784,8 @@ class ELFSymbol BASE_EMBEDDED {
     return static_cast<Binding>(info >> 4);
   }
 #if (V8_TARGET_ARCH_IA32 || V8_TARGET_ARCH_ARM || V8_TARGET_ARCH_X87 || \
-     (V8_TARGET_ARCH_X64 && V8_TARGET_ARCH_32_BIT))
+     (V8_TARGET_ARCH_X64 && V8_TARGET_ARCH_32_BIT) ||                   \
+     (V8_TARGET_ARCH_S390 && V8_TARGET_ARCH_32_BIT))
   struct SerializedLayout {
     SerializedLayout(uint32_t name,
                      uintptr_t value,
@@ -786,7 +808,8 @@ class ELFSymbol BASE_EMBEDDED {
     uint8_t other;
     uint16_t section;
   };
-#elif V8_TARGET_ARCH_X64 && V8_TARGET_ARCH_64_BIT
+#elif(V8_TARGET_ARCH_X64 && V8_TARGET_ARCH_64_BIT) || \
+    (V8_TARGET_ARCH_PPC64 && V8_OS_LINUX) || V8_TARGET_ARCH_S390X
   struct SerializedLayout {
     SerializedLayout(uint32_t name,
                      uintptr_t value,
@@ -993,7 +1016,7 @@ class CodeDescription BASE_EMBEDDED {
   }
 #endif
 
-  SmartArrayPointer<char> GetFilename() {
+  std::unique_ptr<char[]> GetFilename() {
     return String::cast(script()->name())->ToCString();
   }
 
@@ -1064,6 +1087,30 @@ class DebugInfoSection : public DebugSection {
     DW_OP_reg5 = 0x55,
     DW_OP_reg6 = 0x56,
     DW_OP_reg7 = 0x57,
+    DW_OP_reg8 = 0x58,
+    DW_OP_reg9 = 0x59,
+    DW_OP_reg10 = 0x5a,
+    DW_OP_reg11 = 0x5b,
+    DW_OP_reg12 = 0x5c,
+    DW_OP_reg13 = 0x5d,
+    DW_OP_reg14 = 0x5e,
+    DW_OP_reg15 = 0x5f,
+    DW_OP_reg16 = 0x60,
+    DW_OP_reg17 = 0x61,
+    DW_OP_reg18 = 0x62,
+    DW_OP_reg19 = 0x63,
+    DW_OP_reg20 = 0x64,
+    DW_OP_reg21 = 0x65,
+    DW_OP_reg22 = 0x66,
+    DW_OP_reg23 = 0x67,
+    DW_OP_reg24 = 0x68,
+    DW_OP_reg25 = 0x69,
+    DW_OP_reg26 = 0x6a,
+    DW_OP_reg27 = 0x6b,
+    DW_OP_reg28 = 0x6c,
+    DW_OP_reg29 = 0x6d,
+    DW_OP_reg30 = 0x6e,
+    DW_OP_reg31 = 0x6f,
     DW_OP_fbreg = 0x91  // 1 param: SLEB128 offset
   };
 
@@ -1109,6 +1156,10 @@ class DebugInfoSection : public DebugSection {
       UNIMPLEMENTED();
 #elif V8_TARGET_ARCH_MIPS64
       UNIMPLEMENTED();
+#elif V8_TARGET_ARCH_PPC64 && V8_OS_LINUX
+      w->Write<uint8_t>(DW_OP_reg31);  // The frame pointer is here on PPC64.
+#elif V8_TARGET_ARCH_S390
+      w->Write<uint8_t>(DW_OP_reg11);  // The frame pointer's here on S390.
 #else
 #error Unsupported target architecture.
 #endif
@@ -1151,7 +1202,7 @@ class DebugInfoSection : public DebugSection {
       DCHECK(Context::CLOSURE_INDEX == 0);
       DCHECK(Context::PREVIOUS_INDEX == 1);
       DCHECK(Context::EXTENSION_INDEX == 2);
-      DCHECK(Context::GLOBAL_OBJECT_INDEX == 3);
+      DCHECK(Context::NATIVE_CONTEXT_INDEX == 3);
       w->WriteULEB128(current_abbreviation++);
       w->WriteString(".closure");
       w->WriteULEB128(current_abbreviation++);
@@ -1159,7 +1210,7 @@ class DebugInfoSection : public DebugSection {
       w->WriteULEB128(current_abbreviation++);
       w->WriteString(".extension");
       w->WriteULEB128(current_abbreviation++);
-      w->WriteString(".global");
+      w->WriteString(".native_context");
 
       for (int context_slot = 0;
            context_slot < context_slots;
@@ -1891,7 +1942,7 @@ static void UnregisterCodeEntry(JITCodeEntry* entry) {
 
 static JITCodeEntry* CreateELFObject(CodeDescription* desc, Isolate* isolate) {
 #ifdef __MACH_O
-  Zone zone;
+  Zone zone(isolate->allocator(), ZONE_NAME);
   MachO mach_o(&zone);
   Writer w(&mach_o);
 
@@ -1903,7 +1954,7 @@ static JITCodeEntry* CreateELFObject(CodeDescription* desc, Isolate* isolate) {
 
   mach_o.Write(&w, desc->CodeStart(), desc->CodeSize());
 #else
-  Zone zone;
+  Zone zone(isolate->allocator(), ZONE_NAME);
   ELF elf(&zone);
   Writer w(&elf);
 
@@ -1962,17 +2013,19 @@ static uint32_t HashCodeAddress(Address addr) {
   return static_cast<uint32_t>((offset >> kCodeAlignmentBits) * kGoldenRatio);
 }
 
-
-static HashMap* GetLineMap() {
-  static HashMap* line_map = NULL;
-  if (line_map == NULL) line_map = new HashMap(&HashMap::PointersMatch);
+static base::HashMap* GetLineMap() {
+  static base::HashMap* line_map = NULL;
+  if (line_map == NULL) {
+    line_map = new base::HashMap();
+  }
   return line_map;
 }
 
 
 static void PutLineInfo(Address addr, LineInfo* info) {
-  HashMap* line_map = GetLineMap();
-  HashMap::Entry* e = line_map->LookupOrInsert(addr, HashCodeAddress(addr));
+  base::HashMap* line_map = GetLineMap();
+  base::HashMap::Entry* e =
+      line_map->LookupOrInsert(addr, HashCodeAddress(addr));
   if (e->value != NULL) delete static_cast<LineInfo*>(e->value);
   e->value = info;
 }

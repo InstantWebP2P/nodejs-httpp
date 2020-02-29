@@ -7,6 +7,9 @@
 
 #include <stdio.h>
 #include <iosfwd>
+#include <memory>
+
+#include "src/globals.h"
 
 namespace v8 {
 namespace internal {
@@ -21,16 +24,9 @@ class RegisterAllocationData;
 class Schedule;
 class SourcePositionTable;
 
-FILE* OpenVisualizerLogFile(CompilationInfo* info, const char* phase,
-                            const char* suffix, const char* mode);
-
-struct AsDOT {
-  explicit AsDOT(const Graph& g) : graph(g) {}
-  const Graph& graph;
-};
-
-std::ostream& operator<<(std::ostream& os, const AsDOT& ad);
-
+std::unique_ptr<char[]> GetVisualizerLogFileName(CompilationInfo* info,
+                                                 const char* phase,
+                                                 const char* suffix);
 
 struct AsJSON {
   AsJSON(const Graph& g, SourcePositionTable* p) : graph(g), positions(p) {}
@@ -38,15 +34,14 @@ struct AsJSON {
   const SourcePositionTable* positions;
 };
 
-std::ostream& operator<<(std::ostream& os, const AsJSON& ad);
+V8_EXPORT_PRIVATE std::ostream& operator<<(std::ostream& os, const AsJSON& ad);
 
 struct AsRPO {
   explicit AsRPO(const Graph& g) : graph(g) {}
   const Graph& graph;
 };
 
-std::ostream& operator<<(std::ostream& os, const AsRPO& ad);
-
+V8_EXPORT_PRIVATE std::ostream& operator<<(std::ostream& os, const AsRPO& ad);
 
 struct AsC1VCompilation {
   explicit AsC1VCompilation(const CompilationInfo* info) : info_(info) {}
@@ -56,8 +51,8 @@ struct AsC1VCompilation {
 
 struct AsC1V {
   AsC1V(const char* phase, const Schedule* schedule,
-        const SourcePositionTable* positions = NULL,
-        const InstructionSequence* instructions = NULL)
+        const SourcePositionTable* positions = nullptr,
+        const InstructionSequence* instructions = nullptr)
       : schedule_(schedule),
         instructions_(instructions),
         positions_(positions),
@@ -76,7 +71,6 @@ struct AsC1VRegisterAllocationData {
   const RegisterAllocationData* data_;
 };
 
-std::ostream& operator<<(std::ostream& os, const AsDOT& ad);
 std::ostream& operator<<(std::ostream& os, const AsC1VCompilation& ac);
 std::ostream& operator<<(std::ostream& os, const AsC1V& ac);
 std::ostream& operator<<(std::ostream& os,

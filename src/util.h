@@ -39,7 +39,8 @@ class Utf8Value {
       size_t len = val_->Length();
 
       // In the presence of UTF allocate 3 bytes for each character
-      if (val_->MayContainNonAscii())
+      //if (val_->MayContainNonAscii())
+      if (val_ -> IsExternal())
         len = 3 * len;
 
       // Make sure to include space for the null terminator

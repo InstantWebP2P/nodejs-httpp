@@ -24,7 +24,6 @@
 #include <sys/mman.h>   // mmap & munmap
 #include <sys/procfs.h>
 #include <sys/stat.h>   // open
-#include <sys/types.h>  // mmap & munmap
 #include <unistd.h>     // sysconf
 
 #include <cmath>
@@ -89,7 +88,8 @@ bool OS::ArmUsingHardFloat() {
 const char* OS::LocalTimezone(double time, TimezoneCache* cache) {
   if (std::isnan(time)) return "";
   time_t tv = static_cast<time_t>(std::floor(time/msPerSecond));
-  struct tm* t = localtime(&tv);
+  struct tm tm;
+  struct tm* t = localtime_r(&tv, &tm);
   if (NULL == t) return "";
   return t->tm_zone;
 }
@@ -97,7 +97,8 @@ const char* OS::LocalTimezone(double time, TimezoneCache* cache) {
 
 double OS::LocalTimeOffset(TimezoneCache* cache) {
   time_t tv = time(NULL);
-  struct tm* t = localtime(&tv);
+  struct tm tm;
+  struct tm* t = localtime_r(&tv, &tm);
   // tm_gmtoff includes any daylight savings offset, so subtract it.
   return static_cast<double>(t->tm_gmtoff * msPerSecond -
                              (t->tm_isdst > 0 ? 3600 * msPerSecond : 0));
@@ -313,4 +314,5 @@ bool VirtualMemory::HasLazyCommits() {
   return false;
 }
 
-} }  // namespace v8::base
+}  // namespace base
+}  // namespace v8

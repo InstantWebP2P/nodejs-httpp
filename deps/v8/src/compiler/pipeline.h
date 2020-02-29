@@ -7,70 +7,76 @@
 
 // Clients of this interface shouldn't depend on lots of compiler internals.
 // Do not include anything from src/compiler here!
-#include "src/compiler.h"
+#include "src/globals.h"
+#include "src/objects.h"
+#include "src/zone/zone-containers.h"
 
 namespace v8 {
 namespace internal {
+
+class CompilationInfo;
+class CompilationJob;
+class RegisterConfiguration;
+
+namespace trap_handler {
+struct ProtectedInstructionData;
+}  // namespace trap_handler
+
 namespace compiler {
 
 class CallDescriptor;
+class JSGraph;
 class Graph;
 class InstructionSequence;
-class Linkage;
-class PipelineData;
-class RegisterConfiguration;
 class Schedule;
+class SourcePositionTable;
 
-class Pipeline {
+class Pipeline : public AllStatic {
  public:
-  explicit Pipeline(CompilationInfo* info) : info_(info) {}
+  // Returns a new compilation job for the given function.
+  static CompilationJob* NewCompilationJob(Handle<JSFunction> function,
+                                           bool has_script);
 
-  // Run the entire pipeline and generate a handle to a code object.
-  Handle<Code> GenerateCode();
+  // Returns a new compilation job for the WebAssembly compilation info.
+  static CompilationJob* NewWasmCompilationJob(
+      CompilationInfo* info, JSGraph* jsgraph, CallDescriptor* descriptor,
+      SourcePositionTable* source_positions,
+      ZoneVector<trap_handler::ProtectedInstructionData>*
+          protected_instructions,
+      bool wasm_origin);
+
+  // Run the pipeline on a machine graph and generate code. The {schedule} must
+  // be valid, hence the given {graph} does not need to be schedulable.
+  static Handle<Code> GenerateCodeForCodeStub(Isolate* isolate,
+                                              CallDescriptor* call_descriptor,
+                                              Graph* graph, Schedule* schedule,
+                                              Code::Flags flags,
+                                              const char* debug_name);
+
+  // Run the entire pipeline and generate a handle to a code object suitable for
+  // testing.
+  static Handle<Code> GenerateCodeForTesting(CompilationInfo* info);
 
   // Run the pipeline on a machine graph and generate code. If {schedule} is
   // {nullptr}, then compute a new schedule for code generation.
   static Handle<Code> GenerateCodeForTesting(CompilationInfo* info,
-                                             Graph* graph,
-                                             Schedule* schedule = nullptr);
-
-  // Run the pipeline on a machine graph and generate code. If {schedule} is
-  // {nullptr}, then compute a new schedule for code generation.
-  static Handle<Code> GenerateCodeForTesting(Isolate* isolate,
-                                             CallDescriptor* call_descriptor,
                                              Graph* graph,
                                              Schedule* schedule = nullptr);
 
   // Run just the register allocator phases.
-  static bool AllocateRegistersForTesting(const RegisterConfiguration* config,
-                                          InstructionSequence* sequence,
-                                          bool run_verifier);
+  V8_EXPORT_PRIVATE static bool AllocateRegistersForTesting(
+      const RegisterConfiguration* config, InstructionSequence* sequence,
+      bool run_verifier);
 
-  static inline bool SupportedBackend() { return V8_TURBOFAN_BACKEND != 0; }
-  static inline bool SupportedTarget() { return V8_TURBOFAN_TARGET != 0; }
+  // Run the pipeline on a machine graph and generate code. If {schedule} is
+  // {nullptr}, then compute a new schedule for code generation.
+  static Handle<Code> GenerateCodeForTesting(
+      CompilationInfo* info, CallDescriptor* call_descriptor, Graph* graph,
+      Schedule* schedule = nullptr,
+      SourcePositionTable* source_positions = nullptr);
 
  private:
-  static Handle<Code> GenerateCodeForTesting(CompilationInfo* info,
-                                             CallDescriptor* call_descriptor,
-                                             Graph* graph, Schedule* schedule);
-
-  CompilationInfo* info_;
-  PipelineData* data_;
-
-  // Helpers for executing pipeline phases.
-  template <typename Phase>
-  void Run();
-  template <typename Phase, typename Arg0>
-  void Run(Arg0 arg_0);
-
-  CompilationInfo* info() const { return info_; }
-  Isolate* isolate() { return info_->isolate(); }
-
-  void BeginPhaseKind(const char* phase_kind);
-  void RunPrintAndVerify(const char* phase, bool untyped = false);
-  Handle<Code> ScheduleAndGenerateCode(CallDescriptor* call_descriptor);
-  void AllocateRegisters(const RegisterConfiguration* config,
-                         bool run_verifier);
+  DISALLOW_IMPLICIT_CONSTRUCTORS(Pipeline);
 };
 
 }  // namespace compiler

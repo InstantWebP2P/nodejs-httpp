@@ -5,7 +5,12 @@
 #ifndef V8_STRING_BUILDER_H_
 #define V8_STRING_BUILDER_H_
 
-#include "src/v8.h"
+#include "src/assert-scope.h"
+#include "src/factory.h"
+#include "src/handles.h"
+#include "src/isolate.h"
+#include "src/objects.h"
+#include "src/utils.h"
 
 namespace v8 {
 namespace internal {
@@ -175,7 +180,6 @@ class FixedArrayBuilder {
     return target_array;
   }
 
-
  private:
   Handle<FixedArray> array_;
   int length_;
@@ -288,6 +292,14 @@ class IncrementalStringBuilder {
     }
   }
 
+  INLINE(void AppendCString(const uc16* s)) {
+    if (encoding_ == String::ONE_BYTE_ENCODING) {
+      while (*s != '\0') Append<uc16, uint8_t>(*(s++));
+    } else {
+      while (*s != '\0') Append<uc16, uc16>(*(s++));
+    }
+  }
+
   INLINE(bool CurrentPartCanFit(int length)) {
     return part_length_ - current_index_ > length;
   }
@@ -295,6 +307,10 @@ class IncrementalStringBuilder {
   void AppendString(Handle<String> string);
 
   MaybeHandle<String> Finish();
+
+  INLINE(bool HasOverflowed()) const { return overflowed_; }
+
+  INLINE(int Length()) const { return accumulator_->length() + current_index_; }
 
   // Change encoding to two-byte.
   void ChangeEncoding() {
@@ -341,10 +357,12 @@ class IncrementalStringBuilder {
       DCHECK(string->length() >= required_length);
     }
 
-    ~NoExtendString() {
+    Handle<String> Finalize() {
       Handle<SeqString> string = Handle<SeqString>::cast(string_);
       int length = NoExtend<DestChar>::written();
-      *string_.location() = *SeqString::Truncate(string, length);
+      Handle<String> result = SeqString::Truncate(string, length);
+      string_ = Handle<String>();
+      return result;
     }
 
    private:
@@ -424,7 +442,7 @@ void IncrementalStringBuilder::Append(SrcChar c) {
   }
   if (current_index_ == part_length_) Extend();
 }
-}
-}  // namespace v8::internal
+}  // namespace internal
+}  // namespace v8
 
 #endif  // V8_STRING_BUILDER_H_

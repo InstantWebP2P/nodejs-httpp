@@ -14,15 +14,6 @@ void ArrayNativeCode(MacroAssembler* masm, Label* call_generic_code);
 
 class StringHelper : public AllStatic {
  public:
-  // Generate code for copying characters using the rep movs instruction.
-  // Copies rcx characters from rsi to rdi. Copying of overlapping regions is
-  // not supported.
-  static void GenerateCopyCharacters(MacroAssembler* masm,
-                                     Register dest,
-                                     Register src,
-                                     Register count,
-                                     String::Encoding encoding);
-
   // Compares two flat one-byte strings and returns result in rax.
   static void GenerateCompareFlatOneByteStrings(
       MacroAssembler* masm, Register left, Register right, Register scratch1,
@@ -62,14 +53,6 @@ class NameDictionaryLookupStub: public PlatformCodeStub {
                                      Register properties,
                                      Handle<Name> name,
                                      Register r0);
-
-  static void GeneratePositiveLookup(MacroAssembler* masm,
-                                     Label* miss,
-                                     Label* done,
-                                     Register elements,
-                                     Register name,
-                                     Register r0,
-                                     Register r1);
 
   bool SometimesSetsUpAFrame() override { return false; }
 
@@ -180,7 +163,7 @@ class RecordWriteStub: public PlatformCodeStub {
         break;
     }
     DCHECK(GetMode(stub) == mode);
-    CpuFeatures::FlushICache(stub->instruction_start(), 7);
+    Assembler::FlushICache(stub->GetIsolate(), stub->instruction_start(), 7);
   }
 
   DEFINE_NULL_CALL_INTERFACE_DESCRIPTOR();
@@ -294,13 +277,15 @@ class RecordWriteStub: public PlatformCodeStub {
     Register GetRegThatIsNotRcxOr(Register r1,
                                   Register r2,
                                   Register r3) {
-      for (int i = 0; i < Register::NumAllocatableRegisters(); i++) {
-        Register candidate = Register::FromAllocationIndex(i);
-        if (candidate.is(rcx)) continue;
-        if (candidate.is(r1)) continue;
-        if (candidate.is(r2)) continue;
-        if (candidate.is(r3)) continue;
-        return candidate;
+      for (int i = 0; i < Register::kNumRegisters; i++) {
+        if (RegisterConfiguration::Crankshaft()->IsAllocatableGeneralCode(i)) {
+          Register candidate = Register::from_code(i);
+          if (candidate.is(rcx)) continue;
+          if (candidate.is(r1)) continue;
+          if (candidate.is(r2)) continue;
+          if (candidate.is(r3)) continue;
+          return candidate;
+        }
       }
       UNREACHABLE();
       return no_reg;
@@ -323,9 +308,7 @@ class RecordWriteStub: public PlatformCodeStub {
       Mode mode);
   void InformIncrementalMarker(MacroAssembler* masm);
 
-  void Activate(Code* code) override {
-    code->GetHeap()->incremental_marking()->ActivateGeneratedStub(code);
-  }
+  void Activate(Code* code) override;
 
   Register object() const {
     return Register::from_code(ObjectBits::decode(minor_key_));
@@ -360,6 +343,7 @@ class RecordWriteStub: public PlatformCodeStub {
 };
 
 
-} }  // namespace v8::internal
+}  // namespace internal
+}  // namespace v8
 
 #endif  // V8_X64_CODE_STUBS_X64_H_

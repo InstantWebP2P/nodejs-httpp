@@ -7,6 +7,8 @@
 
 #include "include/v8-platform.h"
 #include "src/base/macros.h"
+#include "src/cancelable-task.h"
+#include "src/globals.h"
 
 namespace v8 {
 namespace internal {
@@ -78,59 +80,61 @@ class Heap;
 // now_ms is the current time,
 // t' is t if the current event is not a GC event and is now_ms otherwise,
 // long_delay_ms, short_delay_ms, and watchdog_delay_ms are constants.
-class MemoryReducer {
+class V8_EXPORT_PRIVATE MemoryReducer {
  public:
   enum Action { kDone, kWait, kRun };
 
   struct State {
     State(Action action, int started_gcs, double next_gc_start_ms,
-          double last_gc_time_ms)
+          double last_gc_time_ms, size_t committed_memory_at_last_run)
         : action(action),
           started_gcs(started_gcs),
           next_gc_start_ms(next_gc_start_ms),
-          last_gc_time_ms(last_gc_time_ms) {}
+          last_gc_time_ms(last_gc_time_ms),
+          committed_memory_at_last_run(committed_memory_at_last_run) {}
     Action action;
     int started_gcs;
     double next_gc_start_ms;
     double last_gc_time_ms;
+    size_t committed_memory_at_last_run;
   };
 
-  enum EventType {
-    kTimer,
-    kMarkCompact,
-    kContextDisposed,
-    kBackgroundIdleNotification
-  };
+  enum EventType { kTimer, kMarkCompact, kPossibleGarbage };
 
   struct Event {
     EventType type;
     double time_ms;
-    bool low_allocation_rate;
+    size_t committed_memory;
     bool next_gc_likely_to_collect_more;
+    bool should_start_incremental_gc;
     bool can_start_incremental_gc;
   };
 
   explicit MemoryReducer(Heap* heap)
-      : heap_(heap), state_(kDone, 0, 0.0, 0.0), pending_task_(nullptr) {}
+      : heap_(heap),
+        state_(kDone, 0, 0.0, 0.0, 0),
+        js_calls_counter_(0),
+        js_calls_sample_time_ms_(0.0) {}
   // Callbacks.
-  void NotifyTimer(const Event& event);
   void NotifyMarkCompact(const Event& event);
-  void NotifyContextDisposed(const Event& event);
+  void NotifyPossibleGarbage(const Event& event);
   void NotifyBackgroundIdleNotification(const Event& event);
   // The step function that computes the next state from the current state and
   // the incoming event.
   static State Step(const State& state, const Event& event);
   // Posts a timer task that will call NotifyTimer after the given delay.
-  void ScheduleTimer(double delay_ms);
+  void ScheduleTimer(double time_ms, double delay_ms);
   void TearDown();
-  void ClearTask(v8::Task* task);
-
-  static bool WatchdogGC(const State& state, const Event& event);
-
   static const int kLongDelayMs;
   static const int kShortDelayMs;
   static const int kWatchdogDelayMs;
   static const int kMaxNumberOfGCs;
+  // The committed memory has to increase by at least this factor since the
+  // last run in order to trigger a new run after mark-compact.
+  static const double kCommittedMemoryFactor;
+  // The committed memory has to increase by at least this amount since the
+  // last run in order to trigger a new run after mark-compact.
+  static const size_t kCommittedMemoryDelta;
 
   Heap* heap() { return heap_; }
 
@@ -139,28 +143,28 @@ class MemoryReducer {
   }
 
  private:
-  class TimerTask : public v8::Task {
+  class TimerTask : public v8::internal::CancelableTask {
    public:
-    explicit TimerTask(MemoryReducer* memory_reducer)
-        : memory_reducer_(memory_reducer), heap_is_torn_down_(false) {}
-    virtual ~TimerTask() {
-      if (!heap_is_torn_down_) {
-        memory_reducer_->ClearTask(this);
-      }
-    }
-    void NotifyHeapTearDown() { heap_is_torn_down_ = true; }
+    explicit TimerTask(MemoryReducer* memory_reducer);
 
    private:
-    // v8::Task overrides.
-    void Run() override;
+    // v8::internal::CancelableTask overrides.
+    void RunInternal() override;
     MemoryReducer* memory_reducer_;
-    bool heap_is_torn_down_;
     DISALLOW_COPY_AND_ASSIGN(TimerTask);
   };
+
+  void NotifyTimer(const Event& event);
+
+  static bool WatchdogGC(const State& state, const Event& event);
+
   Heap* heap_;
   State state_;
-  TimerTask* pending_task_;
+  unsigned int js_calls_counter_;
+  double js_calls_sample_time_ms_;
 
+  // Used in cctest.
+  friend class HeapTester;
   DISALLOW_COPY_AND_ASSIGN(MemoryReducer);
 };
 

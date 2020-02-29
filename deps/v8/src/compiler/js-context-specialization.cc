@@ -10,6 +10,7 @@
 #include "src/compiler/node-matchers.h"
 #include "src/compiler/node-properties.h"
 #include "src/contexts.h"
+#include "src/objects-inl.h"
 
 namespace v8 {
 namespace internal {
@@ -17,8 +18,6 @@ namespace compiler {
 
 Reduction JSContextSpecialization::Reduce(Node* node) {
   switch (node->opcode()) {
-    case IrOpcode::kParameter:
-      return ReduceParameter(node);
     case IrOpcode::kJSLoadContext:
       return ReduceJSLoadContext(node);
     case IrOpcode::kJSStoreContext:
@@ -29,63 +28,81 @@ Reduction JSContextSpecialization::Reduce(Node* node) {
   return NoChange();
 }
 
+Reduction JSContextSpecialization::SimplifyJSLoadContext(Node* node,
+                                                         Node* new_context,
+                                                         size_t new_depth) {
+  DCHECK_EQ(IrOpcode::kJSLoadContext, node->opcode());
+  const ContextAccess& access = ContextAccessOf(node->op());
+  DCHECK_LE(new_depth, access.depth());
 
-Reduction JSContextSpecialization::ReduceParameter(Node* node) {
-  DCHECK_EQ(IrOpcode::kParameter, node->opcode());
-  Node* const start = NodeProperties::GetValueInput(node, 0);
-  DCHECK_EQ(IrOpcode::kStart, start->opcode());
-  int const index = ParameterIndexOf(node->op());
-  // The context is always the last parameter to a JavaScript function, and
-  // {Parameter} indices start at -1, so value outputs of {Start} look like
-  // this: closure, receiver, param0, ..., paramN, context.
-  if (index == start->op()->ValueOutputCount() - 2) {
-    Handle<Context> context_constant;
-    if (context().ToHandle(&context_constant)) {
-      return Replace(jsgraph()->Constant(context_constant));
-    }
+  if (new_depth == access.depth() &&
+      new_context == NodeProperties::GetContextInput(node)) {
+    return NoChange();
   }
-  return NoChange();
+
+  const Operator* op = jsgraph_->javascript()->LoadContext(
+      new_depth, access.index(), access.immutable());
+  NodeProperties::ReplaceContextInput(node, new_context);
+  NodeProperties::ChangeOp(node, op);
+  return Changed(node);
 }
 
+Reduction JSContextSpecialization::SimplifyJSStoreContext(Node* node,
+                                                          Node* new_context,
+                                                          size_t new_depth) {
+  DCHECK_EQ(IrOpcode::kJSStoreContext, node->opcode());
+  const ContextAccess& access = ContextAccessOf(node->op());
+  DCHECK_LE(new_depth, access.depth());
+
+  if (new_depth == access.depth() &&
+      new_context == NodeProperties::GetContextInput(node)) {
+    return NoChange();
+  }
+
+  const Operator* op =
+      jsgraph_->javascript()->StoreContext(new_depth, access.index());
+  NodeProperties::ReplaceContextInput(node, new_context);
+  NodeProperties::ChangeOp(node, op);
+  return Changed(node);
+}
 
 Reduction JSContextSpecialization::ReduceJSLoadContext(Node* node) {
   DCHECK_EQ(IrOpcode::kJSLoadContext, node->opcode());
 
-  HeapObjectMatcher m(NodeProperties::GetValueInput(node, 0));
-  // If the context is not constant, no reduction can occur.
-  if (!m.HasValue()) {
-    return NoChange();
-  }
-
   const ContextAccess& access = ContextAccessOf(node->op());
+  size_t depth = access.depth();
 
-  // Find the right parent context.
-  Handle<Context> context = Handle<Context>::cast(m.Value().handle());
-  for (size_t i = access.depth(); i > 0; --i) {
-    context = handle(context->previous(), isolate());
+  // First walk up the context chain in the graph as far as possible.
+  Node* outer = NodeProperties::GetOuterContext(node, &depth);
+
+  Handle<Context> concrete;
+  if (!NodeProperties::GetSpecializationContext(outer, context())
+           .ToHandle(&concrete)) {
+    // We do not have a concrete context object, so we can only partially reduce
+    // the load by folding-in the outer context node.
+    return SimplifyJSLoadContext(node, outer, depth);
   }
 
-  // If the access itself is mutable, only fold-in the parent.
+  // Now walk up the concrete context chain for the remaining depth.
+  for (; depth > 0; --depth) {
+    concrete = handle(concrete->previous(), isolate());
+  }
+
   if (!access.immutable()) {
-    // The access does not have to look up a parent, nothing to fold.
-    if (access.depth() == 0) {
-      return NoChange();
-    }
-    const Operator* op = jsgraph_->javascript()->LoadContext(
-        0, access.index(), access.immutable());
-    node->set_op(op);
-    node->ReplaceInput(0, jsgraph_->Constant(context));
-    return Changed(node);
+    // We found the requested context object but since the context slot is
+    // mutable we can only partially reduce the load.
+    return SimplifyJSLoadContext(node, jsgraph()->Constant(concrete), depth);
   }
-  Handle<Object> value =
-      handle(context->get(static_cast<int>(access.index())), isolate());
 
   // Even though the context slot is immutable, the context might have escaped
   // before the function to which it belongs has initialized the slot.
-  // We must be conservative and check if the value in the slot is currently the
-  // hole or undefined. If it is neither of these, then it must be initialized.
-  if (value->IsUndefined() || value->IsTheHole()) {
-    return NoChange();
+  // We must be conservative and check if the value in the slot is currently
+  // the hole or undefined. Only if it is neither of these, can we be sure that
+  // it won't change anymore.
+  Handle<Object> value(concrete->get(static_cast<int>(access.index())),
+                       isolate());
+  if (value->IsUndefined(isolate()) || value->IsTheHole(isolate())) {
+    return SimplifyJSLoadContext(node, jsgraph()->Constant(concrete), depth);
   }
 
   // Success. The context load can be replaced with the constant.
@@ -100,28 +117,27 @@ Reduction JSContextSpecialization::ReduceJSLoadContext(Node* node) {
 Reduction JSContextSpecialization::ReduceJSStoreContext(Node* node) {
   DCHECK_EQ(IrOpcode::kJSStoreContext, node->opcode());
 
-  HeapObjectMatcher m(NodeProperties::GetValueInput(node, 0));
-  // If the context is not constant, no reduction can occur.
-  if (!m.HasValue()) {
-    return NoChange();
-  }
-
   const ContextAccess& access = ContextAccessOf(node->op());
+  size_t depth = access.depth();
 
-  // The access does not have to look up a parent, nothing to fold.
-  if (access.depth() == 0) {
-    return NoChange();
+  // First walk up the context chain in the graph until we reduce the depth to 0
+  // or hit a node that does not have a CreateXYZContext operator.
+  Node* outer = NodeProperties::GetOuterContext(node, &depth);
+
+  Handle<Context> concrete;
+  if (!NodeProperties::GetSpecializationContext(outer, context())
+           .ToHandle(&concrete)) {
+    // We do not have a concrete context object, so we can only partially reduce
+    // the load by folding-in the outer context node.
+    return SimplifyJSStoreContext(node, outer, depth);
   }
 
-  // Find the right parent context.
-  Handle<Context> context = Handle<Context>::cast(m.Value().handle());
-  for (size_t i = access.depth(); i > 0; --i) {
-    context = handle(context->previous(), isolate());
+  // Now walk up the concrete context chain for the remaining depth.
+  for (; depth > 0; --depth) {
+    concrete = handle(concrete->previous(), isolate());
   }
 
-  node->set_op(javascript()->StoreContext(0, access.index()));
-  node->ReplaceInput(0, jsgraph_->Constant(context));
-  return Changed(node);
+  return SimplifyJSStoreContext(node, jsgraph()->Constant(concrete), depth);
 }
 
 

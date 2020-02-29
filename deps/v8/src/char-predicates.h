@@ -5,6 +5,7 @@
 #ifndef V8_CHAR_PREDICATES_H_
 #define V8_CHAR_PREDICATES_H_
 
+#include "src/globals.h"
 #include "src/unicode.h"
 
 namespace v8 {
@@ -13,6 +14,7 @@ namespace internal {
 // Unicode character predicates as defined by ECMA-262, 3rd,
 // used for lexical analysis.
 
+inline int AsciiAlphaToLower(uc32 c);
 inline bool IsCarriageReturn(uc32 c);
 inline bool IsLineFeed(uc32 c);
 inline bool IsAsciiIdentifier(uc32 c);
@@ -24,8 +26,7 @@ inline bool IsBinaryDigit(uc32 c);
 inline bool IsRegExpWord(uc32 c);
 inline bool IsRegExpNewline(uc32 c);
 
-
-struct SupplementaryPlanes {
+struct V8_EXPORT_PRIVATE SupplementaryPlanes {
   static bool IsIDStart(uc32 c);
   static bool IsIDPart(uc32 c);
 };
@@ -78,6 +79,7 @@ struct WhiteSpaceOrLineTerminator {
   }
 };
 
-} }  // namespace v8::internal
+}  // namespace internal
+}  // namespace v8
 
 #endif  // V8_CHAR_PREDICATES_H_

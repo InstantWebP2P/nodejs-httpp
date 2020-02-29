@@ -83,6 +83,7 @@ class LayoutDescriptor : public FixedTypedArray<Uint32ArrayTraits> {
   // For our gdb macros, we should perhaps change these in the future.
   void Print();
 
+  void ShortPrint(std::ostream& os);
   void Print(std::ostream& os);  // NOLINT
 #endif
 
@@ -124,9 +125,7 @@ class LayoutDescriptor : public FixedTypedArray<Uint32ArrayTraits> {
   V8_INLINE bool GetIndexes(int field_index, int* layout_word_index,
                             int* layout_bit_index);
 
-  V8_INLINE MUST_USE_RESULT LayoutDescriptor* SetRawData(int field_index) {
-    return SetTagged(field_index, false);
-  }
+  V8_INLINE MUST_USE_RESULT LayoutDescriptor* SetRawData(int field_index);
 
   V8_INLINE MUST_USE_RESULT LayoutDescriptor* SetTagged(int field_index,
                                                         bool tagged);
@@ -155,7 +154,7 @@ class LayoutDescriptorHelper {
   int header_size_;
   LayoutDescriptor* layout_descriptor_;
 };
-}
-}  // namespace v8::internal
+}  // namespace internal
+}  // namespace v8
 
 #endif  // V8_LAYOUT_DESCRIPTOR_H_

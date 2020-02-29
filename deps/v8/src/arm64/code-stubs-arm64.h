@@ -131,6 +131,7 @@ class RecordWriteStub: public PlatformCodeStub {
   static void Patch(Code* stub, Mode mode) {
     // We are going to patch the two first instructions of the stub.
     PatchingAssembler patcher(
+        stub->GetIsolate(),
         reinterpret_cast<Instruction*>(stub->instruction_start()), 2);
     Instruction* instr1 = patcher.InstructionAt(0);
     Instruction* instr2 = patcher.InstructionAt(kInstructionSize);
@@ -354,14 +355,6 @@ class NameDictionaryLookupStub: public PlatformCodeStub {
                                      Handle<Name> name,
                                      Register scratch0);
 
-  static void GeneratePositiveLookup(MacroAssembler* masm,
-                                     Label* miss,
-                                     Label* done,
-                                     Register elements,
-                                     Register name,
-                                     Register scratch1,
-                                     Register scratch2);
-
   bool SometimesSetsUpAFrame() override { return false; }
 
  private:
@@ -384,6 +377,7 @@ class NameDictionaryLookupStub: public PlatformCodeStub {
   DEFINE_PLATFORM_CODE_STUB(NameDictionaryLookup, PlatformCodeStub);
 };
 
-} }  // namespace v8::internal
+}  // namespace internal
+}  // namespace v8
 
 #endif  // V8_ARM64_CODE_STUBS_ARM64_H_
