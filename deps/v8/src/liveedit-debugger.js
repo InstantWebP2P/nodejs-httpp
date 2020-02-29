@@ -1,6 +1,29 @@
-// Copyright 2012 the V8 project authors. All rights reserved.
-// Use of this source code is governed by a BSD-style license that can be
-// found in the LICENSE file.
+// Copyright 2010 the V8 project authors. All rights reserved.
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are
+// met:
+//
+//     * Redistributions of source code must retain the above copyright
+//       notice, this list of conditions and the following disclaimer.
+//     * Redistributions in binary form must reproduce the above
+//       copyright notice, this list of conditions and the following
+//       disclaimer in the documentation and/or other materials provided
+//       with the distribution.
+//     * Neither the name of Google Inc. nor the names of its
+//       contributors may be used to endorse or promote products derived
+//       from this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+// "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+// LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+// A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+// OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+// LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+// DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+// THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 // LiveEdit feature implementation. The script should be executed after
 // debug-debugger.js.
@@ -19,15 +42,10 @@
 // All unchanged functions have their positions updated accordingly.
 //
 // LiveEdit namespace is declared inside a single function constructor.
-
-"use strict";
-
 Debug.LiveEdit = new function() {
 
   // Forward declaration for minifier.
   var FunctionStatus;
-
-  var NEEDS_STEP_IN_PROPERTY_NAME = "stack_update_needs_step_in";
 
   // Applies the change to the script.
   // The change is in form of list of chunks encoded in a single array as
@@ -56,17 +74,7 @@ Debug.LiveEdit = new function() {
     try {
       new_compile_info = GatherCompileInfo(new_source, script);
     } catch (e) {
-      var failure =
-          new Failure("Failed to compile new version of script: " + e);
-      if (e instanceof SyntaxError) {
-        var details = {
-          type: "liveedit_compile_error",
-          syntaxErrorMessage: e.message
-        };
-        CopyErrorPositionToDetails(e, details);
-        failure.details = details;
-      }
-      throw failure;
+      throw new Failure("Failed to compile new version of script: " + e);
     }
     var root_new_node = BuildCodeInfoTree(new_compile_info);
 
@@ -153,7 +161,7 @@ Debug.LiveEdit = new function() {
 
     // Our current implementation requires client to manually issue "step in"
     // command for correct stack state.
-    preview_description[NEEDS_STEP_IN_PROPERTY_NAME] =
+    preview_description.stack_update_needs_step_in =
         preview_description.stack_modified;
 
     // Start with breakpoints. Convert their line/column positions and
@@ -166,7 +174,7 @@ Debug.LiveEdit = new function() {
     // to old version.
     if (link_to_old_script_list.length == 0) {
       %LiveEditReplaceScript(script, new_source, null);
-      old_script = UNDEFINED;
+      old_script = void 0;
     } else {
       var old_script_name = CreateNameForOldScript(script);
 
@@ -201,7 +209,7 @@ Debug.LiveEdit = new function() {
     change_log.push( {position_patched: position_patch_report} );
 
     for (var i = 0; i < update_positions_list.length; i++) {
-      // TODO(LiveEdit): take into account whether it's source_changed or
+      // TODO(LiveEdit): take into account wether it's source_changed or
       // unchanged and whether positions changed at all.
       PatchPositions(update_positions_list[i], diff_array,
           position_patch_report);
@@ -246,7 +254,7 @@ Debug.LiveEdit = new function() {
       // LiveEdit itself believe that any function in heap that points to a
       // particular script is a regular function.
       // For some functions we will restore this link later.
-      %LiveEditFunctionSetScript(info.shared_function_info, UNDEFINED);
+      %LiveEditFunctionSetScript(info.shared_function_info, void 0);
       compile_info.push(info);
       old_index_map.push(i);
     }
@@ -268,7 +276,7 @@ Debug.LiveEdit = new function() {
       }
     }
 
-    // After sorting update outer_index field using old_index_map. Also
+    // After sorting update outer_inder field using old_index_map. Also
     // set next_sibling_index field.
     var current_index = 0;
 
@@ -522,16 +530,16 @@ Debug.LiveEdit = new function() {
     this.children = children;
     // an index in array of compile_info
     this.array_index = array_index;
-    this.parent = UNDEFINED;
+    this.parent = void 0;
 
     this.status = FunctionStatus.UNCHANGED;
     // Status explanation is used for debugging purposes and will be shown
     // in user UI if some explanations are needed.
-    this.status_explanation = UNDEFINED;
-    this.new_start_pos = UNDEFINED;
-    this.new_end_pos = UNDEFINED;
-    this.corresponding_node = UNDEFINED;
-    this.unmatched_new_nodes = UNDEFINED;
+    this.status_explanation = void 0;
+    this.new_start_pos = void 0;
+    this.new_end_pos = void 0;
+    this.corresponding_node = void 0;
+    this.unmatched_new_nodes = void 0;
 
     // 'Textual' correspondence/matching is weaker than 'pure'
     // correspondence/matching. We need 'textual' level for visual presentation
@@ -539,10 +547,10 @@ Debug.LiveEdit = new function() {
     // Sometimes only function body is changed (functions in old and new script
     // textually correspond), but we cannot patch the code, so we see them
     // as an old function deleted and new function created.
-    this.textual_corresponding_node = UNDEFINED;
-    this.textually_unmatched_new_nodes = UNDEFINED;
+    this.textual_corresponding_node = void 0;
+    this.textually_unmatched_new_nodes = void 0;
 
-    this.live_shared_function_infos = UNDEFINED;
+    this.live_shared_function_infos = void 0;
   }
 
   // From array of function infos that is implicitly a tree creates
@@ -672,10 +680,10 @@ Debug.LiveEdit = new function() {
     ProcessInternals(code_info_tree);
   }
 
-  // For each old function (if it is not damaged) tries to find a corresponding
+  // For ecah old function (if it is not damaged) tries to find a corresponding
   // function in new script. Typically it should succeed (non-damaged functions
   // by definition may only have changes inside their bodies). However there are
-  // reasons for correspondence not to be found; function with unmodified text
+  // reasons for corresponence not to be found; function with unmodified text
   // in new script may become enclosed into other function; the innocent change
   // inside function body may in fact be something like "} function B() {" that
   // splits a function into 2 functions.
@@ -683,13 +691,7 @@ Debug.LiveEdit = new function() {
 
     // A recursive function that tries to find a correspondence for all
     // child functions and for their inner functions.
-    function ProcessNode(old_node, new_node) {
-      var scope_change_description =
-          IsFunctionContextLocalsChanged(old_node.info, new_node.info);
-      if (scope_change_description) {
-          old_node.status = FunctionStatus.CHANGED;
-      }
-
+    function ProcessChildren(old_node, new_node) {
       var old_children = old_node.children;
       var new_children = new_node.children;
 
@@ -715,20 +717,13 @@ Debug.LiveEdit = new function() {
                   new_children[new_index];
               old_children[old_index].textual_corresponding_node =
                   new_children[new_index];
-              if (scope_change_description) {
-                old_children[old_index].status = FunctionStatus.DAMAGED;
-                old_children[old_index].status_explanation =
-                    "Enclosing function is now incompatible. " +
-                    scope_change_description;
-                old_children[old_index].corresponding_node = UNDEFINED;
-              } else if (old_children[old_index].status !=
-                  FunctionStatus.UNCHANGED) {
-                ProcessNode(old_children[old_index],
+              if (old_children[old_index].status != FunctionStatus.UNCHANGED) {
+                ProcessChildren(old_children[old_index],
                     new_children[new_index]);
                 if (old_children[old_index].status == FunctionStatus.DAMAGED) {
                   unmatched_new_nodes_list.push(
                       old_children[old_index].corresponding_node);
-                  old_children[old_index].corresponding_node = UNDEFINED;
+                  old_children[old_index].corresponding_node = void 0;
                   old_node.status = FunctionStatus.CHANGED;
                 }
               }
@@ -765,10 +760,11 @@ Debug.LiveEdit = new function() {
       }
 
       if (old_node.status == FunctionStatus.CHANGED) {
-        if (old_node.info.param_num != new_node.info.param_num) {
+        var why_wrong_expectations =
+            WhyFunctionExpectationsDiffer(old_node.info, new_node.info);
+        if (why_wrong_expectations) {
           old_node.status = FunctionStatus.DAMAGED;
-          old_node.status_explanation = "Changed parameter number: " +
-              old_node.info.param_num + " and " + new_node.info.param_num;
+          old_node.status_explanation = why_wrong_expectations;
         }
       }
       old_node.unmatched_new_nodes = unmatched_new_nodes_list;
@@ -776,7 +772,7 @@ Debug.LiveEdit = new function() {
           textually_unmatched_new_nodes_list;
     }
 
-    ProcessNode(old_code_tree, new_code_tree);
+    ProcessChildren(old_code_tree, new_code_tree);
 
     old_code_tree.corresponding_node = new_code_tree;
     old_code_tree.textual_corresponding_node = new_code_tree;
@@ -848,7 +844,7 @@ Debug.LiveEdit = new function() {
     this.raw_array = raw_array;
   }
 
-  // Changes positions (including all statements) in function.
+  // Changes positions (including all statments) in function.
   function PatchPositions(old_info_node, diff_array, report_array) {
     if (old_info_node.live_shared_function_infos) {
       old_info_node.live_shared_function_infos.forEach(function (info) {
@@ -870,9 +866,15 @@ Debug.LiveEdit = new function() {
     return script.name + " (old)";
   }
 
-  // Compares a function scope heap structure, old and new version, whether it
+  // Compares a function interface old and new version, whether it
   // changed or not. Returns explanation if they differ.
-  function IsFunctionContextLocalsChanged(function_info1, function_info2) {
+  function WhyFunctionExpectationsDiffer(function_info1, function_info2) {
+    // Check that function has the same number of parameters (there may exist
+    // an adapter, that won't survive function parameter number change).
+    if (function_info1.param_num != function_info2.param_num) {
+      return "Changed parameter number: " + function_info1.param_num +
+          " and " + function_info2.param_num;
+    }
     var scope_info1 = function_info1.scope_info;
     var scope_info2 = function_info2.scope_info;
 
@@ -891,8 +893,8 @@ Debug.LiveEdit = new function() {
     }
 
     if (scope_info1_text != scope_info2_text) {
-      return "Variable map changed: [" + scope_info1_text +
-          "] => [" + scope_info2_text + "]";
+      return "Incompatible variable maps: [" + scope_info1_text +
+          "] and [" + scope_info2_text + "]";
     }
     // No differences. Return undefined.
     return;
@@ -949,14 +951,12 @@ Debug.LiveEdit = new function() {
       BLOCKED_ON_ACTIVE_STACK: 2,
       BLOCKED_ON_OTHER_STACK: 3,
       BLOCKED_UNDER_NATIVE_CODE: 4,
-      REPLACED_ON_ACTIVE_STACK: 5,
-      BLOCKED_UNDER_GENERATOR: 6,
-      BLOCKED_ACTIVE_GENERATOR: 7
+      REPLACED_ON_ACTIVE_STACK: 5
   };
 
   FunctionPatchabilityStatus.SymbolName = function(code) {
     var enumeration = FunctionPatchabilityStatus;
-    for (var name in enumeration) {
+    for (name in enumeration) {
       if (enumeration[name] == code) {
         return name;
       }
@@ -975,31 +975,6 @@ Debug.LiveEdit = new function() {
   Failure.prototype.toString = function() {
     return "LiveEdit Failure: " + this.message;
   };
-
-  function CopyErrorPositionToDetails(e, details) {
-    function createPositionStruct(script, position) {
-      if (position == -1) return;
-      var location = script.locationFromPosition(position, true);
-      if (location == null) return;
-      return {
-        line: location.line + 1,
-        column: location.column + 1,
-        position: position
-      };
-    }
-
-    if (!("scriptObject" in e) || !("startPosition" in e)) {
-      return;
-    }
-
-    var script = e.scriptObject;
-
-    var position_struct = {
-      start: createPositionStruct(script, e.startPosition),
-      end: createPositionStruct(script, e.endPosition)
-    };
-    details.position = position_struct;
-  }
 
   // A testing entry.
   function GetPcFromSourcePos(func, source_pos) {
@@ -1103,18 +1078,6 @@ Debug.LiveEdit = new function() {
     return ProcessOldNode(old_code_tree);
   }
 
-  // Restarts call frame and returns value similar to what LiveEdit returns.
-  function RestartFrame(frame_mirror) {
-    var result = frame_mirror.restart();
-    if (IS_STRING(result)) {
-      throw new Failure("Failed to restart frame: " + result);
-    }
-    var result = {};
-    result[NEEDS_STEP_IN_PROPERTY_NAME] = true;
-    return result;
-  }
-  // Function is public.
-  this.RestartFrame = RestartFrame;
 
   // Functions are public for tests.
   this.TestApi = {

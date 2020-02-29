@@ -1,20 +1,37 @@
 // Copyright 2006-2009 the V8 project authors. All rights reserved.
-// Use of this source code is governed by a BSD-style license that can be
-// found in the LICENSE file.
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are
+// met:
+//
+//     * Redistributions of source code must retain the above copyright
+//       notice, this list of conditions and the following disclaimer.
+//     * Redistributions in binary form must reproduce the above
+//       copyright notice, this list of conditions and the following
+//       disclaimer in the documentation and/or other materials provided
+//       with the distribution.
+//     * Neither the name of Google Inc. nor the names of its
+//       contributors may be used to endorse or promote products derived
+//       from this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+// "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+// LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+// A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+// OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+// LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+// DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+// THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #ifndef V8_FUNC_NAME_INFERRER_H_
 #define V8_FUNC_NAME_INFERRER_H_
 
-#include "src/handles.h"
-#include "src/zone.h"
-
 namespace v8 {
 namespace internal {
 
-class AstRawString;
-class AstString;
-class AstValueFactory;
-class FunctionLiteral;
+class Isolate;
 
 // FuncNameInferrer is a stateful class that is used to perform name
 // inference for anonymous functions during static analysis of source code.
@@ -28,13 +45,13 @@ class FunctionLiteral;
 // a name.
 class FuncNameInferrer : public ZoneObject {
  public:
-  FuncNameInferrer(AstValueFactory* ast_value_factory, Zone* zone);
+  FuncNameInferrer(Isolate* isolate, Zone* zone);
 
   // Returns whether we have entered name collection state.
   bool IsOpen() const { return !entries_stack_.is_empty(); }
 
   // Pushes an enclosing the name of enclosing function onto names stack.
-  void PushEnclosingName(const AstRawString* name);
+  void PushEnclosingName(Handle<String> name);
 
   // Enters name collection state.
   void Enter() {
@@ -42,9 +59,9 @@ class FuncNameInferrer : public ZoneObject {
   }
 
   // Pushes an encountered name onto names stack when in collection state.
-  void PushLiteralName(const AstRawString* name);
+  void PushLiteralName(Handle<String> name);
 
-  void PushVariableName(const AstRawString* name);
+  void PushVariableName(Handle<String> name);
 
   // Adds a function to infer name for.
   void AddFunction(FunctionLiteral* func_to_infer) {
@@ -61,7 +78,7 @@ class FuncNameInferrer : public ZoneObject {
 
   // Infers a function name and leaves names collection state.
   void Infer() {
-    DCHECK(IsOpen());
+    ASSERT(IsOpen());
     if (!funcs_to_infer_.is_empty()) {
       InferFunctionsNames();
     }
@@ -69,7 +86,7 @@ class FuncNameInferrer : public ZoneObject {
 
   // Leaves names collection state.
   void Leave() {
-    DCHECK(IsOpen());
+    ASSERT(IsOpen());
     names_stack_.Rewind(entries_stack_.RemoveLast());
     if (entries_stack_.is_empty())
       funcs_to_infer_.Clear();
@@ -82,24 +99,24 @@ class FuncNameInferrer : public ZoneObject {
     kVariableName
   };
   struct Name {
-    Name(const AstRawString* name, NameType type) : name(name), type(type) {}
-    const AstRawString* name;
+    Name(Handle<String> name, NameType type) : name(name), type(type) { }
+    Handle<String> name;
     NameType type;
   };
 
+  Isolate* isolate() { return isolate_; }
   Zone* zone() const { return zone_; }
 
   // Constructs a full name in dotted notation from gathered names.
-  const AstString* MakeNameFromStack();
+  Handle<String> MakeNameFromStack();
 
   // A helper function for MakeNameFromStack.
-  const AstString* MakeNameFromStackHelper(int pos,
-                                               const AstString* prev);
+  Handle<String> MakeNameFromStackHelper(int pos, Handle<String> prev);
 
   // Performs name inferring for added functions.
   void InferFunctionsNames();
 
-  AstValueFactory* ast_value_factory_;
+  Isolate* isolate_;
   ZoneList<int> entries_stack_;
   ZoneList<Name> names_stack_;
   ZoneList<FunctionLiteral*> funcs_to_infer_;

@@ -1,58 +1,44 @@
 // Copyright 2012 the V8 project authors. All rights reserved.
-// Use of this source code is governed by a BSD-style license that can be
-// found in the LICENSE file.
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are
+// met:
+//
+//     * Redistributions of source code must retain the above copyright
+//       notice, this list of conditions and the following disclaimer.
+//     * Redistributions in binary form must reproduce the above
+//       copyright notice, this list of conditions and the following
+//       disclaimer in the documentation and/or other materials provided
+//       with the distribution.
+//     * Neither the name of Google Inc. nor the names of its
+//       contributors may be used to endorse or promote products derived
+//       from this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+// "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+// LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+// A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+// OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+// LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+// DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+// THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #ifndef V8_PRETTYPRINTER_H_
 #define V8_PRETTYPRINTER_H_
 
-#include "src/allocation.h"
-#include "src/ast.h"
+#include "allocation.h"
+#include "ast.h"
 
 namespace v8 {
 namespace internal {
-
-class CallPrinter : public AstVisitor {
- public:
-  CallPrinter(Isolate* isolate, Zone* zone);
-  virtual ~CallPrinter();
-
-  // The following routine prints the node with position |position| into a
-  // string. The result string is alive as long as the CallPrinter is alive.
-  const char* Print(FunctionLiteral* program, int position);
-
-  void Print(const char* format, ...);
-
-  void Find(AstNode* node, bool print = false);
-
-// Individual nodes
-#define DECLARE_VISIT(type) void Visit##type(type* node) override;
-  AST_NODE_LIST(DECLARE_VISIT)
-#undef DECLARE_VISIT
-
- private:
-  void Init();
-  char* output_;  // output string buffer
-  int size_;      // output_ size
-  int pos_;       // current printing position
-  int position_;  // position of ast node to print
-  bool found_;
-  bool done_;
-
-  DEFINE_AST_VISITOR_SUBCLASS_MEMBERS();
-
- protected:
-  void PrintLiteral(Handle<Object> value, bool quote);
-  void PrintLiteral(const AstRawString* value, bool quote);
-  void FindStatements(ZoneList<Statement*>* statements);
-  void FindArguments(ZoneList<Expression*>* arguments);
-};
-
 
 #ifdef DEBUG
 
 class PrettyPrinter: public AstVisitor {
  public:
-  PrettyPrinter(Isolate* isolate, Zone* zone);
+  PrettyPrinter();
   virtual ~PrettyPrinter();
 
   // The following routines print a node into a string.
@@ -64,10 +50,10 @@ class PrettyPrinter: public AstVisitor {
   void Print(const char* format, ...);
 
   // Print a node to stdout.
-  static void PrintOut(Isolate* isolate, Zone* zone, AstNode* node);
+  static void PrintOut(AstNode* node);
 
   // Individual nodes
-#define DECLARE_VISIT(type) void Visit##type(type* node) override;
+#define DECLARE_VISIT(type) virtual void Visit##type(type* node);
   AST_NODE_LIST(DECLARE_VISIT)
 #undef DECLARE_VISIT
 
@@ -81,24 +67,20 @@ class PrettyPrinter: public AstVisitor {
   const char* Output() const { return output_; }
 
   virtual void PrintStatements(ZoneList<Statement*>* statements);
-  void PrintLabels(ZoneList<const AstRawString*>* labels);
+  void PrintLabels(ZoneStringList* labels);
   virtual void PrintArguments(ZoneList<Expression*>* arguments);
   void PrintLiteral(Handle<Object> value, bool quote);
-  void PrintLiteral(const AstRawString* value, bool quote);
   void PrintParameters(Scope* scope);
   void PrintDeclarations(ZoneList<Declaration*>* declarations);
   void PrintFunctionLiteral(FunctionLiteral* function);
   void PrintCaseClause(CaseClause* clause);
-  void PrintObjectLiteralProperty(ObjectLiteralProperty* property);
-
-  DEFINE_AST_VISITOR_SUBCLASS_MEMBERS();
 };
 
 
 // Prints the AST structure
 class AstPrinter: public PrettyPrinter {
  public:
-  AstPrinter(Isolate* isolate, Zone* zone);
+  AstPrinter();
   virtual ~AstPrinter();
 
   const char* PrintProgram(FunctionLiteral* program);
@@ -122,8 +104,7 @@ class AstPrinter: public PrettyPrinter {
   void PrintLiteralWithModeIndented(const char* info,
                                     Variable* var,
                                     Handle<Object> value);
-  void PrintLabelsIndented(ZoneList<const AstRawString*>* labels);
-  void PrintProperties(ZoneList<ObjectLiteral::Property*>* properties);
+  void PrintLabelsIndented(const char* info, ZoneStringList* labels);
 
   void inc_indent() { indent_++; }
   void dec_indent() { indent_--; }

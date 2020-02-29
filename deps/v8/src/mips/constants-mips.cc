@@ -1,12 +1,35 @@
 // Copyright 2011 the V8 project authors. All rights reserved.
-// Use of this source code is governed by a BSD-style license that can be
-// found in the LICENSE file.
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are
+// met:
+//
+//     * Redistributions of source code must retain the above copyright
+//       notice, this list of conditions and the following disclaimer.
+//     * Redistributions in binary form must reproduce the above
+//       copyright notice, this list of conditions and the following
+//       disclaimer in the documentation and/or other materials provided
+//       with the distribution.
+//     * Neither the name of Google Inc. nor the names of its
+//       contributors may be used to endorse or promote products derived
+//       from this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+// "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+// LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+// A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+// OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+// LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+// DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+// THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#include "src/v8.h"
+#include "v8.h"
 
-#if V8_TARGET_ARCH_MIPS
+#if defined(V8_TARGET_ARCH_MIPS)
 
-#include "src/mips/constants-mips.h"
+#include "constants-mips.h"
 
 namespace v8 {
 namespace internal {
@@ -35,7 +58,6 @@ const char* Registers::names_[kNumSimuRegisters] = {
   "pc"
 };
 
-
 // List of alias names which can be used when referring to MIPS registers.
 const Registers::RegisterAlias Registers::aliases_[] = {
   {0, "zero"},
@@ -44,7 +66,6 @@ const Registers::RegisterAlias Registers::aliases_[] = {
   {30, "s8_fp"},
   {kInvalidRegister, NULL}
 };
-
 
 const char* Registers::Name(int reg) {
   const char* result;
@@ -85,12 +106,10 @@ const char* FPURegisters::names_[kNumFPURegisters] = {
   "f22", "f23", "f24", "f25", "f26", "f27", "f28", "f29", "f30", "f31"
 };
 
-
 // List of alias names which can be used when referring to MIPS registers.
 const FPURegisters::RegisterAlias FPURegisters::aliases_[] = {
   {kInvalidRegister, NULL}
 };
-
 
 const char* FPURegisters::Name(int creg) {
   const char* result;
@@ -141,8 +160,6 @@ bool Instruction::IsForbiddenInBranchDelay() const {
     case BNEL:
     case BLEZL:
     case BGTZL:
-    case BC:
-    case BALC:
       return true;
     case REGIMM:
       switch (RtFieldRaw()) {
@@ -153,7 +170,7 @@ bool Instruction::IsForbiddenInBranchDelay() const {
           return true;
         default:
           return false;
-      }
+      };
       break;
     case SPECIAL:
       switch (FunctionFieldRaw()) {
@@ -162,11 +179,11 @@ bool Instruction::IsForbiddenInBranchDelay() const {
           return true;
         default:
           return false;
-      }
+      };
       break;
     default:
       return false;
-  }
+  };
 }
 
 
@@ -175,11 +192,6 @@ bool Instruction::IsLinkingInstruction() const {
   switch (op) {
     case JAL:
       return true;
-    case POP76:
-      if (RsFieldRawNoAssert() == JIALC)
-        return true;  // JIALC
-      else
-        return false;  // BNEZC
     case REGIMM:
       switch (RtFieldRaw()) {
         case BGEZAL:
@@ -187,17 +199,17 @@ bool Instruction::IsLinkingInstruction() const {
           return true;
       default:
         return false;
-      }
+      };
     case SPECIAL:
       switch (FunctionFieldRaw()) {
         case JALR:
           return true;
         default:
           return false;
-      }
+      };
     default:
       return false;
-  }
+  };
 }
 
 
@@ -216,7 +228,7 @@ bool Instruction::IsTrap() const {
         return true;
       default:
         return false;
-    }
+    };
   }
 }
 
@@ -259,12 +271,10 @@ Instruction::Type Instruction::InstructionType() const {
         case MOVZ:
         case MOVN:
         case MOVCI:
-        case SELEQZ_S:
-        case SELNEZ_S:
           return kRegisterType;
         default:
           return kUnsupported;
-      }
+      };
       break;
     case SPECIAL2:
       switch (FunctionFieldRaw()) {
@@ -273,47 +283,25 @@ Instruction::Type Instruction::InstructionType() const {
           return kRegisterType;
         default:
           return kUnsupported;
-      }
+      };
       break;
     case SPECIAL3:
       switch (FunctionFieldRaw()) {
         case INS:
         case EXT:
           return kRegisterType;
-        case BSHFL: {
-          int sa = SaFieldRaw() >> kSaShift;
-          switch (sa) {
-            case BITSWAP:
-              return kRegisterType;
-            case WSBH:
-            case SEB:
-            case SEH:
-              return kUnsupported;
-          }
-          sa >>= kBp2Bits;
-          switch (sa) {
-            case ALIGN:
-              return kRegisterType;
-            default:
-              return kUnsupported;
-          }
-        }
         default:
           return kUnsupported;
-      }
+      };
       break;
     case COP1:    // Coprocessor instructions.
       switch (RsFieldRawNoAssert()) {
         case BC1:   // Branch on coprocessor condition.
-        case BC1EQZ:
-        case BC1NEZ:
           return kImmediateType;
         default:
           return kRegisterType;
-      }
+      };
       break;
-    case COP1X:
-      return kRegisterType;
     // 16 bits Immediate type instructions. e.g.: addi dest, src, imm16.
     case REGIMM:
     case BEQ:
@@ -321,7 +309,6 @@ Instruction::Type Instruction::InstructionType() const {
     case BLEZ:
     case BGTZ:
     case ADDI:
-    case DADDI:
     case ADDIU:
     case SLTI:
     case SLTIU:
@@ -333,8 +320,6 @@ Instruction::Type Instruction::InstructionType() const {
     case BNEL:
     case BLEZL:
     case BGTZL:
-    case POP66:
-    case POP76:
     case LB:
     case LH:
     case LWL:
@@ -351,9 +336,6 @@ Instruction::Type Instruction::InstructionType() const {
     case LDC1:
     case SWC1:
     case SDC1:
-    case PCREL:
-    case BC:
-    case BALC:
       return kImmediateType;
     // 26 bits immediate type instructions. e.g.: j imm26.
     case J:
@@ -361,12 +343,11 @@ Instruction::Type Instruction::InstructionType() const {
       return kJumpType;
     default:
       return kUnsupported;
-  }
+  };
   return kUnsupported;
 }
 
 
-}  // namespace internal
-}  // namespace v8
+} }   // namespace v8::internal
 
 #endif  // V8_TARGET_ARCH_MIPS

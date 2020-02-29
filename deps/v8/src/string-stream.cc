@@ -1,11 +1,36 @@
-// Copyright 2014 the V8 project authors. All rights reserved.
-// Use of this source code is governed by a BSD-style license that can be
-// found in the LICENSE file.
+// Copyright 2012 the V8 project authors. All rights reserved.
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are
+// met:
+//
+//     * Redistributions of source code must retain the above copyright
+//       notice, this list of conditions and the following disclaimer.
+//     * Redistributions in binary form must reproduce the above
+//       copyright notice, this list of conditions and the following
+//       disclaimer in the documentation and/or other materials provided
+//       with the distribution.
+//     * Neither the name of Google Inc. nor the names of its
+//       contributors may be used to endorse or promote products derived
+//       from this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+// "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+// LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+// A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+// OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+// LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+// DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+// THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#include "src/string-stream.h"
+#include "v8.h"
 
-#include "src/handles-inl.h"
-#include "src/prototype.h"
+#include "factory.h"
+#include "string-stream.h"
+
+#include "allocation-inl.h"
 
 namespace v8 {
 namespace internal {
@@ -18,21 +43,16 @@ char* HeapStringAllocator::allocate(unsigned bytes) {
 }
 
 
-char* FixedStringAllocator::allocate(unsigned bytes) {
-  CHECK_LE(bytes, length_);
-  return buffer_;
-}
-
-
-char* FixedStringAllocator::grow(unsigned* old) {
-  *old = length_;
-  return buffer_;
+NoAllocationStringAllocator::NoAllocationStringAllocator(char* memory,
+                                                         unsigned size) {
+  size_ = size;
+  space_ = memory;
 }
 
 
 bool StringStream::Put(char c) {
   if (full()) return false;
-  DCHECK(length_ < capacity_);
+  ASSERT(length_ < capacity_);
   // Since the trailing '\0' is not accounted for in length_ fullness is
   // indicated by a difference of 1 between length_ and capacity_. Thus when
   // reaching a difference of 2 we need to grow the buffer.
@@ -44,7 +64,7 @@ bool StringStream::Put(char c) {
       buffer_ = new_buffer;
     } else {
       // Reached the end of the available buffer.
-      DCHECK(capacity_ >= 5);
+      ASSERT(capacity_ >= 5);
       length_ = capacity_ - 1;  // Indicate fullness of the stream.
       buffer_[length_ - 4] = '.';
       buffer_[length_ - 3] = '.';
@@ -102,26 +122,26 @@ void StringStream::Add(Vector<const char> format, Vector<FmtElm> elms) {
     FmtElm current = elms[elm++];
     switch (type) {
     case 's': {
-      DCHECK_EQ(FmtElm::C_STR, current.type_);
+      ASSERT_EQ(FmtElm::C_STR, current.type_);
       const char* value = current.data_.u_c_str_;
       Add(value);
       break;
     }
     case 'w': {
-      DCHECK_EQ(FmtElm::LC_STR, current.type_);
+      ASSERT_EQ(FmtElm::LC_STR, current.type_);
       Vector<const uc16> value = *current.data_.u_lc_str_;
       for (int i = 0; i < value.length(); i++)
         Put(static_cast<char>(value[i]));
       break;
     }
     case 'o': {
-      DCHECK_EQ(FmtElm::OBJ, current.type_);
+      ASSERT_EQ(FmtElm::OBJ, current.type_);
       Object* obj = current.data_.u_obj_;
       PrintObject(obj);
       break;
     }
     case 'k': {
-      DCHECK_EQ(FmtElm::INT, current.type_);
+      ASSERT_EQ(FmtElm::INT, current.type_);
       int value = current.data_.u_int_;
       if (0x20 <= value && value <= 0x7F) {
         Put(value);
@@ -135,30 +155,21 @@ void StringStream::Add(Vector<const char> format, Vector<FmtElm> elms) {
     case 'i': case 'd': case 'u': case 'x': case 'c': case 'X': {
       int value = current.data_.u_int_;
       EmbeddedVector<char, 24> formatted;
-      int length = SNPrintF(formatted, temp.start(), value);
+      int length = OS::SNPrintF(formatted, temp.start(), value);
       Add(Vector<const char>(formatted.start(), length));
       break;
     }
     case 'f': case 'g': case 'G': case 'e': case 'E': {
       double value = current.data_.u_double_;
-      int inf = std::isinf(value);
-      if (inf == -1) {
-        Add("-inf");
-      } else if (inf == 1) {
-        Add("inf");
-      } else if (std::isnan(value)) {
-        Add("nan");
-      } else {
-        EmbeddedVector<char, 28> formatted;
-        SNPrintF(formatted, temp.start(), value);
-        Add(formatted.start());
-      }
+      EmbeddedVector<char, 28> formatted;
+      OS::SNPrintF(formatted, temp.start(), value);
+      Add(formatted.start());
       break;
     }
     case 'p': {
       void* value = current.data_.u_pointer_;
       EmbeddedVector<char, 20> formatted;
-      SNPrintF(formatted, temp.start(), value);
+      OS::SNPrintF(formatted, temp.start(), value);
       Add(formatted.start());
       break;
     }
@@ -169,7 +180,7 @@ void StringStream::Add(Vector<const char> format, Vector<FmtElm> elms) {
   }
 
   // Verify that the buffer is 0-terminated
-  DCHECK(buffer_[length_] == '\0');
+  ASSERT(buffer_[length_] == '\0');
 }
 
 
@@ -182,9 +193,8 @@ void StringStream::PrintObject(Object* o) {
   } else if (o->IsNumber() || o->IsOddball()) {
     return;
   }
-  if (o->IsHeapObject() && object_print_mode_ == kPrintObjectVerbose) {
-    HeapObject* ho = HeapObject::cast(o);
-    DebugObjectCache* debug_object_cache = ho->GetIsolate()->
+  if (o->IsHeapObject()) {
+    DebugObjectCache* debug_object_cache = Isolate::Current()->
         string_stream_debug_object_cache();
     for (int i = 0; i < debug_object_cache->length(); i++) {
       if ((*debug_object_cache)[i] == o) {
@@ -242,24 +252,16 @@ void StringStream::Add(const char* format, FmtElm arg0, FmtElm arg1,
 }
 
 
-void StringStream::Add(const char* format, FmtElm arg0, FmtElm arg1,
-                       FmtElm arg2, FmtElm arg3, FmtElm arg4) {
-  const char argc = 5;
-  FmtElm argv[argc] = { arg0, arg1, arg2, arg3, arg4 };
-  Add(CStrVector(format), Vector<FmtElm>(argv, argc));
-}
-
-
 SmartArrayPointer<const char> StringStream::ToCString() const {
   char* str = NewArray<char>(length_ + 1);
-  MemCopy(str, buffer_, length_);
+  memcpy(str, buffer_, length_);
   str[length_] = '\0';
   return SmartArrayPointer<const char>(str);
 }
 
 
-void StringStream::Log(Isolate* isolate) {
-  LOG(isolate, StringEvent("StackDump", buffer_));
+void StringStream::Log() {
+  LOG(ISOLATE, StringEvent("StackDump", buffer_));
 }
 
 
@@ -279,25 +281,26 @@ void StringStream::OutputToFile(FILE* out) {
 }
 
 
-Handle<String> StringStream::ToString(Isolate* isolate) {
-  return isolate->factory()->NewStringFromUtf8(
-      Vector<const char>(buffer_, length_)).ToHandleChecked();
+Handle<String> StringStream::ToString() {
+  return FACTORY->NewStringFromUtf8(Vector<const char>(buffer_, length_));
 }
 
 
-void StringStream::ClearMentionedObjectCache(Isolate* isolate) {
+void StringStream::ClearMentionedObjectCache() {
+  Isolate* isolate = Isolate::Current();
   isolate->set_string_stream_current_security_token(NULL);
   if (isolate->string_stream_debug_object_cache() == NULL) {
-    isolate->set_string_stream_debug_object_cache(new DebugObjectCache(0));
+    isolate->set_string_stream_debug_object_cache(
+        new List<HeapObject*, PreallocatedStorageAllocationPolicy>(0));
   }
   isolate->string_stream_debug_object_cache()->Clear();
 }
 
 
 #ifdef DEBUG
-bool StringStream::IsMentionedObjectCacheClear(Isolate* isolate) {
-  return object_print_mode_ == kPrintObjectConcise ||
-         isolate->string_stream_debug_object_cache()->length() == 0;
+bool StringStream::IsMentionedObjectCacheClear() {
+  return (
+      Isolate::Current()->string_stream_debug_object_cache()->length() == 0);
 }
 #endif
 
@@ -308,13 +311,14 @@ bool StringStream::Put(String* str) {
 
 
 bool StringStream::Put(String* str, int start, int end) {
-  StringCharacterStream stream(str, start);
-  for (int i = start; i < end && stream.HasMore(); i++) {
-    uint16_t c = stream.GetNext();
+  StringInputBuffer name_buffer(str);
+  name_buffer.Seek(start);
+  for (int i = start; i < end && name_buffer.has_more(); i++) {
+    int c = name_buffer.GetNext();
     if (c >= 127 || c < 32) {
       c = '?';
     }
-    if (!Put(static_cast<char>(c))) {
+    if (!Put(c)) {
       return false;  // Output was truncated.
     }
   }
@@ -338,17 +342,15 @@ void StringStream::PrintName(Object* name) {
 
 void StringStream::PrintUsingMap(JSObject* js_object) {
   Map* map = js_object->map();
-  if (!js_object->GetHeap()->Contains(map) ||
+  if (!HEAP->Contains(map) ||
       !map->IsHeapObject() ||
       !map->IsMap()) {
     Add("<Invalid map>\n");
     return;
   }
-  int real_size = map->NumberOfOwnDescriptors();
   DescriptorArray* descs = map->instance_descriptors();
-  for (int i = 0; i < real_size; i++) {
-    PropertyDetails details = descs->GetDetails(i);
-    if (details.type() == DATA) {
+  for (int i = 0; i < descs->number_of_descriptors(); i++) {
+    if (descs->GetType(i) == FIELD) {
       Object* key = descs->GetKey(i);
       if (key->IsString() || key->IsNumber()) {
         int len = 3;
@@ -363,14 +365,8 @@ void StringStream::PrintUsingMap(JSObject* js_object) {
           key->ShortPrint();
         }
         Add(": ");
-        FieldIndex index = FieldIndex::ForDescriptor(map, i);
-        if (js_object->IsUnboxedDoubleField(index)) {
-          double value = js_object->RawFastDoublePropertyAt(index);
-          Add("<unboxed double> %.16g\n", FmtElm(value));
-        } else {
-          Object* value = js_object->RawFastPropertyAt(index);
-          Add("%o\n", value);
-        }
+        Object* value = js_object->FastPropertyAt(descs->GetFieldIndex(i));
+        Add("%o\n", value);
       }
     }
   }
@@ -378,7 +374,7 @@ void StringStream::PrintUsingMap(JSObject* js_object) {
 
 
 void StringStream::PrintFixedArray(FixedArray* array, unsigned int limit) {
-  Heap* heap = array->GetHeap();
+  Heap* heap = HEAP;
   for (unsigned int i = 0; i < 10 && i < limit; i++) {
     Object* element = array->get(i);
     if (element != heap->the_hole_value()) {
@@ -415,10 +411,9 @@ void StringStream::PrintByteArray(ByteArray* byte_array) {
 }
 
 
-void StringStream::PrintMentionedObjectCache(Isolate* isolate) {
-  if (object_print_mode_ == kPrintObjectConcise) return;
+void StringStream::PrintMentionedObjectCache() {
   DebugObjectCache* debug_object_cache =
-      isolate->string_stream_debug_object_cache();
+      Isolate::Current()->string_stream_debug_object_cache();
   Add("==== Key         ============================================\n\n");
   for (int i = 0; i < debug_object_cache->length(); i++) {
     HeapObject* printee = (*debug_object_cache)[i];
@@ -451,12 +446,12 @@ void StringStream::PrintMentionedObjectCache(Isolate* isolate) {
 
 
 void StringStream::PrintSecurityTokenIfChanged(Object* f) {
-  if (!f->IsHeapObject()) return;
-  HeapObject* obj = HeapObject::cast(f);
-  Isolate* isolate = obj->GetIsolate();
+  Isolate* isolate = Isolate::Current();
   Heap* heap = isolate->heap();
-  if (!heap->Contains(obj)) return;
-  Map* map = obj->map();
+  if (!f->IsHeapObject() || !heap->Contains(HeapObject::cast(f))) {
+    return;
+  }
+  Map* map = HeapObject::cast(f)->map();
   if (!map->IsHeapObject() ||
       !heap->Contains(map) ||
       !map->IsMap() ||
@@ -465,7 +460,7 @@ void StringStream::PrintSecurityTokenIfChanged(Object* f) {
   }
 
   JSFunction* fun = JSFunction::cast(f);
-  Object* perhaps_context = fun->context();
+  Object* perhaps_context = fun->unchecked_context();
   if (perhaps_context->IsHeapObject() &&
       heap->Contains(HeapObject::cast(perhaps_context)) &&
       perhaps_context->IsContext()) {
@@ -474,7 +469,7 @@ void StringStream::PrintSecurityTokenIfChanged(Object* f) {
       Add("(Function context is outside heap)\n");
       return;
     }
-    Object* token = context->native_context()->security_token();
+    Object* token = context->global_context()->security_token();
     if (token != isolate->string_stream_current_security_token()) {
       Add("Security context: %o\n", token);
       isolate->set_string_stream_current_security_token(token);
@@ -486,39 +481,48 @@ void StringStream::PrintSecurityTokenIfChanged(Object* f) {
 
 
 void StringStream::PrintFunction(Object* f, Object* receiver, Code** code) {
-  if (!f->IsHeapObject()) {
-    Add("/* warning: 'function' was not a heap object */ ");
-    return;
-  }
-  Heap* heap = HeapObject::cast(f)->GetHeap();
-  if (!heap->Contains(HeapObject::cast(f))) {
-    Add("/* warning: 'function' was not on the heap */ ");
-    return;
-  }
-  if (!heap->Contains(HeapObject::cast(f)->map())) {
-    Add("/* warning: function's map was not on the heap */ ");
-    return;
-  }
-  if (!HeapObject::cast(f)->map()->IsMap()) {
-    Add("/* warning: function's map was not a valid map */ ");
-    return;
-  }
-  if (f->IsJSFunction()) {
-    JSFunction* fun = JSFunction::cast(f);
-    // Common case: on-stack function present and resolved.
-    PrintPrototype(fun, receiver);
-    *code = fun->code();
-  } else if (f->IsInternalizedString()) {
-    // Unresolved and megamorphic calls: Instead of the function
-    // we have the function name on the stack.
-    PrintName(f);
-    Add("/* unresolved */ ");
+  if (f->IsHeapObject() &&
+      HEAP->Contains(HeapObject::cast(f)) &&
+      HEAP->Contains(HeapObject::cast(f)->map()) &&
+      HeapObject::cast(f)->map()->IsMap()) {
+    if (f->IsJSFunction()) {
+      JSFunction* fun = JSFunction::cast(f);
+      // Common case: on-stack function present and resolved.
+      PrintPrototype(fun, receiver);
+      *code = fun->code();
+    } else if (f->IsSymbol()) {
+      // Unresolved and megamorphic calls: Instead of the function
+      // we have the function name on the stack.
+      PrintName(f);
+      Add("/* unresolved */ ");
+    } else {
+      // Unless this is the frame of a built-in function, we should always have
+      // the callee function or name on the stack. If we don't, we have a
+      // problem or a change of the stack frame layout.
+      Add("%o", f);
+      Add("/* warning: no JSFunction object or function name found */ ");
+    }
+    /* } else if (is_trampoline()) {
+       Print("trampoline ");
+    */
   } else {
-    // Unless this is the frame of a built-in function, we should always have
-    // the callee function or name on the stack. If we don't, we have a
-    // problem or a change of the stack frame layout.
-    Add("%o", f);
-    Add("/* warning: no JSFunction object or function name found */ ");
+    if (!f->IsHeapObject()) {
+      Add("/* warning: 'function' was not a heap object */ ");
+      return;
+    }
+    if (!HEAP->Contains(HeapObject::cast(f))) {
+      Add("/* warning: 'function' was not on the heap */ ");
+      return;
+    }
+    if (!HEAP->Contains(HeapObject::cast(f)->map())) {
+      Add("/* warning: function's map was not on the heap */ ");
+      return;
+    }
+    if (!HeapObject::cast(f)->map()->IsMap()) {
+      Add("/* warning: function's map was not a valid map */ ");
+      return;
+    }
+    Add("/* warning: Invalid JSFunction object found */ ");
   }
 }
 
@@ -526,13 +530,11 @@ void StringStream::PrintFunction(Object* f, Object* receiver, Code** code) {
 void StringStream::PrintPrototype(JSFunction* fun, Object* receiver) {
   Object* name = fun->shared()->name();
   bool print_name = false;
-  Isolate* isolate = fun->GetIsolate();
-  for (PrototypeIterator iter(isolate, receiver,
-                              PrototypeIterator::START_AT_RECEIVER);
-       !iter.IsAtEnd(); iter.Advance()) {
-    if (iter.GetCurrent()->IsJSObject()) {
-      Object* key = JSObject::cast(iter.GetCurrent())->SlowReverseLookup(fun);
-      if (key != isolate->heap()->undefined_value()) {
+  Heap* heap = HEAP;
+  for (Object* p = receiver; p != heap->null_value(); p = p->GetPrototype()) {
+    if (p->IsJSObject()) {
+      Object* key = JSObject::cast(p)->SlowReverseLookup(fun);
+      if (key != heap->undefined_value()) {
         if (!name->IsString() ||
             !key->IsString() ||
             !String::cast(name)->Equals(String::cast(key))) {
@@ -568,7 +570,7 @@ char* HeapStringAllocator::grow(unsigned* bytes) {
   if (new_space == NULL) {
     return space_;
   }
-  MemCopy(new_space, space_, *bytes);
+  memcpy(new_space, space_, *bytes);
   *bytes = new_bytes;
   DeleteArray(space_);
   space_ = new_space;
@@ -576,5 +578,12 @@ char* HeapStringAllocator::grow(unsigned* bytes) {
 }
 
 
-}  // namespace internal
-}  // namespace v8
+// Only grow once to the maximum allowable size.
+char* NoAllocationStringAllocator::grow(unsigned* bytes) {
+  ASSERT(size_ >= *bytes);
+  *bytes = size_;
+  return space_;
+}
+
+
+} }  // namespace v8::internal

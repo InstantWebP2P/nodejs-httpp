@@ -1,12 +1,36 @@
 // Copyright 2012 the V8 project authors. All rights reserved.
-// Use of this source code is governed by a BSD-style license that can be
-// found in the LICENSE file.
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are
+// met:
+//
+//     * Redistributions of source code must retain the above copyright
+//       notice, this list of conditions and the following disclaimer.
+//     * Redistributions in binary form must reproduce the above
+//       copyright notice, this list of conditions and the following
+//       disclaimer in the documentation and/or other materials provided
+//       with the distribution.
+//     * Neither the name of Google Inc. nor the names of its
+//       contributors may be used to endorse or promote products derived
+//       from this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+// "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+// LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+// A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+// OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+// LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+// DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+// THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #ifndef V8_JSREGEXP_H_
 #define V8_JSREGEXP_H_
 
-#include "src/allocation.h"
-#include "src/assembler.h"
+#include "allocation.h"
+#include "assembler.h"
+#include "zone-inl.h"
 
 namespace v8 {
 namespace internal {
@@ -31,10 +55,10 @@ class RegExpImpl {
 
   // Creates a regular expression literal in the old space.
   // This function calls the garbage collector if necessary.
-  MUST_USE_RESULT static MaybeHandle<Object> CreateRegExpLiteral(
-      Handle<JSFunction> constructor,
-      Handle<String> pattern,
-      Handle<String> flags);
+  static Handle<Object> CreateRegExpLiteral(Handle<JSFunction> constructor,
+                                            Handle<String> pattern,
+                                            Handle<String> flags,
+                                            bool* has_pending_exception);
 
   // Returns a string representation of a regular expression.
   // Implements RegExp.prototype.toString, see ECMA-262 section 15.10.6.4.
@@ -45,17 +69,17 @@ class RegExpImpl {
   // generic data and choice of implementation - as well as what
   // the implementation wants to store in the data field.
   // Returns false if compilation fails.
-  MUST_USE_RESULT static MaybeHandle<Object> Compile(Handle<JSRegExp> re,
-                                                     Handle<String> pattern,
-                                                     JSRegExp::Flags flags);
+  static Handle<Object> Compile(Handle<JSRegExp> re,
+                                Handle<String> pattern,
+                                Handle<String> flags);
 
   // See ECMA-262 section 15.10.6.2.
   // This function calls the garbage collector if necessary.
-  MUST_USE_RESULT static MaybeHandle<Object> Exec(
-      Handle<JSRegExp> regexp,
-      Handle<String> subject,
-      int index,
-      Handle<JSArray> lastMatchInfo);
+  static Handle<Object> Exec(Handle<JSRegExp> regexp,
+                             Handle<String> subject,
+                             int index,
+                             Handle<JSArray> lastMatchInfo,
+                             Zone* zone);
 
   // Prepares a JSRegExp object with Irregexp-specific data.
   static void IrregexpInitialize(Handle<JSRegExp> re,
@@ -69,14 +93,6 @@ class RegExpImpl {
                           JSRegExp::Flags flags,
                           Handle<String> match_pattern);
 
-
-  static int AtomExecRaw(Handle<JSRegExp> regexp,
-                         Handle<String> subject,
-                         int index,
-                         int32_t* output,
-                         int output_size);
-
-
   static Handle<Object> AtomExec(Handle<JSRegExp> regexp,
                                  Handle<String> subject,
                                  int index,
@@ -89,10 +105,17 @@ class RegExpImpl {
   // This ensures that the regexp is compiled for the subject, and that
   // the subject is flat.
   // Returns the number of integer spaces required by IrregexpExecOnce
-  // as its "registers" argument.  If the regexp cannot be compiled,
+  // as its "registers" argument. If the regexp cannot be compiled,
   // an exception is set as pending, and this function returns negative.
   static int IrregexpPrepare(Handle<JSRegExp> regexp,
-                             Handle<String> subject);
+                             Handle<String> subject,
+                             Zone* zone);
+
+  // Calculate the size of offsets vector for the case of global regexp
+  // and the number of matches this vector is able to store.
+  static int GlobalOffsetsVectorSize(Handle<JSRegExp> regexp,
+                                     int registers_per_match,
+                                     int* max_matches);
 
   // Execute a regular expression on the subject, starting from index.
   // If matching succeeds, return the number of matches.  This can be larger
@@ -103,57 +126,18 @@ class RegExpImpl {
   static int IrregexpExecRaw(Handle<JSRegExp> regexp,
                              Handle<String> subject,
                              int index,
-                             int32_t* output,
-                             int output_size);
+                             Vector<int> registers,
+                             Zone* zone);
 
   // Execute an Irregexp bytecode pattern.
   // On a successful match, the result is a JSArray containing
-  // captured positions.  On a failure, the result is the null value.
+  // captured positions. On a failure, the result is the null value.
   // Returns an empty handle in case of an exception.
-  MUST_USE_RESULT static MaybeHandle<Object> IrregexpExec(
-      Handle<JSRegExp> regexp,
-      Handle<String> subject,
-      int index,
-      Handle<JSArray> lastMatchInfo);
-
-  // Set last match info.  If match is NULL, then setting captures is omitted.
-  static Handle<JSArray> SetLastMatchInfo(Handle<JSArray> last_match_info,
-                                          Handle<String> subject,
-                                          int capture_count,
-                                          int32_t* match);
-
-
-  class GlobalCache {
-   public:
-    GlobalCache(Handle<JSRegExp> regexp,
-                Handle<String> subject,
-                bool is_global,
-                Isolate* isolate);
-
-    INLINE(~GlobalCache());
-
-    // Fetch the next entry in the cache for global regexp match results.
-    // This does not set the last match info.  Upon failure, NULL is returned.
-    // The cause can be checked with Result().  The previous
-    // result is still in available in memory when a failure happens.
-    INLINE(int32_t* FetchNext());
-
-    INLINE(int32_t* LastSuccessfulMatch());
-
-    INLINE(bool HasException()) { return num_matches_ < 0; }
-
-   private:
-    int num_matches_;
-    int max_matches_;
-    int current_match_index_;
-    int registers_per_match_;
-    // Pointer to the last set of captures.
-    int32_t* register_array_;
-    int register_array_size_;
-    Handle<JSRegExp> regexp_;
-    Handle<String> subject_;
-  };
-
+  static Handle<Object> IrregexpExec(Handle<JSRegExp> regexp,
+                                     Handle<String> subject,
+                                     int index,
+                                     Handle<JSArray> lastMatchInfo,
+                                     Zone* zone);
 
   // Array index in the lastMatchInfo array.
   static const int kLastCaptureCount = 0;
@@ -202,8 +186,8 @@ class RegExpImpl {
   static void SetIrregexpMaxRegisterCount(FixedArray* re, int value);
   static int IrregexpNumberOfCaptures(FixedArray* re);
   static int IrregexpNumberOfRegisters(FixedArray* re);
-  static ByteArray* IrregexpByteCode(FixedArray* re, bool is_one_byte);
-  static Code* IrregexpNativeCode(FixedArray* re, bool is_one_byte);
+  static ByteArray* IrregexpByteCode(FixedArray* re, bool is_ascii);
+  static Code* IrregexpNativeCode(FixedArray* re, bool is_ascii);
 
   // Limit the space regexps take up on the heap.  In order to limit this we
   // would like to keep track of the amount of regexp code on the heap.  This
@@ -211,15 +195,35 @@ class RegExpImpl {
   // total regexp code compiled including code that has subsequently been freed
   // and the total executable memory at any point.
   static const int kRegExpExecutableMemoryLimit = 16 * MB;
-  static const int kRegExpCompiledLimit = 1 * MB;
-  static const int kRegExpTooLargeToOptimize = 20 * KB;
+  static const int kRegWxpCompiledLimit = 1 * MB;
 
  private:
-  static bool CompileIrregexp(Handle<JSRegExp> re,
-                              Handle<String> sample_subject, bool is_one_byte);
-  static inline bool EnsureCompiledIrregexp(Handle<JSRegExp> re,
-                                            Handle<String> sample_subject,
-                                            bool is_one_byte);
+  static String* last_ascii_string_;
+  static String* two_byte_cached_string_;
+
+  static bool CompileIrregexp(
+      Handle<JSRegExp> re, Handle<String> sample_subject, bool is_ascii,
+      Zone* zone);
+  static inline bool EnsureCompiledIrregexp(
+      Handle<JSRegExp> re, Handle<String> sample_subject, bool is_ascii,
+      Zone* zone);
+
+
+  // Set the subject cache.  The previous string buffer is not deleted, so the
+  // caller should ensure that it doesn't leak.
+  static void SetSubjectCache(String* subject,
+                              char* utf8_subject,
+                              int uft8_length,
+                              int character_position,
+                              int utf8_position);
+
+  // A one element cache of the last utf8_subject string and its length.  The
+  // subject JS String object is cached in the heap.  We also cache a
+  // translation between position and utf8 position.
+  static char* utf8_subject_cache_;
+  static int utf8_length_cache_;
+  static int utf8_position_;
+  static int character_position_;
 };
 
 
@@ -239,7 +243,7 @@ class CharacterRange {
  public:
   CharacterRange() : from_(0), to_(0) { }
   // For compatibility with the CHECK_OK macro
-  CharacterRange(void* null) { DCHECK_NULL(null); }  // NOLINT
+  CharacterRange(void* null) { ASSERT_EQ(NULL, null); }  //NOLINT
   CharacterRange(uc16 from, uc16 to) : from_(from), to_(to) { }
   static void AddClassEscape(uc16 type, ZoneList<CharacterRange>* ranges,
                              Zone* zone);
@@ -248,7 +252,7 @@ class CharacterRange {
     return CharacterRange(value, value);
   }
   static inline CharacterRange Range(uc16 from, uc16 to) {
-    DCHECK(from <= to);
+    ASSERT(from <= to);
     return CharacterRange(from, to);
   }
   static inline CharacterRange Everything() {
@@ -262,8 +266,8 @@ class CharacterRange {
   bool is_valid() { return from_ <= to_; }
   bool IsEverything(uc16 max) { return from_ == 0 && to_ >= max; }
   bool IsSingleton() { return (from_ == to_); }
-  void AddCaseEquivalents(Isolate* isolate, Zone* zone,
-                          ZoneList<CharacterRange>* ranges, bool is_one_byte);
+  void AddCaseEquivalents(ZoneList<CharacterRange>* ranges, bool is_ascii,
+                          Zone* zone);
   static void Split(ZoneList<CharacterRange>* base,
                     Vector<const int> overlay,
                     ZoneList<CharacterRange>** included,
@@ -296,7 +300,7 @@ class OutSet: public ZoneObject {
  public:
   OutSet() : first_(0), remaining_(NULL), successors_(NULL) { }
   OutSet* Extend(unsigned value, Zone* zone);
-  bool Get(unsigned value) const;
+  bool Get(unsigned value);
   static const unsigned kFirstLimit = 32;
 
  private:
@@ -406,48 +410,25 @@ FOR_EACH_REG_EXP_TREE_TYPE(FORWARD_DECLARE)
 #undef FORWARD_DECLARE
 
 
-class TextElement final BASE_EMBEDDED {
+class TextElement {
  public:
-  enum TextType {
-    ATOM,
-    CHAR_CLASS
-  };
-
+  enum Type {UNINITIALIZED, ATOM, CHAR_CLASS};
+  TextElement() : type(UNINITIALIZED) { }
+  explicit TextElement(Type t) : type(t), cp_offset(-1) { }
   static TextElement Atom(RegExpAtom* atom);
   static TextElement CharClass(RegExpCharacterClass* char_class);
-
-  int cp_offset() const { return cp_offset_; }
-  void set_cp_offset(int cp_offset) { cp_offset_ = cp_offset; }
-  int length() const;
-
-  TextType text_type() const { return text_type_; }
-
-  RegExpTree* tree() const { return tree_; }
-
-  RegExpAtom* atom() const {
-    DCHECK(text_type() == ATOM);
-    return reinterpret_cast<RegExpAtom*>(tree());
-  }
-
-  RegExpCharacterClass* char_class() const {
-    DCHECK(text_type() == CHAR_CLASS);
-    return reinterpret_cast<RegExpCharacterClass*>(tree());
-  }
-
- private:
-  TextElement(TextType text_type, RegExpTree* tree)
-      : cp_offset_(-1), text_type_(text_type), tree_(tree) {}
-
-  int cp_offset_;
-  TextType text_type_;
-  RegExpTree* tree_;
+  int length();
+  Type type;
+  union {
+    RegExpAtom* u_atom;
+    RegExpCharacterClass* u_char_class;
+  } data;
+  int cp_offset;
 };
 
 
 class Trace;
-struct PreloadState;
-class GreedyLoopState;
-class AlternativeGenerationList;
+
 
 struct NodeInfo {
   NodeInfo()
@@ -526,11 +507,11 @@ class QuickCheckDetails {
         mask_(0),
         value_(0),
         cannot_match_(false) { }
-  bool Rationalize(bool one_byte);
+  bool Rationalize(bool ascii);
   // Merge in the information from another branch of an alternation.
   void Merge(QuickCheckDetails* other, int from_index);
   // Advance the current position by some amount.
-  void Advance(int by, bool one_byte);
+  void Advance(int by, bool ascii);
   void Clear();
   bool cannot_match() { return cannot_match_; }
   void set_cannot_match() { cannot_match_ = true; }
@@ -543,8 +524,8 @@ class QuickCheckDetails {
   int characters() { return characters_; }
   void set_characters(int characters) { characters_ = characters; }
   Position* positions(int index) {
-    DCHECK(index >= 0);
-    DCHECK(index < characters_);
+    ASSERT(index >= 0);
+    ASSERT(index < characters_);
     return positions_ + index;
   }
   uint32_t mask() { return mask_; }
@@ -570,7 +551,7 @@ extern int kUninitializedRegExpNodePlaceHolder;
 class RegExpNode: public ZoneObject {
  public:
   explicit RegExpNode(Zone* zone)
-      : replacement_(NULL), on_work_list_(false), trace_count_(0), zone_(zone) {
+  : replacement_(NULL), trace_count_(0), zone_(zone) {
     bm_info_[0] = bm_info_[1] = NULL;
   }
   virtual ~RegExpNode();
@@ -584,12 +565,13 @@ class RegExpNode: public ZoneObject {
   // used to indicate that we know we are not at the start of the input.  In
   // this case anchored branches will always fail and can be ignored when
   // determining how many characters are consumed on success.
-  virtual int EatsAtLeast(int still_to_find, int budget, bool not_at_start) = 0;
+  virtual int EatsAtLeast(int still_to_find,
+                          int recursion_depth,
+                          bool not_at_start) = 0;
   // Emits some quick code that checks whether the preloaded characters match.
   // Falls through on certain failure, jumps to the label on possible success.
   // If the node cannot make a quick check it does nothing and returns false.
   bool EmitQuickCheck(RegExpCompiler* compiler,
-                      Trace* bounds_check_trace,
                       Trace* trace,
                       bool preload_has_checked_bounds,
                       Label* on_possible_success,
@@ -617,22 +599,22 @@ class RegExpNode: public ZoneObject {
   // implementation.  TODO(erikcorry):  This should share more code with
   // EatsAtLeast, GetQuickCheckDetails.  The budget argument is used to limit
   // the number of nodes we are willing to look at in order to create this data.
-  static const int kRecursionBudget = 200;
-  bool KeepRecursing(RegExpCompiler* compiler);
-  virtual void FillInBMInfo(Isolate* isolate, int offset, int budget,
-                            BoyerMooreLookahead* bm, bool not_at_start) {
+  static const int kFillInBMBudget = 200;
+  virtual void FillInBMInfo(int offset,
+                            int recursion_depth,
+                            int budget,
+                            BoyerMooreLookahead* bm,
+                            bool not_at_start) {
     UNREACHABLE();
   }
 
-  // If we know that the input is one-byte then there are some nodes that can
+  // If we know that the input is ASCII then there are some nodes that can
   // never match.  This method returns a node that can be substituted for
   // itself, or NULL if the node can never match.
-  virtual RegExpNode* FilterOneByte(int depth, bool ignore_case) {
-    return this;
-  }
-  // Helper for FilterOneByte.
+  virtual RegExpNode* FilterASCII(int depth) { return this; }
+  // Helper for FilterASCII.
   RegExpNode* replacement() {
-    DCHECK(info()->replacement_calculated);
+    ASSERT(info()->replacement_calculated);
     return replacement_;
   }
   RegExpNode* set_replacement(RegExpNode* replacement) {
@@ -657,9 +639,6 @@ class RegExpNode: public ZoneObject {
   // the deferred actions in the current trace and generating a goto.
   static const int kMaxCopiesCodeGenerated = 10;
 
-  bool on_work_list() { return on_work_list_; }
-  void set_on_work_list(bool value) { on_work_list_ = value; }
-
   NodeInfo* info() { return &info_; }
 
   BoyerMooreLookahead* bm_info(bool not_at_start) {
@@ -681,7 +660,6 @@ class RegExpNode: public ZoneObject {
  private:
   static const int kFirstCharBudget = 10;
   Label label_;
-  bool on_work_list_;
   NodeInfo info_;
   // This variable keeps track of how many times code has been generated for
   // this node (in different traces).  We don't keep track of where the
@@ -728,15 +706,19 @@ class SeqRegExpNode: public RegExpNode {
       : RegExpNode(on_success->zone()), on_success_(on_success) { }
   RegExpNode* on_success() { return on_success_; }
   void set_on_success(RegExpNode* node) { on_success_ = node; }
-  virtual RegExpNode* FilterOneByte(int depth, bool ignore_case);
-  virtual void FillInBMInfo(Isolate* isolate, int offset, int budget,
-                            BoyerMooreLookahead* bm, bool not_at_start) {
-    on_success_->FillInBMInfo(isolate, offset, budget - 1, bm, not_at_start);
+  virtual RegExpNode* FilterASCII(int depth);
+  virtual void FillInBMInfo(int offset,
+                            int recursion_depth,
+                            int budget,
+                            BoyerMooreLookahead* bm,
+                            bool not_at_start) {
+    on_success_->FillInBMInfo(
+        offset, recursion_depth + 1, budget - 1, bm, not_at_start);
     if (offset == 0) set_bm_info(not_at_start, bm);
   }
 
  protected:
-  RegExpNode* FilterSuccessor(int depth, bool ignore_case);
+  RegExpNode* FilterSuccessor(int depth);
 
  private:
   RegExpNode* on_success_;
@@ -745,7 +727,7 @@ class SeqRegExpNode: public RegExpNode {
 
 class ActionNode: public SeqRegExpNode {
  public:
-  enum ActionType {
+  enum Type {
     SET_REGISTER,
     INCREMENT_REGISTER,
     STORE_POSITION,
@@ -774,7 +756,9 @@ class ActionNode: public SeqRegExpNode {
                                      RegExpNode* on_success);
   virtual void Accept(NodeVisitor* visitor);
   virtual void Emit(RegExpCompiler* compiler, Trace* trace);
-  virtual int EatsAtLeast(int still_to_find, int budget, bool not_at_start);
+  virtual int EatsAtLeast(int still_to_find,
+                          int recursion_depth,
+                          bool not_at_start);
   virtual void GetQuickCheckDetails(QuickCheckDetails* details,
                                     RegExpCompiler* compiler,
                                     int filled_in,
@@ -782,9 +766,12 @@ class ActionNode: public SeqRegExpNode {
     return on_success()->GetQuickCheckDetails(
         details, compiler, filled_in, not_at_start);
   }
-  virtual void FillInBMInfo(Isolate* isolate, int offset, int budget,
-                            BoyerMooreLookahead* bm, bool not_at_start);
-  ActionType action_type() { return action_type_; }
+  virtual void FillInBMInfo(int offset,
+                            int recursion_depth,
+                            int budget,
+                            BoyerMooreLookahead* bm,
+                            bool not_at_start);
+  Type type() { return type_; }
   // TODO(erikcorry): We should allow some action nodes in greedy loops.
   virtual int GreedyLoopTextLength() { return kNodeIsTooComplexForGreedyLoops; }
 
@@ -817,10 +804,10 @@ class ActionNode: public SeqRegExpNode {
       int range_to;
     } u_clear_captures;
   } data_;
-  ActionNode(ActionType action_type, RegExpNode* on_success)
+  ActionNode(Type type, RegExpNode* on_success)
       : SeqRegExpNode(on_success),
-        action_type_(action_type) { }
-  ActionType action_type_;
+        type_(type) { }
+  Type type_;
   friend class DotPrinter;
 };
 
@@ -839,24 +826,29 @@ class TextNode: public SeqRegExpNode {
   }
   virtual void Accept(NodeVisitor* visitor);
   virtual void Emit(RegExpCompiler* compiler, Trace* trace);
-  virtual int EatsAtLeast(int still_to_find, int budget, bool not_at_start);
+  virtual int EatsAtLeast(int still_to_find,
+                          int recursion_depth,
+                          bool not_at_start);
   virtual void GetQuickCheckDetails(QuickCheckDetails* details,
                                     RegExpCompiler* compiler,
                                     int characters_filled_in,
                                     bool not_at_start);
   ZoneList<TextElement>* elements() { return elms_; }
-  void MakeCaseIndependent(Isolate* isolate, bool is_one_byte);
+  void MakeCaseIndependent(bool is_ascii);
   virtual int GreedyLoopTextLength();
   virtual RegExpNode* GetSuccessorOfOmnivorousTextNode(
       RegExpCompiler* compiler);
-  virtual void FillInBMInfo(Isolate* isolate, int offset, int budget,
-                            BoyerMooreLookahead* bm, bool not_at_start);
+  virtual void FillInBMInfo(int offset,
+                            int recursion_depth,
+                            int budget,
+                            BoyerMooreLookahead* bm,
+                            bool not_at_start);
   void CalculateOffsets();
-  virtual RegExpNode* FilterOneByte(int depth, bool ignore_case);
+  virtual RegExpNode* FilterASCII(int depth);
 
  private:
   enum TextEmitPassType {
-    NON_LATIN1_MATCH,            // Check for characters that can't match.
+    NON_ASCII_MATCH,             // Check for characters that can't match.
     SIMPLE_CHARACTER_MATCH,      // Case-dependent single character check.
     NON_LETTER_CHARACTER_MATCH,  // Check characters that have no case equivs.
     CASE_CHARACTER_MATCH,        // Case-independent single character check.
@@ -878,7 +870,7 @@ class TextNode: public SeqRegExpNode {
 
 class AssertionNode: public SeqRegExpNode {
  public:
-  enum AssertionType {
+  enum AssertionNodeType {
     AT_END,
     AT_START,
     AT_BOUNDARY,
@@ -902,14 +894,20 @@ class AssertionNode: public SeqRegExpNode {
   }
   virtual void Accept(NodeVisitor* visitor);
   virtual void Emit(RegExpCompiler* compiler, Trace* trace);
-  virtual int EatsAtLeast(int still_to_find, int budget, bool not_at_start);
+  virtual int EatsAtLeast(int still_to_find,
+                          int recursion_depth,
+                          bool not_at_start);
   virtual void GetQuickCheckDetails(QuickCheckDetails* details,
                                     RegExpCompiler* compiler,
                                     int filled_in,
                                     bool not_at_start);
-  virtual void FillInBMInfo(Isolate* isolate, int offset, int budget,
-                            BoyerMooreLookahead* bm, bool not_at_start);
-  AssertionType assertion_type() { return assertion_type_; }
+  virtual void FillInBMInfo(int offset,
+                            int recursion_depth,
+                            int budget,
+                            BoyerMooreLookahead* bm,
+                            bool not_at_start);
+  AssertionNodeType type() { return type_; }
+  void set_type(AssertionNodeType type) { type_ = type; }
 
  private:
   void EmitBoundaryCheck(RegExpCompiler* compiler, Trace* trace);
@@ -917,9 +915,9 @@ class AssertionNode: public SeqRegExpNode {
   void BacktrackIfPrevious(RegExpCompiler* compiler,
                            Trace* trace,
                            IfPrevious backtrack_if_previous);
-  AssertionNode(AssertionType t, RegExpNode* on_success)
-      : SeqRegExpNode(on_success), assertion_type_(t) { }
-  AssertionType assertion_type_;
+  AssertionNode(AssertionNodeType t, RegExpNode* on_success)
+      : SeqRegExpNode(on_success), type_(t) { }
+  AssertionNodeType type_;
 };
 
 
@@ -944,8 +942,11 @@ class BackReferenceNode: public SeqRegExpNode {
                                     bool not_at_start) {
     return;
   }
-  virtual void FillInBMInfo(Isolate* isolate, int offset, int budget,
-                            BoyerMooreLookahead* bm, bool not_at_start);
+  virtual void FillInBMInfo(int offset,
+                            int recursion_depth,
+                            int budget,
+                            BoyerMooreLookahead* bm,
+                            bool not_at_start);
 
  private:
   int start_reg_;
@@ -970,8 +971,11 @@ class EndNode: public RegExpNode {
     // Returning 0 from EatsAtLeast should ensure we never get here.
     UNREACHABLE();
   }
-  virtual void FillInBMInfo(Isolate* isolate, int offset, int budget,
-                            BoyerMooreLookahead* bm, bool not_at_start) {
+  virtual void FillInBMInfo(int offset,
+                            int recursion_depth,
+                            int budget,
+                            BoyerMooreLookahead* bm,
+                            bool not_at_start) {
     // Returning 0 from EatsAtLeast should ensure we never get here.
     UNREACHABLE();
   }
@@ -1054,26 +1058,29 @@ class ChoiceNode: public RegExpNode {
   ZoneList<GuardedAlternative>* alternatives() { return alternatives_; }
   DispatchTable* GetTable(bool ignore_case);
   virtual void Emit(RegExpCompiler* compiler, Trace* trace);
-  virtual int EatsAtLeast(int still_to_find, int budget, bool not_at_start);
+  virtual int EatsAtLeast(int still_to_find,
+                          int recursion_depth,
+                          bool not_at_start);
   int EatsAtLeastHelper(int still_to_find,
-                        int budget,
+                        int recursion_depth,
                         RegExpNode* ignore_this_node,
                         bool not_at_start);
   virtual void GetQuickCheckDetails(QuickCheckDetails* details,
                                     RegExpCompiler* compiler,
                                     int characters_filled_in,
                                     bool not_at_start);
-  virtual void FillInBMInfo(Isolate* isolate, int offset, int budget,
-                            BoyerMooreLookahead* bm, bool not_at_start);
+  virtual void FillInBMInfo(int offset,
+                            int recursion_depth,
+                            int budget,
+                            BoyerMooreLookahead* bm,
+                            bool not_at_start);
 
   bool being_calculated() { return being_calculated_; }
   bool not_at_start() { return not_at_start_; }
   void set_not_at_start() { not_at_start_ = true; }
   void set_being_calculated(bool b) { being_calculated_ = b; }
-  virtual bool try_to_emit_quick_check_for_alternative(bool is_first) {
-    return true;
-  }
-  virtual RegExpNode* FilterOneByte(int depth, bool ignore_case);
+  virtual bool try_to_emit_quick_check_for_alternative(int i) { return true; }
+  virtual RegExpNode* FilterASCII(int depth);
 
  protected:
   int GreedyLoopTextLengthForAlternative(GuardedAlternative* alternative);
@@ -1092,22 +1099,6 @@ class ChoiceNode: public RegExpNode {
                                  AlternativeGeneration* alt_gen,
                                  int preload_characters,
                                  bool next_expects_preload);
-  void SetUpPreLoad(RegExpCompiler* compiler,
-                    Trace* current_trace,
-                    PreloadState* preloads);
-  void AssertGuardsMentionRegisters(Trace* trace);
-  int EmitOptimizedUnanchoredSearch(RegExpCompiler* compiler, Trace* trace);
-  Trace* EmitGreedyLoop(RegExpCompiler* compiler,
-                        Trace* trace,
-                        AlternativeGenerationList* alt_gens,
-                        PreloadState* preloads,
-                        GreedyLoopState* greedy_loop_state,
-                        int text_length);
-  void EmitChoices(RegExpCompiler* compiler,
-                   AlternativeGenerationList* alt_gens,
-                   int first_choice,
-                   Trace* trace,
-                   PreloadState* preloads);
   DispatchTable* table_;
   // If true, this node is never checked at the start of the input.
   // Allows a new trace to start with at_start() set to false.
@@ -1125,15 +1116,20 @@ class NegativeLookaheadChoiceNode: public ChoiceNode {
     AddAlternative(this_must_fail);
     AddAlternative(then_do_this);
   }
-  virtual int EatsAtLeast(int still_to_find, int budget, bool not_at_start);
+  virtual int EatsAtLeast(int still_to_find,
+                          int recursion_depth,
+                          bool not_at_start);
   virtual void GetQuickCheckDetails(QuickCheckDetails* details,
                                     RegExpCompiler* compiler,
                                     int characters_filled_in,
                                     bool not_at_start);
-  virtual void FillInBMInfo(Isolate* isolate, int offset, int budget,
-                            BoyerMooreLookahead* bm, bool not_at_start) {
-    alternatives_->at(1).node()->FillInBMInfo(isolate, offset, budget - 1, bm,
-                                              not_at_start);
+  virtual void FillInBMInfo(int offset,
+                            int recursion_depth,
+                            int budget,
+                            BoyerMooreLookahead* bm,
+                            bool not_at_start) {
+    alternatives_->at(1).node()->FillInBMInfo(
+        offset, recursion_depth + 1, budget - 1, bm, not_at_start);
     if (offset == 0) set_bm_info(not_at_start, bm);
   }
   // For a negative lookahead we don't emit the quick check for the
@@ -1141,10 +1137,8 @@ class NegativeLookaheadChoiceNode: public ChoiceNode {
   // starts by loading enough characters for the alternative that takes fewest
   // characters, but on a negative lookahead the negative branch did not take
   // part in that calculation (EatsAtLeast) so the assumptions don't hold.
-  virtual bool try_to_emit_quick_check_for_alternative(bool is_first) {
-    return !is_first;
-  }
-  virtual RegExpNode* FilterOneByte(int depth, bool ignore_case);
+  virtual bool try_to_emit_quick_check_for_alternative(int i) { return i != 0; }
+  virtual RegExpNode* FilterASCII(int depth);
 };
 
 
@@ -1154,23 +1148,27 @@ class LoopChoiceNode: public ChoiceNode {
       : ChoiceNode(2, zone),
         loop_node_(NULL),
         continue_node_(NULL),
-        body_can_be_zero_length_(body_can_be_zero_length)
-        { }
+        body_can_be_zero_length_(body_can_be_zero_length) { }
   void AddLoopAlternative(GuardedAlternative alt);
   void AddContinueAlternative(GuardedAlternative alt);
   virtual void Emit(RegExpCompiler* compiler, Trace* trace);
-  virtual int EatsAtLeast(int still_to_find,  int budget, bool not_at_start);
+  virtual int EatsAtLeast(int still_to_find,
+                          int recursion_depth,
+                          bool not_at_start);
   virtual void GetQuickCheckDetails(QuickCheckDetails* details,
                                     RegExpCompiler* compiler,
                                     int characters_filled_in,
                                     bool not_at_start);
-  virtual void FillInBMInfo(Isolate* isolate, int offset, int budget,
-                            BoyerMooreLookahead* bm, bool not_at_start);
+  virtual void FillInBMInfo(int offset,
+                            int recursion_depth,
+                            int budget,
+                            BoyerMooreLookahead* bm,
+                            bool not_at_start);
   RegExpNode* loop_node() { return loop_node_; }
   RegExpNode* continue_node() { return continue_node_; }
   bool body_can_be_zero_length() { return body_can_be_zero_length_; }
   virtual void Accept(NodeVisitor* visitor);
-  virtual RegExpNode* FilterOneByte(int depth, bool ignore_case);
+  virtual RegExpNode* FilterASCII(int depth);
 
  private:
   // AddAlternative is made private for loop nodes because alternatives
@@ -1304,7 +1302,7 @@ class BoyerMooreLookahead : public ZoneObject {
   void SetRest(int from_map) {
     for (int i = from_map; i < length_; i++) SetAll(i);
   }
-  void EmitSkipInstructions(RegExpMacroAssembler* masm);
+  bool EmitSkipInstructions(RegExpMacroAssembler* masm);
 
  private:
   // This is the value obtained by EatsAtLeast.  If we do not have at least this
@@ -1313,7 +1311,7 @@ class BoyerMooreLookahead : public ZoneObject {
   // point.
   int length_;
   RegExpCompiler* compiler_;
-  // 0xff for Latin1, 0xffff for UTF-16.
+  // 0x7f for ASCII, 0xffff for UTF-16.
   int max_char_;
   ZoneList<BoyerMoorePositionInfo*>* bitmaps_;
 
@@ -1342,19 +1340,19 @@ class Trace {
   // A value for a property that is either known to be true, know to be false,
   // or not known.
   enum TriBool {
-    UNKNOWN = -1, FALSE_VALUE = 0, TRUE_VALUE = 1
+    UNKNOWN = -1, FALSE = 0, TRUE = 1
   };
 
   class DeferredAction {
    public:
-    DeferredAction(ActionNode::ActionType action_type, int reg)
-        : action_type_(action_type), reg_(reg), next_(NULL) { }
+    DeferredAction(ActionNode::Type type, int reg)
+        : type_(type), reg_(reg), next_(NULL) { }
     DeferredAction* next() { return next_; }
     bool Mentions(int reg);
     int reg() { return reg_; }
-    ActionNode::ActionType action_type() { return action_type_; }
+    ActionNode::Type type() { return type_; }
    private:
-    ActionNode::ActionType action_type_;
+    ActionNode::Type type_;
     int reg_;
     DeferredAction* next_;
     friend class Trace;
@@ -1438,9 +1436,7 @@ class Trace {
            at_start_ == UNKNOWN;
   }
   TriBool at_start() { return at_start_; }
-  void set_at_start(bool at_start) {
-    at_start_ = at_start ? TRUE_VALUE : FALSE_VALUE;
-  }
+  void set_at_start(bool at_start) { at_start_ = at_start ? TRUE : FALSE; }
   Label* backtrack() { return backtrack_; }
   Label* loop_label() { return loop_label_; }
   RegExpNode* stop_node() { return stop_node_; }
@@ -1456,7 +1452,7 @@ class Trace {
   // These set methods and AdvanceCurrentPositionInTrace should be used only on
   // new traces - the intention is that traces are immutable after creation.
   void add_action(DeferredAction* new_action) {
-    DCHECK(new_action->next_ == NULL);
+    ASSERT(new_action->next_ == NULL);
     new_action->next_ = actions_;
     actions_ = new_action;
   }
@@ -1476,14 +1472,14 @@ class Trace {
   int FindAffectedRegisters(OutSet* affected_registers, Zone* zone);
   void PerformDeferredActions(RegExpMacroAssembler* macro,
                               int max_register,
-                              const OutSet& affected_registers,
+                              OutSet& affected_registers,
                               OutSet* registers_to_pop,
                               OutSet* registers_to_clear,
                               Zone* zone);
   void RestoreAffectedRegisters(RegExpMacroAssembler* macro,
                                 int max_register,
-                                const OutSet& registers_to_pop,
-                                const OutSet& registers_to_clear);
+                                OutSet& registers_to_pop,
+                                OutSet& registers_to_clear);
   int cp_offset_;
   DeferredAction* actions_;
   Label* backtrack_;
@@ -1494,31 +1490,6 @@ class Trace {
   QuickCheckDetails quick_check_performed_;
   int flush_budget_;
   TriBool at_start_;
-};
-
-
-class GreedyLoopState {
- public:
-  explicit GreedyLoopState(bool not_at_start);
-
-  Label* label() { return &label_; }
-  Trace* counter_backtrack_trace() { return &counter_backtrack_trace_; }
-
- private:
-  Label label_;
-  Trace counter_backtrack_trace_;
-};
-
-
-struct PreloadState {
-  static const int kEatsAtLeastNotYetInitialized = -1;
-  bool preload_is_current_;
-  bool preload_has_checked_bounds_;
-  int preload_characters_;
-  int eats_at_least_;
-  void init() {
-    eats_at_least_ = kEatsAtLeastNotYetInitialized;
-  }
 };
 
 
@@ -1582,11 +1553,10 @@ FOR_EACH_NODE_TYPE(DECLARE_VISIT)
 //   +-------+        +------------+
 class Analysis: public NodeVisitor {
  public:
-  Analysis(Isolate* isolate, bool ignore_case, bool is_one_byte)
-      : isolate_(isolate),
-        ignore_case_(ignore_case),
-        is_one_byte_(is_one_byte),
-        error_message_(NULL) {}
+  Analysis(bool ignore_case, bool is_ascii)
+      : ignore_case_(ignore_case),
+        is_ascii_(is_ascii),
+        error_message_(NULL) { }
   void EnsureAnalyzed(RegExpNode* node);
 
 #define DECLARE_VISIT(Type)                                          \
@@ -1597,19 +1567,16 @@ FOR_EACH_NODE_TYPE(DECLARE_VISIT)
 
   bool has_failed() { return error_message_ != NULL; }
   const char* error_message() {
-    DCHECK(error_message_ != NULL);
+    ASSERT(error_message_ != NULL);
     return error_message_;
   }
   void fail(const char* error_message) {
     error_message_ = error_message;
   }
 
-  Isolate* isolate() const { return isolate_; }
-
  private:
-  Isolate* isolate_;
   bool ignore_case_;
-  bool is_one_byte_;
+  bool is_ascii_;
   const char* error_message_;
 
   DISALLOW_IMPLICIT_CONSTRUCTORS(Analysis);
@@ -1635,27 +1602,62 @@ struct RegExpCompileData {
 class RegExpEngine: public AllStatic {
  public:
   struct CompilationResult {
-    CompilationResult(Isolate* isolate, const char* error_message)
+    explicit CompilationResult(const char* error_message)
         : error_message(error_message),
-          code(isolate->heap()->the_hole_value()),
+          code(HEAP->the_hole_value()),
           num_registers(0) {}
     CompilationResult(Object* code, int registers)
-        : error_message(NULL), code(code), num_registers(registers) {}
+      : error_message(NULL),
+        code(code),
+        num_registers(registers) {}
     const char* error_message;
     Object* code;
     int num_registers;
   };
 
-  static CompilationResult Compile(Isolate* isolate, Zone* zone,
-                                   RegExpCompileData* input, bool ignore_case,
-                                   bool global, bool multiline, bool sticky,
+  static CompilationResult Compile(RegExpCompileData* input,
+                                   bool ignore_case,
+                                   bool global,
+                                   bool multiline,
                                    Handle<String> pattern,
                                    Handle<String> sample_subject,
-                                   bool is_one_byte);
-
-  static bool TooMuchRegExpCode(Handle<String> pattern);
+                                   bool is_ascii, Zone* zone);
 
   static void DotPrint(const char* label, RegExpNode* node, bool ignore_case);
+};
+
+
+class OffsetsVector {
+ public:
+  inline OffsetsVector(int num_registers, Isolate* isolate)
+      : offsets_vector_length_(num_registers) {
+    if (offsets_vector_length_ > Isolate::kJSRegexpStaticOffsetsVectorSize) {
+      vector_ = NewArray<int>(offsets_vector_length_);
+    } else {
+      vector_ = isolate->jsregexp_static_offsets_vector();
+    }
+  }
+  inline ~OffsetsVector() {
+    if (offsets_vector_length_ > Isolate::kJSRegexpStaticOffsetsVectorSize) {
+      DeleteArray(vector_);
+      vector_ = NULL;
+    }
+  }
+  inline int* vector() { return vector_; }
+  inline int length() { return offsets_vector_length_; }
+
+  static const int kStaticOffsetsVectorSize =
+      Isolate::kJSRegexpStaticOffsetsVectorSize;
+
+ private:
+  static Address static_offsets_vector_address(Isolate* isolate) {
+    return reinterpret_cast<Address>(isolate->jsregexp_static_offsets_vector());
+  }
+
+  int* vector_;
+  int offsets_vector_length_;
+
+  friend class ExternalReference;
 };
 
 

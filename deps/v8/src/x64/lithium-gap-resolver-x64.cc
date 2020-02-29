@@ -1,13 +1,36 @@
 // Copyright 2011 the V8 project authors. All rights reserved.
-// Use of this source code is governed by a BSD-style license that can be
-// found in the LICENSE file.
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are
+// met:
+//
+//     * Redistributions of source code must retain the above copyright
+//       notice, this list of conditions and the following disclaimer.
+//     * Redistributions in binary form must reproduce the above
+//       copyright notice, this list of conditions and the following
+//       disclaimer in the documentation and/or other materials provided
+//       with the distribution.
+//     * Neither the name of Google Inc. nor the names of its
+//       contributors may be used to endorse or promote products derived
+//       from this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+// "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+// LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+// A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+// OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+// LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+// DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+// THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#include "src/v8.h"
+#include "v8.h"
 
-#if V8_TARGET_ARCH_X64
+#if defined(V8_TARGET_ARCH_X64)
 
-#include "src/x64/lithium-codegen-x64.h"
-#include "src/x64/lithium-gap-resolver-x64.h"
+#include "x64/lithium-gap-resolver-x64.h"
+#include "x64/lithium-codegen-x64.h"
 
 namespace v8 {
 namespace internal {
@@ -17,7 +40,7 @@ LGapResolver::LGapResolver(LCodeGen* owner)
 
 
 void LGapResolver::Resolve(LParallelMove* parallel_move) {
-  DCHECK(moves_.is_empty());
+  ASSERT(moves_.is_empty());
   // Build up a worklist of moves.
   BuildInitialMoveList(parallel_move);
 
@@ -34,7 +57,7 @@ void LGapResolver::Resolve(LParallelMove* parallel_move) {
   // Perform the moves with constant sources.
   for (int i = 0; i < moves_.length(); ++i) {
     if (!moves_[i].IsEliminated()) {
-      DCHECK(moves_[i].source()->IsConstantOperand());
+      ASSERT(moves_[i].source()->IsConstantOperand());
       EmitMove(i);
     }
   }
@@ -65,13 +88,13 @@ void LGapResolver::PerformMove(int index) {
   // which means that a call to PerformMove could change any source operand
   // in the move graph.
 
-  DCHECK(!moves_[index].IsPending());
-  DCHECK(!moves_[index].IsRedundant());
+  ASSERT(!moves_[index].IsPending());
+  ASSERT(!moves_[index].IsRedundant());
 
   // Clear this move's destination to indicate a pending move.  The actual
   // destination is saved in a stack-allocated local.  Recursion may allow
   // multiple moves to be pending.
-  DCHECK(moves_[index].source() != NULL);  // Or else it will look eliminated.
+  ASSERT(moves_[index].source() != NULL);  // Or else it will look eliminated.
   LOperand* destination = moves_[index].destination();
   moves_[index].set_destination(NULL);
 
@@ -112,7 +135,7 @@ void LGapResolver::PerformMove(int index) {
   for (int i = 0; i < moves_.length(); ++i) {
     LMoveOperands other_move = moves_[i];
     if (other_move.Blocks(destination)) {
-      DCHECK(other_move.IsPending());
+      ASSERT(other_move.IsPending());
       EmitSwap(index);
       return;
     }
@@ -124,12 +147,12 @@ void LGapResolver::PerformMove(int index) {
 
 
 void LGapResolver::Verify() {
-#ifdef ENABLE_SLOW_DCHECKS
+#ifdef ENABLE_SLOW_ASSERTS
   // No operand should be the destination for more than one move.
   for (int i = 0; i < moves_.length(); ++i) {
     LOperand* destination = moves_[i].destination();
     for (int j = i + 1; j < moves_.length(); ++j) {
-      SLOW_DCHECK(!destination->Equals(moves_[j].destination()));
+      SLOW_ASSERT(!destination->Equals(moves_[j].destination()));
     }
   }
 #endif
@@ -149,64 +172,44 @@ void LGapResolver::EmitMove(int index) {
     Register src = cgen_->ToRegister(source);
     if (destination->IsRegister()) {
       Register dst = cgen_->ToRegister(destination);
-      __ movp(dst, src);
+      __ movq(dst, src);
     } else {
-      DCHECK(destination->IsStackSlot());
+      ASSERT(destination->IsStackSlot());
       Operand dst = cgen_->ToOperand(destination);
-      __ movp(dst, src);
+      __ movq(dst, src);
     }
 
   } else if (source->IsStackSlot()) {
     Operand src = cgen_->ToOperand(source);
     if (destination->IsRegister()) {
       Register dst = cgen_->ToRegister(destination);
-      __ movp(dst, src);
+      __ movq(dst, src);
     } else {
-      DCHECK(destination->IsStackSlot());
+      ASSERT(destination->IsStackSlot());
       Operand dst = cgen_->ToOperand(destination);
-      __ movp(kScratchRegister, src);
-      __ movp(dst, kScratchRegister);
+      __ movq(kScratchRegister, src);
+      __ movq(dst, kScratchRegister);
     }
 
   } else if (source->IsConstantOperand()) {
     LConstantOperand* constant_source = LConstantOperand::cast(source);
     if (destination->IsRegister()) {
       Register dst = cgen_->ToRegister(destination);
-      if (cgen_->IsSmiConstant(constant_source)) {
-        __ Move(dst, cgen_->ToSmi(constant_source));
-      } else if (cgen_->IsInteger32Constant(constant_source)) {
-        int32_t constant = cgen_->ToInteger32(constant_source);
-        // Do sign extension only for constant used as de-hoisted array key.
-        // Others only need zero extension, which saves 2 bytes.
-        if (cgen_->IsDehoistedKeyConstant(constant_source)) {
-          __ Set(dst, constant);
-        } else {
-          __ Set(dst, static_cast<uint32_t>(constant));
-        }
+      if (cgen_->IsInteger32Constant(constant_source)) {
+        __ movl(dst, Immediate(cgen_->ToInteger32(constant_source)));
       } else {
-        __ Move(dst, cgen_->ToHandle(constant_source));
-      }
-    } else if (destination->IsDoubleRegister()) {
-      double v = cgen_->ToDouble(constant_source);
-      uint64_t int_val = bit_cast<uint64_t, double>(v);
-      XMMRegister dst = cgen_->ToDoubleRegister(destination);
-      if (int_val == 0) {
-        __ xorps(dst, dst);
-      } else {
-        __ Set(kScratchRegister, int_val);
-        __ movq(dst, kScratchRegister);
+        __ LoadObject(dst, cgen_->ToHandle(constant_source));
       }
     } else {
-      DCHECK(destination->IsStackSlot());
+      ASSERT(destination->IsStackSlot());
       Operand dst = cgen_->ToOperand(destination);
-      if (cgen_->IsSmiConstant(constant_source)) {
-        __ Move(dst, cgen_->ToSmi(constant_source));
-      } else if (cgen_->IsInteger32Constant(constant_source)) {
-        // Do sign extension to 64 bits when stored into stack slot.
-        __ movp(dst, Immediate(cgen_->ToInteger32(constant_source)));
+      if (cgen_->IsInteger32Constant(constant_source)) {
+        // Zero top 32 bits of a 64 bit spill slot that holds a 32 bit untagged
+        // value.
+        __ movq(dst, Immediate(cgen_->ToInteger32(constant_source)));
       } else {
-        __ Move(kScratchRegister, cgen_->ToHandle(constant_source));
-        __ movp(dst, kScratchRegister);
+        __ LoadObject(kScratchRegister, cgen_->ToHandle(constant_source));
+        __ movq(dst, kScratchRegister);
       }
     }
 
@@ -215,7 +218,7 @@ void LGapResolver::EmitMove(int index) {
     if (destination->IsDoubleRegister()) {
       __ movaps(cgen_->ToDoubleRegister(destination), src);
     } else {
-      DCHECK(destination->IsDoubleStackSlot());
+      ASSERT(destination->IsDoubleStackSlot());
       __ movsd(cgen_->ToOperand(destination), src);
     }
   } else if (source->IsDoubleStackSlot()) {
@@ -223,7 +226,7 @@ void LGapResolver::EmitMove(int index) {
     if (destination->IsDoubleRegister()) {
       __ movsd(cgen_->ToDoubleRegister(destination), src);
     } else {
-      DCHECK(destination->IsDoubleStackSlot());
+      ASSERT(destination->IsDoubleStackSlot());
       __ movsd(xmm0, src);
       __ movsd(cgen_->ToOperand(destination), xmm0);
     }
@@ -245,7 +248,7 @@ void LGapResolver::EmitSwap(int index) {
     // Swap two general-purpose registers.
     Register src = cgen_->ToRegister(source);
     Register dst = cgen_->ToRegister(destination);
-    __ xchgq(dst, src);
+    __ xchg(dst, src);
 
   } else if ((source->IsRegister() && destination->IsStackSlot()) ||
              (source->IsStackSlot() && destination->IsRegister())) {
@@ -254,9 +257,9 @@ void LGapResolver::EmitSwap(int index) {
         cgen_->ToRegister(source->IsRegister() ? source : destination);
     Operand mem =
         cgen_->ToOperand(source->IsRegister() ? destination : source);
-    __ movp(kScratchRegister, mem);
-    __ movp(mem, reg);
-    __ movp(reg, kScratchRegister);
+    __ movq(kScratchRegister, mem);
+    __ movq(mem, reg);
+    __ movq(reg, kScratchRegister);
 
   } else if ((source->IsStackSlot() && destination->IsStackSlot()) ||
       (source->IsDoubleStackSlot() && destination->IsDoubleStackSlot())) {
@@ -264,9 +267,9 @@ void LGapResolver::EmitSwap(int index) {
     Operand src = cgen_->ToOperand(source);
     Operand dst = cgen_->ToOperand(destination);
     __ movsd(xmm0, src);
-    __ movp(kScratchRegister, dst);
+    __ movq(kScratchRegister, dst);
     __ movsd(dst, xmm0);
-    __ movp(src, kScratchRegister);
+    __ movq(src, kScratchRegister);
 
   } else if (source->IsDoubleRegister() && destination->IsDoubleRegister()) {
     // Swap two double registers.
@@ -278,17 +281,17 @@ void LGapResolver::EmitSwap(int index) {
 
   } else if (source->IsDoubleRegister() || destination->IsDoubleRegister()) {
     // Swap a double register and a double stack slot.
-    DCHECK((source->IsDoubleRegister() && destination->IsDoubleStackSlot()) ||
+    ASSERT((source->IsDoubleRegister() && destination->IsDoubleStackSlot()) ||
            (source->IsDoubleStackSlot() && destination->IsDoubleRegister()));
     XMMRegister reg = cgen_->ToDoubleRegister(source->IsDoubleRegister()
                                                   ? source
                                                   : destination);
     LOperand* other = source->IsDoubleRegister() ? destination : source;
-    DCHECK(other->IsDoubleStackSlot());
+    ASSERT(other->IsDoubleStackSlot());
     Operand other_operand = cgen_->ToOperand(other);
     __ movsd(xmm0, other_operand);
     __ movsd(other_operand, reg);
-    __ movaps(reg, xmm0);
+    __ movsd(reg, xmm0);
 
   } else {
     // No other combinations are possible.
@@ -314,7 +317,6 @@ void LGapResolver::EmitSwap(int index) {
 
 #undef __
 
-}  // namespace internal
-}  // namespace v8
+} }  // namespace v8::internal
 
 #endif  // V8_TARGET_ARCH_X64

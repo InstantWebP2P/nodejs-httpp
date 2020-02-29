@@ -1,16 +1,38 @@
 // Copyright 2011 the V8 project authors. All rights reserved.
-// Use of this source code is governed by a BSD-style license that can be
-// found in the LICENSE file.
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are
+// met:
+//
+//     * Redistributions of source code must retain the above copyright
+//       notice, this list of conditions and the following disclaimer.
+//     * Redistributions in binary form must reproduce the above
+//       copyright notice, this list of conditions and the following
+//       disclaimer in the documentation and/or other materials provided
+//       with the distribution.
+//     * Neither the name of Google Inc. nor the names of its
+//       contributors may be used to endorse or promote products derived
+//       from this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+// "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+// LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+// A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+// OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+// LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+// DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+// THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#include <stdint.h>
+#include <math.h>
 
-#include <cmath>
+#include "../include/v8stdint.h"
+#include "checks.h"
+#include "utils.h"
 
-#include "src/base/logging.h"
-#include "src/utils.h"
-
-#include "src/double.h"
-#include "src/fixed-dtoa.h"
+#include "double.h"
+#include "fixed-dtoa.h"
 
 namespace v8 {
 namespace internal {
@@ -36,11 +58,11 @@ class UInt128 {
     accumulator >>= 32;
     accumulator = accumulator + (high_bits_ >> 32) * multiplicand;
     high_bits_ = (accumulator << 32) + part;
-    DCHECK((accumulator >> 32) == 0);
+    ASSERT((accumulator >> 32) == 0);
   }
 
   void Shift(int shift_amount) {
-    DCHECK(-64 <= shift_amount && shift_amount <= 64);
+    ASSERT(-64 <= shift_amount && shift_amount <= 64);
     if (shift_amount == 0) {
       return;
     } else if (shift_amount == -64) {
@@ -213,13 +235,13 @@ static void RoundUp(Vector<char> buffer, int* length, int* decimal_point) {
 static void FillFractionals(uint64_t fractionals, int exponent,
                             int fractional_count, Vector<char> buffer,
                             int* length, int* decimal_point) {
-  DCHECK(-128 <= exponent && exponent <= 0);
+  ASSERT(-128 <= exponent && exponent <= 0);
   // 'fractionals' is a fixed-point number, with binary point at bit
   // (-exponent). Inside the function the non-converted remainder of fractionals
   // is a fixed-point number, with binary point at bit 'point'.
   if (-exponent <= 64) {
     // One 64 bit number is sufficient.
-    DCHECK(fractionals >> 56 == 0);
+    ASSERT(fractionals >> 56 == 0);
     int point = -exponent;
     for (int i = 0; i < fractional_count; ++i) {
       if (fractionals == 0) break;
@@ -245,7 +267,7 @@ static void FillFractionals(uint64_t fractionals, int exponent,
       RoundUp(buffer, length, decimal_point);
     }
   } else {  // We need 128 bits.
-    DCHECK(64 < -exponent && -exponent <= 128);
+    ASSERT(64 < -exponent && -exponent <= 128);
     UInt128 fractionals128 = UInt128(fractionals, 0);
     fractionals128.Shift(-exponent - 64);
     int point = 128;
@@ -363,7 +385,7 @@ bool FastFixedDtoa(double v,
   } else if (exponent < -128) {
     // This configuration (with at most 20 digits) means that all digits must be
     // 0.
-    DCHECK(fractional_count <= 20);
+    ASSERT(fractional_count <= 20);
     buffer[0] = '\0';
     *length = 0;
     *decimal_point = -fractional_count;
@@ -382,5 +404,4 @@ bool FastFixedDtoa(double v,
   return true;
 }
 
-}  // namespace internal
-}  // namespace v8
+} }  // namespace v8::internal

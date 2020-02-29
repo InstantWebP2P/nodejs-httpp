@@ -90,3 +90,4 @@ ConsArray.Cell = function(data, next) {
   this.data = data;
   this.next = next;
 };
+

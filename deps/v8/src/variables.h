@@ -1,12 +1,35 @@
 // Copyright 2011 the V8 project authors. All rights reserved.
-// Use of this source code is governed by a BSD-style license that can be
-// found in the LICENSE file.
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are
+// met:
+//
+//     * Redistributions of source code must retain the above copyright
+//       notice, this list of conditions and the following disclaimer.
+//     * Redistributions in binary form must reproduce the above
+//       copyright notice, this list of conditions and the following
+//       disclaimer in the documentation and/or other materials provided
+//       with the distribution.
+//     * Neither the name of Google Inc. nor the names of its
+//       contributors may be used to endorse or promote products derived
+//       from this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+// "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+// LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+// A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+// OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+// LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+// DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+// THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #ifndef V8_VARIABLES_H_
 #define V8_VARIABLES_H_
 
-#include "src/ast-value-factory.h"
-#include "src/zone.h"
+#include "zone.h"
+#include "interface.h"
 
 namespace v8 {
 namespace internal {
@@ -16,41 +39,71 @@ namespace internal {
 // they are maintained by scopes, and referred to from VariableProxies and Slots
 // after binding and variable allocation.
 
-class ClassVariable;
-
 class Variable: public ZoneObject {
  public:
-  enum Kind { NORMAL, FUNCTION, CLASS, THIS, ARGUMENTS };
+  enum Kind {
+    NORMAL,
+    THIS,
+    ARGUMENTS
+  };
 
-  Variable(Scope* scope, const AstRawString* name, VariableMode mode, Kind kind,
+  enum Location {
+    // Before and during variable allocation, a variable whose location is
+    // not yet determined.  After allocation, a variable looked up as a
+    // property on the global object (and possibly absent).  name() is the
+    // variable name, index() is invalid.
+    UNALLOCATED,
+
+    // A slot in the parameter section on the stack.  index() is the
+    // parameter index, counting left-to-right.  The reciever is index -1;
+    // the first parameter is index 0.
+    PARAMETER,
+
+    // A slot in the local section on the stack.  index() is the variable
+    // index in the stack frame, starting at 0.
+    LOCAL,
+
+    // An indexed slot in a heap context.  index() is the variable index in
+    // the context object on the heap, starting at 0.  scope() is the
+    // corresponding scope.
+    CONTEXT,
+
+    // A named slot in a heap context.  name() is the variable name in the
+    // context object on the heap, with lookup starting at the current
+    // context.  index() is invalid.
+    LOOKUP
+  };
+
+  Variable(Scope* scope,
+           Handle<String> name,
+           VariableMode mode,
+           bool is_valid_lhs,
+           Kind kind,
            InitializationFlag initialization_flag,
-           MaybeAssignedFlag maybe_assigned_flag = kNotAssigned);
-
-  virtual ~Variable() {}
+           Interface* interface = Interface::NewValue());
 
   // Printing support
   static const char* Mode2String(VariableMode mode);
 
+  bool IsValidLeftHandSide() { return is_valid_LHS_; }
+
   // The source code for an eval() call may refer to a variable that is
   // in an outer scope about which we don't know anything (it may not
-  // be the script scope). scope() is NULL in that case. Currently the
+  // be the global scope). scope() is NULL in that case. Currently the
   // scope is only used to follow the context chain length.
   Scope* scope() const { return scope_; }
 
-  Handle<String> name() const { return name_->string(); }
-  const AstRawString* raw_name() const { return name_; }
+  Handle<String> name() const { return name_; }
   VariableMode mode() const { return mode_; }
   bool has_forced_context_allocation() const {
     return force_context_allocation_;
   }
   void ForceContextAllocation() {
-    DCHECK(mode_ != TEMPORARY);
+    ASSERT(mode_ != TEMPORARY);
     force_context_allocation_ = true;
   }
   bool is_used() { return is_used_; }
-  void set_is_used() { is_used_ = true; }
-  MaybeAssignedFlag maybe_assigned() const { return maybe_assigned_; }
-  void set_maybe_assigned() { maybe_assigned_ = kMaybeAssigned; }
+  void set_is_used(bool flag) { is_used_ = flag; }
 
   int initializer_position() { return initializer_position_; }
   void set_initializer_position(int pos) { initializer_position_ = pos; }
@@ -59,54 +112,37 @@ class Variable: public ZoneObject {
     return !is_this() && name().is_identical_to(n);
   }
 
-  bool IsUnallocated() const {
-    return location_ == VariableLocation::UNALLOCATED;
-  }
-  bool IsParameter() const { return location_ == VariableLocation::PARAMETER; }
-  bool IsStackLocal() const { return location_ == VariableLocation::LOCAL; }
+  bool IsUnallocated() const { return location_ == UNALLOCATED; }
+  bool IsParameter() const { return location_ == PARAMETER; }
+  bool IsStackLocal() const { return location_ == LOCAL; }
   bool IsStackAllocated() const { return IsParameter() || IsStackLocal(); }
-  bool IsContextSlot() const { return location_ == VariableLocation::CONTEXT; }
-  bool IsGlobalSlot() const { return location_ == VariableLocation::GLOBAL; }
-  bool IsUnallocatedOrGlobalSlot() const {
-    return IsUnallocated() || IsGlobalSlot();
-  }
-  bool IsLookupSlot() const { return location_ == VariableLocation::LOOKUP; }
-  bool IsGlobalObjectProperty() const;
-  bool IsStaticGlobalObjectProperty() const;
+  bool IsContextSlot() const { return location_ == CONTEXT; }
+  bool IsLookupSlot() const { return location_ == LOOKUP; }
 
-  bool is_dynamic() const { return IsDynamicVariableMode(mode_); }
-  bool is_const_mode() const { return IsImmutableVariableMode(mode_); }
+  bool is_dynamic() const {
+    return (mode_ == DYNAMIC ||
+            mode_ == DYNAMIC_GLOBAL ||
+            mode_ == DYNAMIC_LOCAL);
+  }
+  bool is_const_mode() const {
+    return (mode_ == CONST ||
+            mode_ == CONST_HARMONY);
+  }
   bool binding_needs_init() const {
     return initialization_flag_ == kNeedsInitialization;
   }
 
-  bool is_function() const { return kind_ == FUNCTION; }
-  bool is_class() const { return kind_ == CLASS; }
+  bool is_global() const;
   bool is_this() const { return kind_ == THIS; }
   bool is_arguments() const { return kind_ == ARGUMENTS; }
 
-  // For script scopes, the "this" binding is provided by a ScriptContext added
-  // to the global's ScriptContextTable.  This binding might not statically
-  // resolve to a Variable::THIS binding, instead being DYNAMIC_LOCAL.  However
-  // any variable named "this" does indeed refer to a Variable::THIS binding;
-  // the grammar ensures this to be the case.  So wherever a "this" binding
-  // might be provided by the global, use HasThisName instead of is_this().
-  bool HasThisName(Isolate* isolate) const {
-    return is_this() || *name() == *isolate->factory()->this_string();
-  }
-
-  ClassVariable* AsClassVariable() {
-    DCHECK(is_class());
-    return reinterpret_cast<ClassVariable*>(this);
-  }
-
   // True if the variable is named eval and not known to be shadowed.
-  bool is_possibly_eval(Isolate* isolate) const {
-    return IsVariable(isolate->factory()->eval_string());
+  bool is_possibly_eval() const {
+    return IsVariable(FACTORY->eval_symbol());
   }
 
   Variable* local_if_not_shadowed() const {
-    DCHECK(mode_ == DYNAMIC_LOCAL && local_if_not_shadowed_ != NULL);
+    ASSERT(mode_ == DYNAMIC_LOCAL && local_if_not_shadowed_ != NULL);
     return local_if_not_shadowed_;
   }
 
@@ -114,86 +150,48 @@ class Variable: public ZoneObject {
     local_if_not_shadowed_ = local;
   }
 
-  VariableLocation location() const { return location_; }
+  Location location() const { return location_; }
   int index() const { return index_; }
   InitializationFlag initialization_flag() const {
     return initialization_flag_;
   }
+  Interface* interface() const { return interface_; }
 
-  void AllocateTo(VariableLocation location, int index) {
+  void AllocateTo(Location location, int index) {
     location_ = location;
     index_ = index;
   }
 
   static int CompareIndex(Variable* const* v, Variable* const* w);
 
-  void RecordStrongModeReference(int start_position, int end_position) {
-    // Record the earliest reference to the variable. Used in error messages for
-    // strong mode references to undeclared variables.
-    if (has_strong_mode_reference_ &&
-        strong_mode_reference_start_position_ < start_position)
-      return;
-    has_strong_mode_reference_ = true;
-    strong_mode_reference_start_position_ = start_position;
-    strong_mode_reference_end_position_ = end_position;
-  }
-
-  bool has_strong_mode_reference() const { return has_strong_mode_reference_; }
-  int strong_mode_reference_start_position() const {
-    return strong_mode_reference_start_position_;
-  }
-  int strong_mode_reference_end_position() const {
-    return strong_mode_reference_end_position_;
-  }
-
  private:
   Scope* scope_;
-  const AstRawString* name_;
+  Handle<String> name_;
   VariableMode mode_;
   Kind kind_;
-  VariableLocation location_;
+  Location location_;
   int index_;
   int initializer_position_;
-  // Tracks whether the variable is bound to a VariableProxy which is in strong
-  // mode, and if yes, the source location of the reference.
-  bool has_strong_mode_reference_;
-  int strong_mode_reference_start_position_;
-  int strong_mode_reference_end_position_;
 
   // If this field is set, this variable references the stored locally bound
   // variable, but it might be shadowed by variable bindings introduced by
-  // sloppy 'eval' calls between the reference scope (inclusive) and the
+  // non-strict 'eval' calls between the reference scope (inclusive) and the
   // binding scope (exclusive).
   Variable* local_if_not_shadowed_;
+
+  // Valid as a LHS? (const and this are not valid LHS, for example)
+  bool is_valid_LHS_;
 
   // Usage info.
   bool force_context_allocation_;  // set by variable resolver
   bool is_used_;
   InitializationFlag initialization_flag_;
-  MaybeAssignedFlag maybe_assigned_;
+
+  // Module type info.
+  Interface* interface_;
 };
 
-class ClassVariable : public Variable {
- public:
-  ClassVariable(Scope* scope, const AstRawString* name, VariableMode mode,
-                InitializationFlag initialization_flag,
-                MaybeAssignedFlag maybe_assigned_flag = kNotAssigned,
-                int declaration_group_start = -1)
-      : Variable(scope, name, mode, Variable::CLASS, initialization_flag,
-                 maybe_assigned_flag),
-        declaration_group_start_(declaration_group_start) {}
 
-  int declaration_group_start() const { return declaration_group_start_; }
-  void set_declaration_group_start(int declaration_group_start) {
-    declaration_group_start_ = declaration_group_start;
-  }
-
- private:
-  // For classes we keep track of consecutive groups of delcarations. They are
-  // needed for strong mode scoping checks. TODO(marja, rossberg): Implement
-  // checks for functions too.
-  int declaration_group_start_;
-};
 } }  // namespace v8::internal
 
 #endif  // V8_VARIABLES_H_

@@ -1,23 +1,46 @@
 // Copyright 2011 the V8 project authors. All rights reserved.
-// Use of this source code is governed by a BSD-style license that can be
-// found in the LICENSE file.
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are
+// met:
+//
+//     * Redistributions of source code must retain the above copyright
+//       notice, this list of conditions and the following disclaimer.
+//     * Redistributions in binary form must reproduce the above
+//       copyright notice, this list of conditions and the following
+//       disclaimer in the documentation and/or other materials provided
+//       with the distribution.
+//     * Neither the name of Google Inc. nor the names of its
+//       contributors may be used to endorse or promote products derived
+//       from this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+// "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+// LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+// A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+// OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+// LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+// DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+// THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#include "src/v8.h"
+#include "v8.h"
 
-#include "src/safepoint-table.h"
+#include "safepoint-table.h"
 
-#include "src/deoptimizer.h"
-#include "src/disasm.h"
-#include "src/macro-assembler.h"
-#include "src/ostreams.h"
+#include "deoptimizer.h"
+#include "disasm.h"
+#include "macro-assembler.h"
+#include "zone-inl.h"
 
 namespace v8 {
 namespace internal {
 
 
 bool SafepointEntry::HasRegisters() const {
-  DCHECK(is_valid());
-  DCHECK(IsAligned(kNumSafepointRegisters, kBitsPerByte));
+  ASSERT(is_valid());
+  ASSERT(IsAligned(kNumSafepointRegisters, kBitsPerByte));
   const int num_reg_bytes = kNumSafepointRegisters >> kBitsPerByteLog2;
   for (int i = 0; i < num_reg_bytes; i++) {
     if (bits_[i] != SafepointTable::kNoRegisters) return true;
@@ -27,8 +50,8 @@ bool SafepointEntry::HasRegisters() const {
 
 
 bool SafepointEntry::HasRegisterAt(int reg_index) const {
-  DCHECK(is_valid());
-  DCHECK(reg_index >= 0 && reg_index < kNumSafepointRegisters);
+  ASSERT(is_valid());
+  ASSERT(reg_index >= 0 && reg_index < kNumSafepointRegisters);
   int byte_index = reg_index >> kBitsPerByteLog2;
   int bit_index = reg_index & (kBitsPerByte - 1);
   return (bits_[byte_index] & (1 << bit_index)) != 0;
@@ -36,15 +59,15 @@ bool SafepointEntry::HasRegisterAt(int reg_index) const {
 
 
 SafepointTable::SafepointTable(Code* code) {
-  DCHECK(code->is_crankshafted());
+  ASSERT(code->kind() == Code::OPTIMIZED_FUNCTION);
   code_ = code;
   Address header = code->instruction_start() + code->safepoint_table_offset();
   length_ = Memory::uint32_at(header + kLengthOffset);
   entry_size_ = Memory::uint32_at(header + kEntrySizeOffset);
   pc_and_deoptimization_indexes_ = header + kHeaderSize;
   entries_ = pc_and_deoptimization_indexes_ +
-             (length_ * kPcAndDeoptimizationIndexSize);
-  DCHECK(entry_size_ > 0);
+            (length_ * kPcAndDeoptimizationIndexSize);
+  ASSERT(entry_size_ > 0);
   STATIC_ASSERT(SafepointEntry::DeoptimizationIndexField::kMax ==
                 Safepoint::kNoDeoptimizationIndex);
 }
@@ -60,37 +83,35 @@ SafepointEntry SafepointTable::FindEntry(Address pc) const {
 }
 
 
-void SafepointTable::PrintEntry(unsigned index,
-                                std::ostream& os) const {  // NOLINT
+void SafepointTable::PrintEntry(unsigned index) const {
   disasm::NameConverter converter;
   SafepointEntry entry = GetEntry(index);
   uint8_t* bits = entry.bits();
 
   // Print the stack slot bits.
   if (entry_size_ > 0) {
-    DCHECK(IsAligned(kNumSafepointRegisters, kBitsPerByte));
+    ASSERT(IsAligned(kNumSafepointRegisters, kBitsPerByte));
     const int first = kNumSafepointRegisters >> kBitsPerByteLog2;
     int last = entry_size_ - 1;
-    for (int i = first; i < last; i++) PrintBits(os, bits[i], kBitsPerByte);
+    for (int i = first; i < last; i++) PrintBits(bits[i], kBitsPerByte);
     int last_bits = code_->stack_slots() - ((last - first) * kBitsPerByte);
-    PrintBits(os, bits[last], last_bits);
+    PrintBits(bits[last], last_bits);
 
     // Print the registers (if any).
     if (!entry.HasRegisters()) return;
     for (int j = 0; j < kNumSafepointRegisters; j++) {
       if (entry.HasRegisterAt(j)) {
-        os << " | " << converter.NameOfCPURegister(j);
+        PrintF(" | %s", converter.NameOfCPURegister(j));
       }
     }
   }
 }
 
 
-void SafepointTable::PrintBits(std::ostream& os,  // NOLINT
-                               uint8_t byte, int digits) {
-  DCHECK(digits >= 0 && digits <= kBitsPerByte);
+void SafepointTable::PrintBits(uint8_t byte, int digits) {
+  ASSERT(digits >= 0 && digits <= kBitsPerByte);
   for (int i = 0; i < digits; i++) {
-    os << (((byte & (1 << i)) == 0) ? "0" : "1");
+    PrintF("%c", ((byte & (1 << i)) == 0) ? '0' : '1');
   }
 }
 
@@ -105,7 +126,7 @@ Safepoint SafepointTableBuilder::DefineSafepoint(
     Safepoint::Kind kind,
     int arguments,
     Safepoint::DeoptMode deopt_mode) {
-  DCHECK(arguments >= 0);
+  ASSERT(arguments >= 0);
   DeoptimizationInfo info;
   info.pc = assembler->pc_offset();
   info.arguments = arguments;
@@ -131,12 +152,20 @@ void SafepointTableBuilder::RecordLazyDeoptimizationIndex(int index) {
 }
 
 unsigned SafepointTableBuilder::GetCodeOffset() const {
-  DCHECK(emitted_);
+  ASSERT(emitted_);
   return offset_;
 }
 
 
 void SafepointTableBuilder::Emit(Assembler* assembler, int bits_per_entry) {
+  // For lazy deoptimization we need space to patch a call after every call.
+  // Ensure there is always space for such patching, even if the code ends
+  // in a call.
+  int target_offset = assembler->pc_offset() + Deoptimizer::patch_size();
+  while (assembler->pc_offset() < target_offset) {
+    assembler->nop();
+  }
+
   // Make sure the safepoint table is properly aligned. Pad with nops.
   assembler->Align(kIntSize);
   assembler->RecordComment(";;; Safepoint table.");
@@ -170,7 +199,7 @@ void SafepointTableBuilder::Emit(Assembler* assembler, int bits_per_entry) {
     bits.AddBlock(0, bytes_per_entry, zone_);
 
     // Run through the registers (if any).
-    DCHECK(IsAligned(kNumSafepointRegisters, kBitsPerByte));
+    ASSERT(IsAligned(kNumSafepointRegisters, kBitsPerByte));
     if (registers == NULL) {
       const int num_reg_bytes = kNumSafepointRegisters >> kBitsPerByteLog2;
       for (int j = 0; j < num_reg_bytes; j++) {
@@ -179,7 +208,7 @@ void SafepointTableBuilder::Emit(Assembler* assembler, int bits_per_entry) {
     } else {
       for (int j = 0; j < registers->length(); j++) {
         int index = registers->at(j);
-        DCHECK(index >= 0 && index < kNumSafepointRegisters);
+        ASSERT(index >= 0 && index < kNumSafepointRegisters);
         int byte_index = index >> kBitsPerByteLog2;
         int bit_index = index & (kBitsPerByte - 1);
         bits[byte_index] |= (1 << bit_index);
@@ -212,5 +241,5 @@ uint32_t SafepointTableBuilder::EncodeExceptPC(const DeoptimizationInfo& info,
 }
 
 
-}  // namespace internal
-}  // namespace v8
+
+} }  // namespace v8::internal

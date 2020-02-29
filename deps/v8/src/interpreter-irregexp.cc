@@ -1,19 +1,41 @@
 // Copyright 2011 the V8 project authors. All rights reserved.
-// Use of this source code is governed by a BSD-style license that can be
-// found in the LICENSE file.
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are
+// met:
+//
+//     * Redistributions of source code must retain the above copyright
+//       notice, this list of conditions and the following disclaimer.
+//     * Redistributions in binary form must reproduce the above
+//       copyright notice, this list of conditions and the following
+//       disclaimer in the documentation and/or other materials provided
+//       with the distribution.
+//     * Neither the name of Google Inc. nor the names of its
+//       contributors may be used to endorse or promote products derived
+//       from this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+// "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+// LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+// A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+// OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+// LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+// DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+// THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 // A simple interpreter for the Irregexp byte code.
 
 
-#include "src/v8.h"
-
-#include "src/ast.h"
-#include "src/bytecodes-irregexp.h"
-#include "src/interpreter-irregexp.h"
-#include "src/jsregexp.h"
-#include "src/regexp-macro-assembler.h"
-#include "src/unicode.h"
-#include "src/utils.h"
+#include "v8.h"
+#include "unicode.h"
+#include "utils.h"
+#include "ast.h"
+#include "bytecodes-irregexp.h"
+#include "interpreter-irregexp.h"
+#include "jsregexp.h"
+#include "regexp-macro-assembler.h"
 
 namespace v8 {
 namespace internal {
@@ -46,20 +68,14 @@ static bool BackRefMatchesNoCase(Canonicalize* interp_canonicalize,
                                  int from,
                                  int current,
                                  int len,
-                                 Vector<const uint8_t> subject) {
+                                 Vector<const char> subject) {
   for (int i = 0; i < len; i++) {
     unsigned int old_char = subject[from++];
     unsigned int new_char = subject[current++];
     if (old_char == new_char) continue;
-    // Convert both characters to lower case.
-    old_char |= 0x20;
-    new_char |= 0x20;
+    if (old_char - 'A' <= 'Z' - 'A') old_char |= 0x20;
+    if (new_char - 'A' <= 'Z' - 'A') new_char |= 0x20;
     if (old_char != new_char) return false;
-    // Not letters in the ASCII range and Latin-1 range.
-    if (!(old_char - 'a' <= 'z' - 'a') &&
-        !(old_char - 224 <= 254 - 224 && old_char != 247)) {
-      return false;
-    }
   }
   return true;
 }
@@ -119,13 +135,13 @@ static void TraceInterpreter(const byte* code_base,
 
 
 static int32_t Load32Aligned(const byte* pc) {
-  DCHECK((reinterpret_cast<intptr_t>(pc) & 3) == 0);
+  ASSERT((reinterpret_cast<intptr_t>(pc) & 3) == 0);
   return *reinterpret_cast<const int32_t *>(pc);
 }
 
 
 static int32_t Load16Aligned(const byte* pc) {
-  DCHECK((reinterpret_cast<intptr_t>(pc) & 1) == 0);
+  ASSERT((reinterpret_cast<intptr_t>(pc) & 1) == 0);
   return *reinterpret_cast<const uint16_t *>(pc);
 }
 
@@ -136,10 +152,25 @@ static int32_t Load16Aligned(const byte* pc) {
 // matching terminates.
 class BacktrackStack {
  public:
-  BacktrackStack() { data_ = NewArray<int>(kBacktrackStackSize); }
+  explicit BacktrackStack(Isolate* isolate) : isolate_(isolate) {
+    if (isolate->irregexp_interpreter_backtrack_stack_cache() != NULL) {
+      // If the cache is not empty reuse the previously allocated stack.
+      data_ = isolate->irregexp_interpreter_backtrack_stack_cache();
+      isolate->set_irregexp_interpreter_backtrack_stack_cache(NULL);
+    } else {
+      // Cache was empty. Allocate a new backtrack stack.
+      data_ = NewArray<int>(kBacktrackStackSize);
+    }
+  }
 
   ~BacktrackStack() {
-    DeleteArray(data_);
+    if (isolate_->irregexp_interpreter_backtrack_stack_cache() == NULL) {
+      // The cache is empty. Keep this backtrack stack around.
+      isolate_->set_irregexp_interpreter_backtrack_stack_cache(data_);
+    } else {
+      // A backtrack stack was already cached, just release this one.
+      DeleteArray(data_);
+    }
   }
 
   int* data() const { return data_; }
@@ -150,6 +181,7 @@ class BacktrackStack {
   static const int kBacktrackStackSize = 10000;
 
   int* data_;
+  Isolate* isolate_;
 
   DISALLOW_COPY_AND_ASSIGN(BacktrackStack);
 };
@@ -166,7 +198,7 @@ static RegExpImpl::IrregexpResult RawMatch(Isolate* isolate,
   // BacktrackStack ensures that the memory allocated for the backtracking stack
   // is returned to the system or cached if there is no stack being cached at
   // the moment.
-  BacktrackStack backtrack_stack;
+  BacktrackStack backtrack_stack(isolate);
   int* backtrack_stack_base = backtrack_stack.data();
   int* backtrack_sp = backtrack_stack_base;
   int backtrack_stack_space = backtrack_stack.max_size();
@@ -306,7 +338,7 @@ static RegExpImpl::IrregexpResult RawMatch(Isolate* isolate,
         break;
       }
       BYTECODE(LOAD_4_CURRENT_CHARS) {
-        DCHECK(sizeof(Char) == 1);
+        ASSERT(sizeof(Char) == 1);
         int pos = current + (insn >> BYTECODE_SHIFT);
         if (pos + 4 > subject.length()) {
           pc = code_base + Load32Aligned(pc + 4);
@@ -323,7 +355,7 @@ static RegExpImpl::IrregexpResult RawMatch(Isolate* isolate,
         break;
       }
       BYTECODE(LOAD_4_CURRENT_CHARS_UNCHECKED) {
-        DCHECK(sizeof(Char) == 1);
+        ASSERT(sizeof(Char) == 1);
         int pos = current + (insn >> BYTECODE_SHIFT);
         Char next1 = subject[pos + 1];
         Char next2 = subject[pos + 2];
@@ -578,14 +610,14 @@ RegExpImpl::IrregexpResult IrregexpInterpreter::Match(
     Handle<String> subject,
     int* registers,
     int start_position) {
-  DCHECK(subject->IsFlat());
+  ASSERT(subject->IsFlat());
 
-  DisallowHeapAllocation no_gc;
+  AssertNoAllocation a;
   const byte* code_base = code_array->GetDataStartAddress();
   uc16 previous_char = '\n';
   String::FlatContent subject_content = subject->GetFlatContent();
-  if (subject_content.IsOneByte()) {
-    Vector<const uint8_t> subject_vector = subject_content.ToOneByteVector();
+  if (subject_content.IsAscii()) {
+    Vector<const char> subject_vector = subject_content.ToAsciiVector();
     if (start_position != 0) previous_char = subject_vector[start_position - 1];
     return RawMatch(isolate,
                     code_base,
@@ -594,7 +626,7 @@ RegExpImpl::IrregexpResult IrregexpInterpreter::Match(
                     start_position,
                     previous_char);
   } else {
-    DCHECK(subject_content.IsTwoByte());
+    ASSERT(subject_content.IsTwoByte());
     Vector<const uc16> subject_vector = subject_content.ToUC16Vector();
     if (start_position != 0) previous_char = subject_vector[start_position - 1];
     return RawMatch(isolate,
@@ -606,5 +638,4 @@ RegExpImpl::IrregexpResult IrregexpInterpreter::Match(
   }
 }
 
-}  // namespace internal
-}  // namespace v8
+} }  // namespace v8::internal

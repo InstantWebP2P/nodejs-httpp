@@ -1,22 +1,46 @@
 // Copyright 2011 the V8 project authors. All rights reserved.
-// Use of this source code is governed by a BSD-style license that can be
-// found in the LICENSE file.
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are
+// met:
+//
+//     * Redistributions of source code must retain the above copyright
+//       notice, this list of conditions and the following disclaimer.
+//     * Redistributions in binary form must reproduce the above
+//       copyright notice, this list of conditions and the following
+//       disclaimer in the documentation and/or other materials provided
+//       with the distribution.
+//     * Neither the name of Google Inc. nor the names of its
+//       contributors may be used to endorse or promote products derived
+//       from this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+// "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+// LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+// A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+// OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+// LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+// DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+// THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#include <cmath>
+#include <math.h>
 
-#include "src/base/logging.h"
-#include "src/utils.h"
+#include "../include/v8stdint.h"
+#include "checks.h"
+#include "utils.h"
 
-#include "src/bignum-dtoa.h"
+#include "bignum-dtoa.h"
 
-#include "src/bignum.h"
-#include "src/double.h"
+#include "bignum.h"
+#include "double.h"
 
 namespace v8 {
 namespace internal {
 
 static int NormalizedExponent(uint64_t significand, int exponent) {
-  DCHECK(significand != 0);
+  ASSERT(significand != 0);
   while ((significand & Double::kHiddenBit) == 0) {
     significand = significand << 1;
     exponent = exponent - 1;
@@ -67,8 +91,8 @@ static void GenerateCountedDigits(int count, int* decimal_point,
 
 void BignumDtoa(double v, BignumDtoaMode mode, int requested_digits,
                 Vector<char> buffer, int* length, int* decimal_point) {
-  DCHECK(v > 0);
-  DCHECK(!Double(v).IsSpecial());
+  ASSERT(v > 0);
+  ASSERT(!Double(v).IsSpecial());
   uint64_t significand = Double(v).Significand();
   bool is_even = (significand & 1) == 0;
   int exponent = Double(v).Exponent();
@@ -98,7 +122,7 @@ void BignumDtoa(double v, BignumDtoaMode mode, int requested_digits,
   // 4e-324. In this case the denominator needs fewer than 324*4 binary digits.
   // The maximum double is 1.7976931348623157e308 which needs fewer than
   // 308*4 binary digits.
-  DCHECK(Bignum::kMaxSignificantBits >= 324*4);
+  ASSERT(Bignum::kMaxSignificantBits >= 324*4);
   bool need_boundary_deltas = (mode == BIGNUM_DTOA_SHORTEST);
   InitialScaledStartValues(v, estimated_power, need_boundary_deltas,
                            &numerator, &denominator,
@@ -158,7 +182,7 @@ static void GenerateShortestDigits(Bignum* numerator, Bignum* denominator,
   while (true) {
     uint16_t digit;
     digit = numerator->DivideModuloIntBignum(*denominator);
-    DCHECK(digit <= 9);  // digit is a uint16_t and therefore always positive.
+    ASSERT(digit <= 9);  // digit is a uint16_t and therefore always positive.
     // digit = numerator / denominator (integer division).
     // numerator = numerator % denominator.
     buffer[(*length)++] = digit + '0';
@@ -204,7 +228,7 @@ static void GenerateShortestDigits(Bignum* numerator, Bignum* denominator,
         // loop would have stopped earlier.
         // We still have an assert here in case the preconditions were not
         // satisfied.
-        DCHECK(buffer[(*length) - 1] != '9');
+        ASSERT(buffer[(*length) - 1] != '9');
         buffer[(*length) - 1]++;
       } else {
         // Halfway case.
@@ -215,7 +239,7 @@ static void GenerateShortestDigits(Bignum* numerator, Bignum* denominator,
         if ((buffer[(*length) - 1] - '0') % 2 == 0) {
           // Round down => Do nothing.
         } else {
-          DCHECK(buffer[(*length) - 1] != '9');
+          ASSERT(buffer[(*length) - 1] != '9');
           buffer[(*length) - 1]++;
         }
       }
@@ -227,9 +251,9 @@ static void GenerateShortestDigits(Bignum* numerator, Bignum* denominator,
       // Round up.
       // Note again that the last digit could not be '9' since this would have
       // stopped the loop earlier.
-      // We still have an DCHECK here, in case the preconditions were not
+      // We still have an ASSERT here, in case the preconditions were not
       // satisfied.
-      DCHECK(buffer[(*length) -1] != '9');
+      ASSERT(buffer[(*length) -1] != '9');
       buffer[(*length) - 1]++;
       return;
     }
@@ -246,11 +270,11 @@ static void GenerateShortestDigits(Bignum* numerator, Bignum* denominator,
 static void GenerateCountedDigits(int count, int* decimal_point,
                                   Bignum* numerator, Bignum* denominator,
                                   Vector<char>(buffer), int* length) {
-  DCHECK(count >= 0);
+  ASSERT(count >= 0);
   for (int i = 0; i < count - 1; ++i) {
     uint16_t digit;
     digit = numerator->DivideModuloIntBignum(*denominator);
-    DCHECK(digit <= 9);  // digit is a uint16_t and therefore always positive.
+    ASSERT(digit <= 9);  // digit is a uint16_t and therefore always positive.
     // digit = numerator / denominator (integer division).
     // numerator = numerator % denominator.
     buffer[i] = digit + '0';
@@ -303,7 +327,7 @@ static void BignumToFixed(int requested_digits, int* decimal_point,
   } else if (-(*decimal_point) == requested_digits) {
     // We only need to verify if the number rounds down or up.
     // Ex: 0.04 and 0.06 with requested_digits == 1.
-    DCHECK(*decimal_point == -requested_digits);
+    ASSERT(*decimal_point == -requested_digits);
     // Initially the fraction lies in range (1, 10]. Multiply the denominator
     // by 10 so that we can compare more easily.
     denominator->Times10();
@@ -370,8 +394,7 @@ static int EstimatePower(int exponent) {
 
   // For doubles len(f) == 53 (don't forget the hidden bit).
   const int kSignificandSize = 53;
-  double estimate =
-      std::ceil((exponent + kSignificandSize - 1) * k1Log10 - 1e-10);
+  double estimate = ceil((exponent + kSignificandSize - 1) * k1Log10 - 1e-10);
   return static_cast<int>(estimate);
 }
 
@@ -382,7 +405,7 @@ static void InitialScaledStartValuesPositiveExponent(
     Bignum* numerator, Bignum* denominator,
     Bignum* delta_minus, Bignum* delta_plus) {
   // A positive exponent implies a positive power.
-  DCHECK(estimated_power >= 0);
+  ASSERT(estimated_power >= 0);
   // Since the estimated_power is positive we simply multiply the denominator
   // by 10^estimated_power.
 
@@ -501,7 +524,7 @@ static void InitialScaledStartValuesNegativeExponentNegativePower(
   // numerator = v * 10^-estimated_power * 2 * 2^-exponent.
   // Remember: numerator has been abused as power_ten. So no need to assign it
   //  to itself.
-  DCHECK(numerator == power_ten);
+  ASSERT(numerator == power_ten);
   numerator->MultiplyByUInt64(significand);
 
   // denominator = 2 * 2^-exponent with exponent < 0.
@@ -632,5 +655,4 @@ static void FixupMultiply10(int estimated_power, bool is_even,
   }
 }
 
-}  // namespace internal
-}  // namespace v8
+} }  // namespace v8::internal

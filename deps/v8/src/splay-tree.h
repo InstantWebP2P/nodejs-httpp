@@ -1,11 +1,34 @@
 // Copyright 2010 the V8 project authors. All rights reserved.
-// Use of this source code is governed by a BSD-style license that can be
-// found in the LICENSE file.
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are
+// met:
+//
+//     * Redistributions of source code must retain the above copyright
+//       notice, this list of conditions and the following disclaimer.
+//     * Redistributions in binary form must reproduce the above
+//       copyright notice, this list of conditions and the following
+//       disclaimer in the documentation and/or other materials provided
+//       with the distribution.
+//     * Neither the name of Google Inc. nor the names of its
+//       contributors may be used to endorse or promote products derived
+//       from this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+// "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+// LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+// A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+// OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+// LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+// DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+// THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #ifndef V8_SPLAY_TREE_H_
 #define V8_SPLAY_TREE_H_
 
-#include "src/allocation.h"
+#include "allocation.h"
 
 namespace v8 {
 namespace internal {
@@ -16,9 +39,9 @@ namespace internal {
 //
 //   typedef Key: the key type
 //   typedef Value: the value type
-//   static const Key kNoKey: the dummy key used when no key is set
-//   static Value kNoValue(): the dummy value used to initialize nodes
-//   static int (Compare)(Key& a, Key& b) -> {-1, 0, 1}: comparison function
+//   static const kNoKey: the dummy key used when no key is set
+//   static const kNoValue: the dummy value used to initialize nodes
+//   int (Compare)(Key& a, Key& b) -> {-1, 0, 1}: comparison function
 //
 // The tree is also parameterized by an allocation policy
 // (Allocator). The policy is used for allocating lists in the C free
@@ -35,8 +58,8 @@ class SplayTree {
 
   class Locator;
 
-  explicit SplayTree(AllocationPolicy allocator = AllocationPolicy())
-      : root_(NULL), allocator_(allocator) {}
+  SplayTree(AllocationPolicy allocator = AllocationPolicy())
+      : root_(NULL), allocator_(allocator) { }
   ~SplayTree();
 
   INLINE(void* operator new(size_t size,
@@ -50,11 +73,6 @@ class SplayTree {
   INLINE(void operator delete(void* p, AllocationPolicy policy)) {
     UNREACHABLE();
   }
-
-  AllocationPolicy allocator() { return allocator_; }
-
-  // Checks if there is a mapping for the key.
-  bool Contains(const Key& key);
 
   // Inserts the given key in this tree with the given value.  Returns
   // true if a node was inserted, otherwise false.  If found the locator
@@ -85,9 +103,6 @@ class SplayTree {
 
   // Remove the node with the given key from the tree.
   bool Remove(const Key& key);
-
-  // Remove all keys from the tree.
-  void Clear() { ResetRoot(); }
 
   bool is_empty() { return root_ == NULL; }
 

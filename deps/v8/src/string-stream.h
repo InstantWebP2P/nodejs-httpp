@@ -1,18 +1,40 @@
-// Copyright 2014 the V8 project authors. All rights reserved.
-// Use of this source code is governed by a BSD-style license that can be
-// found in the LICENSE file.
+// Copyright 2006-2008 the V8 project authors. All rights reserved.
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are
+// met:
+//
+//     * Redistributions of source code must retain the above copyright
+//       notice, this list of conditions and the following disclaimer.
+//     * Redistributions in binary form must reproduce the above
+//       copyright notice, this list of conditions and the following
+//       disclaimer in the documentation and/or other materials provided
+//       with the distribution.
+//     * Neither the name of Google Inc. nor the names of its
+//       contributors may be used to endorse or promote products derived
+//       from this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+// "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+// LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+// A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+// OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+// LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+// DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+// THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #ifndef V8_STRING_STREAM_H_
 #define V8_STRING_STREAM_H_
 
-#include "src/handles.h"
-
 namespace v8 {
 namespace internal {
 
+
 class StringAllocator {
  public:
-  virtual ~StringAllocator() { }
+  virtual ~StringAllocator() {}
   // Allocate a number of bytes.
   virtual char* allocate(unsigned bytes) = 0;
   // Allocate a larger number of bytes and copy the old buffer to the new one.
@@ -24,33 +46,31 @@ class StringAllocator {
 
 
 // Normal allocator uses new[] and delete[].
-class HeapStringAllocator final : public StringAllocator {
+class HeapStringAllocator: public StringAllocator {
  public:
   ~HeapStringAllocator() { DeleteArray(space_); }
-  char* allocate(unsigned bytes) override;
-  char* grow(unsigned* bytes) override;
-
+  char* allocate(unsigned bytes);
+  char* grow(unsigned* bytes);
  private:
   char* space_;
 };
 
 
-class FixedStringAllocator final : public StringAllocator {
+// Allocator for use when no new c++ heap allocation is allowed.
+// Given a preallocated buffer up front and does no allocation while
+// building message.
+class NoAllocationStringAllocator: public StringAllocator {
  public:
-  FixedStringAllocator(char* buffer, unsigned length)
-      : buffer_(buffer), length_(length) {}
-  ~FixedStringAllocator() override{};
-  char* allocate(unsigned bytes) override;
-  char* grow(unsigned* bytes) override;
-
+  NoAllocationStringAllocator(char* memory, unsigned size);
+  char* allocate(unsigned bytes) { return space_; }
+  char* grow(unsigned* bytes);
  private:
-  char* buffer_;
-  unsigned length_;
-  DISALLOW_COPY_AND_ASSIGN(FixedStringAllocator);
+  unsigned size_;
+  char* space_;
 };
 
 
-class FmtElm final {
+class FmtElm {
  public:
   FmtElm(int value) : type_(INT) {  // NOLINT
     data_.u_int_ = value;
@@ -90,17 +110,17 @@ class FmtElm final {
 };
 
 
-class StringStream final {
+class StringStream {
  public:
-  enum ObjectPrintMode { kPrintObjectConcise, kPrintObjectVerbose };
-  StringStream(StringAllocator* allocator,
-               ObjectPrintMode object_print_mode = kPrintObjectConcise)
-      : allocator_(allocator),
-        object_print_mode_(object_print_mode),
-        capacity_(kInitialCapacity),
-        length_(0),
-        buffer_(allocator_->allocate(kInitialCapacity)) {
+  explicit StringStream(StringAllocator* allocator):
+    allocator_(allocator),
+    capacity_(kInitialCapacity),
+    length_(0),
+    buffer_(allocator_->allocate(kInitialCapacity)) {
     buffer_[0] = 0;
+  }
+
+  ~StringStream() {
   }
 
   bool Put(char c);
@@ -117,18 +137,12 @@ class StringStream final {
            FmtElm arg1,
            FmtElm arg2,
            FmtElm arg3);
-  void Add(const char* format,
-           FmtElm arg0,
-           FmtElm arg1,
-           FmtElm arg2,
-           FmtElm arg3,
-           FmtElm arg4);
 
   // Getting the message out.
   void OutputToFile(FILE* out);
   void OutputToStdOut() { OutputToFile(stdout); }
-  void Log(Isolate* isolate);
-  Handle<String> ToString(Isolate* isolate);
+  void Log();
+  Handle<String> ToString();
   SmartArrayPointer<const char> ToCString() const;
   int length() const { return length_; }
 
@@ -149,11 +163,12 @@ class StringStream final {
   }
 
   // Mentioned object cache support.
-  void PrintMentionedObjectCache(Isolate* isolate);
-  static void ClearMentionedObjectCache(Isolate* isolate);
+  void PrintMentionedObjectCache();
+  static void ClearMentionedObjectCache();
 #ifdef DEBUG
-  bool IsMentionedObjectCacheClear(Isolate* isolate);
+  static bool IsMentionedObjectCacheClear();
 #endif
+
 
   static const int kInitialCapacity = 16;
 
@@ -161,7 +176,6 @@ class StringStream final {
   void PrintObject(Object* obj);
 
   StringAllocator* allocator_;
-  ObjectPrintMode object_print_mode_;
   unsigned capacity_;
   unsigned length_;  // does not include terminating 0-character
   char* buffer_;
@@ -171,6 +185,7 @@ class StringStream final {
 
   DISALLOW_IMPLICIT_CONSTRUCTORS(StringStream);
 };
+
 
 } }  // namespace v8::internal
 

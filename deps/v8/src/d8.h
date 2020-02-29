@@ -1,20 +1,41 @@
 // Copyright 2012 the V8 project authors. All rights reserved.
-// Use of this source code is governed by a BSD-style license that can be
-// found in the LICENSE file.
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are
+// met:
+//
+//     * Redistributions of source code must retain the above copyright
+//       notice, this list of conditions and the following disclaimer.
+//     * Redistributions in binary form must reproduce the above
+//       copyright notice, this list of conditions and the following
+//       disclaimer in the documentation and/or other materials provided
+//       with the distribution.
+//     * Neither the name of Google Inc. nor the names of its
+//       contributors may be used to endorse or promote products derived
+//       from this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+// "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+// LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+// A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+// OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+// LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+// DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+// THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #ifndef V8_D8_H_
 #define V8_D8_H_
 
 #ifndef V8_SHARED
-#include "src/allocation.h"
-#include "src/hashmap.h"
-#include "src/list.h"
-#include "src/smart-pointers.h"
-#include "src/v8.h"
+#include "allocation.h"
+#include "hashmap.h"
+#include "smart-array-pointer.h"
+#include "v8.h"
 #else
-#include "include/v8.h"
-#include "src/base/compiler-specific.h"
-#endif  // !V8_SHARED
+#include "../include/v8.h"
+#endif  // V8_SHARED
 
 namespace v8 {
 
@@ -46,7 +67,7 @@ class CounterCollection {
   CounterCollection();
   Counter* GetNextCounter();
  private:
-  static const unsigned kMaxCounters = 512;
+  static const unsigned kMaxCounters = 256;
   uint32_t magic_number_;
   uint32_t max_counters_;
   uint32_t max_name_size_;
@@ -59,15 +80,19 @@ class CounterMap {
  public:
   CounterMap(): hash_map_(Match) { }
   Counter* Lookup(const char* name) {
-    i::HashMap::Entry* answer =
-        hash_map_.Lookup(const_cast<char*>(name), Hash(name));
+    i::HashMap::Entry* answer = hash_map_.Lookup(
+        const_cast<char*>(name),
+        Hash(name),
+        false);
     if (!answer) return NULL;
     return reinterpret_cast<Counter*>(answer->value);
   }
   void Set(const char* name, Counter* value) {
-    i::HashMap::Entry* answer =
-        hash_map_.LookupOrInsert(const_cast<char*>(name), Hash(name));
-    DCHECK(answer != NULL);
+    i::HashMap::Entry* answer = hash_map_.Lookup(
+        const_cast<char*>(name),
+        Hash(name),
+        true);
+    ASSERT(answer != NULL);
     answer->value = value;
   }
   class Iterator {
@@ -88,7 +113,7 @@ class CounterMap {
   static bool Match(void* key1, void* key2);
   i::HashMap hash_map_;
 };
-#endif  // !V8_SHARED
+#endif  // V8_SHARED
 
 
 class LineEditor {
@@ -98,16 +123,17 @@ class LineEditor {
   virtual ~LineEditor() { }
 
   virtual Handle<String> Prompt(const char* prompt) = 0;
-  virtual bool Open(Isolate* isolate) { return true; }
+  virtual bool Open() { return true; }
   virtual bool Close() { return true; }
   virtual void AddHistory(const char* str) { }
 
   const char* name() { return name_; }
-  static LineEditor* Get() { return current_; }
+  static LineEditor* Get();
  private:
   Type type_;
   const char* name_;
-  static LineEditor* current_;
+  LineEditor* next_;
+  static LineEditor* first_;
 };
 
 
@@ -115,10 +141,10 @@ class SourceGroup {
  public:
   SourceGroup() :
 #ifndef V8_SHARED
-      next_semaphore_(0),
-      done_semaphore_(0),
+      next_semaphore_(v8::internal::OS::CreateSemaphore(0)),
+      done_semaphore_(v8::internal::OS::CreateSemaphore(0)),
       thread_(NULL),
-#endif  // !V8_SHARED
+#endif  // V8_SHARED
       argv_(NULL),
       begin_offset_(0),
       end_offset_(0) {}
@@ -132,17 +158,17 @@ class SourceGroup {
 
   void End(int offset) { end_offset_ = offset; }
 
-  void Execute(Isolate* isolate);
+  void Execute();
 
 #ifndef V8_SHARED
   void StartExecuteInThread();
   void WaitForThread();
 
  private:
-  class IsolateThread : public base::Thread {
+  class IsolateThread : public i::Thread {
    public:
     explicit IsolateThread(SourceGroup* group)
-        : base::Thread(GetThreadOptions()), group_(group) {}
+        : i::Thread(GetThreadOptions()), group_(group) {}
 
     virtual void Run() {
       group_->ExecuteInThread();
@@ -152,176 +178,83 @@ class SourceGroup {
     SourceGroup* group_;
   };
 
-  static base::Thread::Options GetThreadOptions();
+  static i::Thread::Options GetThreadOptions();
   void ExecuteInThread();
 
-  base::Semaphore next_semaphore_;
-  base::Semaphore done_semaphore_;
-  base::Thread* thread_;
-#endif  // !V8_SHARED
+  i::Semaphore* next_semaphore_;
+  i::Semaphore* done_semaphore_;
+  i::Thread* thread_;
+#endif  // V8_SHARED
 
   void ExitShell(int exit_code);
-  Handle<String> ReadFile(Isolate* isolate, const char* name);
+  Handle<String> ReadFile(const char* name);
 
   const char** argv_;
   int begin_offset_;
   int end_offset_;
 };
 
-#ifndef V8_SHARED
-enum SerializationTag {
-  kSerializationTagUndefined,
-  kSerializationTagNull,
-  kSerializationTagTrue,
-  kSerializationTagFalse,
-  kSerializationTagNumber,
-  kSerializationTagString,
-  kSerializationTagArray,
-  kSerializationTagObject,
-  kSerializationTagArrayBuffer,
-  kSerializationTagTransferredArrayBuffer,
-  kSerializationTagTransferredSharedArrayBuffer,
-};
 
-
-class SerializationData {
+class BinaryResource : public v8::String::ExternalAsciiStringResource {
  public:
-  SerializationData() {}
-  ~SerializationData();
+  BinaryResource(const char* string, int length)
+      : data_(string),
+        length_(length) { }
 
-  void WriteTag(SerializationTag tag);
-  void WriteMemory(const void* p, int length);
-  void WriteArrayBufferContents(const ArrayBuffer::Contents& contents);
-  void WriteSharedArrayBufferContents(
-      const SharedArrayBuffer::Contents& contents);
-
-  template <typename T>
-  void Write(const T& data) {
-    WriteMemory(&data, sizeof(data));
+  ~BinaryResource() {
+    delete[] data_;
+    data_ = NULL;
+    length_ = 0;
   }
 
-  SerializationTag ReadTag(int* offset) const;
-  void ReadMemory(void* p, int length, int* offset) const;
-  void ReadArrayBufferContents(ArrayBuffer::Contents* contents,
-                               int* offset) const;
-  void ReadSharedArrayBufferContents(SharedArrayBuffer::Contents* contents,
-                                     int* offset) const;
-
-  template <typename T>
-  T Read(int* offset) const {
-    T value;
-    ReadMemory(&value, sizeof(value), offset);
-    return value;
-  }
+  virtual const char* data() const { return data_; }
+  virtual size_t length() const { return length_; }
 
  private:
-  i::List<uint8_t> data;
-  i::List<ArrayBuffer::Contents> array_buffer_contents;
-  i::List<SharedArrayBuffer::Contents> shared_array_buffer_contents;
+  const char* data_;
+  size_t length_;
 };
-
-
-class SerializationDataQueue {
- public:
-  void Enqueue(SerializationData* data);
-  bool Dequeue(SerializationData** data);
-  bool IsEmpty();
-  void Clear();
-
- private:
-  base::Mutex mutex_;
-  i::List<SerializationData*> data_;
-};
-
-
-class Worker {
- public:
-  Worker();
-  ~Worker();
-
-  void StartExecuteInThread(Isolate* isolate, const char* script);
-  void PostMessage(SerializationData* data);
-  SerializationData* GetMessage();
-  void Terminate();
-
- private:
-  class WorkerThread : public base::Thread {
-   public:
-    explicit WorkerThread(Worker* worker)
-        : base::Thread(base::Thread::Options("WorkerThread")),
-          worker_(worker) {}
-
-    virtual void Run() { worker_->ExecuteInThread(); }
-
-   private:
-    Worker* worker_;
-  };
-
-  enum State { IDLE, RUNNING, TERMINATED };
-
-  void ExecuteInThread();
-  void Cleanup();
-  static void PostMessageOut(const v8::FunctionCallbackInfo<v8::Value>& args);
-
-  base::Semaphore in_semaphore_;
-  base::Semaphore out_semaphore_;
-  SerializationDataQueue in_queue_;
-  SerializationDataQueue out_queue_;
-  base::Thread* thread_;
-  char* script_;
-  base::Atomic32 state_;
-};
-#endif  // !V8_SHARED
 
 
 class ShellOptions {
  public:
-  ShellOptions()
-      : script_executed(false),
-        last_run(true),
-        send_idle_notification(false),
-        invoke_weak_callbacks(false),
-        omit_quit(false),
-        stress_opt(false),
-        stress_deopt(false),
-        interactive_shell(false),
-        test_shell(false),
-        dump_heap_constants(false),
-        expected_to_throw(false),
-        mock_arraybuffer_allocator(false),
-        num_isolates(1),
-        compile_options(v8::ScriptCompiler::kNoCompileOptions),
-        isolate_sources(NULL),
-        icu_data_file(NULL),
-        natives_blob(NULL),
-        snapshot_blob(NULL) {}
+  ShellOptions() :
+#ifndef V8_SHARED
+     use_preemption(true),
+     preemption_interval(10),
+     num_parallel_files(0),
+     parallel_files(NULL),
+#endif  // V8_SHARED
+     script_executed(false),
+     last_run(true),
+     stress_opt(false),
+     stress_deopt(false),
+     interactive_shell(false),
+     test_shell(false),
+     num_isolates(1),
+     isolate_sources(NULL) { }
 
   ~ShellOptions() {
+#ifndef V8_SHARED
+    delete[] parallel_files;
+#endif  // V8_SHARED
     delete[] isolate_sources;
   }
 
-  bool use_interactive_shell() {
-    return (interactive_shell || !script_executed) && !test_shell;
-  }
-
+#ifndef V8_SHARED
+  bool use_preemption;
+  int preemption_interval;
+  int num_parallel_files;
+  char** parallel_files;
+#endif  // V8_SHARED
   bool script_executed;
   bool last_run;
-  bool send_idle_notification;
-  bool invoke_weak_callbacks;
-  bool omit_quit;
   bool stress_opt;
   bool stress_deopt;
   bool interactive_shell;
   bool test_shell;
-  bool dump_heap_constants;
-  bool expected_to_throw;
-  bool mock_arraybuffer_allocator;
   int num_isolates;
-  v8::ScriptCompiler::CompileOptions compile_options;
   SourceGroup* isolate_sources;
-  const char* icu_data_file;
-  const char* natives_blob;
-  const char* snapshot_blob;
 };
 
 #ifdef V8_SHARED
@@ -331,86 +264,65 @@ class Shell : public i::AllStatic {
 #endif  // V8_SHARED
 
  public:
-  enum SourceType { SCRIPT, MODULE };
-
-  static Local<Script> CompileString(
-      Isolate* isolate, Local<String> source, Local<Value> name,
-      v8::ScriptCompiler::CompileOptions compile_options,
-      SourceType source_type);
-  static bool ExecuteString(Isolate* isolate, Handle<String> source,
-                            Handle<Value> name, bool print_result,
-                            bool report_exceptions,
-                            SourceType source_type = SCRIPT);
+  static bool ExecuteString(Handle<String> source,
+                            Handle<Value> name,
+                            bool print_result,
+                            bool report_exceptions);
   static const char* ToCString(const v8::String::Utf8Value& value);
-  static void ReportException(Isolate* isolate, TryCatch* try_catch);
-  static Handle<String> ReadFile(Isolate* isolate, const char* name);
-  static Local<Context> CreateEvaluationContext(Isolate* isolate);
-  static int RunMain(Isolate* isolate, int argc, char* argv[]);
+  static void ReportException(TryCatch* try_catch);
+  static Handle<String> ReadFile(const char* name);
+  static Persistent<Context> CreateEvaluationContext();
+  static int RunMain(int argc, char* argv[]);
   static int Main(int argc, char* argv[]);
   static void Exit(int exit_code);
-  static void OnExit(Isolate* isolate);
-  static void CollectGarbage(Isolate* isolate);
 
 #ifndef V8_SHARED
-  // TODO(binji): stupid implementation for now. Is there an easy way to hash an
-  // object for use in i::HashMap? By pointer?
-  typedef i::List<Handle<Object>> ObjectList;
-  static bool SerializeValue(Isolate* isolate, Handle<Value> value,
-                             const ObjectList& to_transfer,
-                             ObjectList* seen_objects,
-                             SerializationData* out_data);
-  static MaybeLocal<Value> DeserializeValue(Isolate* isolate,
-                                            const SerializationData& data,
-                                            int* offset);
-  static void CleanupWorkers();
-  static Handle<Array> GetCompletions(Isolate* isolate,
-                                      Handle<String> text,
+  static Handle<Array> GetCompletions(Handle<String> text,
                                       Handle<String> full);
+  static void OnExit();
   static int* LookupCounter(const char* name);
   static void* CreateHistogram(const char* name,
                                int min,
                                int max,
                                size_t buckets);
   static void AddHistogramSample(void* histogram, int sample);
-  static void MapCounters(v8::Isolate* isolate, const char* name);
+  static void MapCounters(const char* name);
 
-  static Local<Object> DebugMessageDetails(Isolate* isolate,
-                                           Handle<String> message);
-  static Local<Value> DebugCommandToJSONRequest(Isolate* isolate,
-                                                Handle<String> command);
+#ifdef ENABLE_DEBUGGER_SUPPORT
+  static Handle<Object> DebugMessageDetails(Handle<String> message);
+  static Handle<Value> DebugCommandToJSONRequest(Handle<String> command);
+  static void DispatchDebugMessages();
+#endif  // ENABLE_DEBUGGER_SUPPORT
+#endif  // V8_SHARED
 
-  static void PerformanceNow(const v8::FunctionCallbackInfo<v8::Value>& args);
-#endif  // !V8_SHARED
+#ifdef WIN32
+#undef Yield
+#endif
 
-  static void RealmCurrent(const v8::FunctionCallbackInfo<v8::Value>& args);
-  static void RealmOwner(const v8::FunctionCallbackInfo<v8::Value>& args);
-  static void RealmGlobal(const v8::FunctionCallbackInfo<v8::Value>& args);
-  static void RealmCreate(const v8::FunctionCallbackInfo<v8::Value>& args);
-  static void RealmDispose(const v8::FunctionCallbackInfo<v8::Value>& args);
-  static void RealmSwitch(const v8::FunctionCallbackInfo<v8::Value>& args);
-  static void RealmEval(const v8::FunctionCallbackInfo<v8::Value>& args);
-  static void RealmSharedGet(Local<String> property,
-                             const  PropertyCallbackInfo<Value>& info);
-  static void RealmSharedSet(Local<String> property,
-                             Local<Value> value,
-                             const  PropertyCallbackInfo<void>& info);
-
-  static void Print(const v8::FunctionCallbackInfo<v8::Value>& args);
-  static void Write(const v8::FunctionCallbackInfo<v8::Value>& args);
-  static void Quit(const v8::FunctionCallbackInfo<v8::Value>& args);
-  static void Version(const v8::FunctionCallbackInfo<v8::Value>& args);
-  static void Read(const v8::FunctionCallbackInfo<v8::Value>& args);
-  static void ReadBuffer(const v8::FunctionCallbackInfo<v8::Value>& args);
-  static Handle<String> ReadFromStdin(Isolate* isolate);
-  static void ReadLine(const v8::FunctionCallbackInfo<v8::Value>& args) {
-    args.GetReturnValue().Set(ReadFromStdin(args.GetIsolate()));
+  static Handle<Value> Print(const Arguments& args);
+  static Handle<Value> Write(const Arguments& args);
+  static Handle<Value> Yield(const Arguments& args);
+  static Handle<Value> Quit(const Arguments& args);
+  static Handle<Value> Version(const Arguments& args);
+  static Handle<Value> EnableProfiler(const Arguments& args);
+  static Handle<Value> DisableProfiler(const Arguments& args);
+  static Handle<Value> Read(const Arguments& args);
+  static Handle<Value> ReadBuffer(const Arguments& args);
+  static Handle<String> ReadFromStdin();
+  static Handle<Value> ReadLine(const Arguments& args) {
+    return ReadFromStdin();
   }
-  static void Load(const v8::FunctionCallbackInfo<v8::Value>& args);
-  static void WorkerNew(const v8::FunctionCallbackInfo<v8::Value>& args);
-  static void WorkerPostMessage(
-      const v8::FunctionCallbackInfo<v8::Value>& args);
-  static void WorkerGetMessage(const v8::FunctionCallbackInfo<v8::Value>& args);
-  static void WorkerTerminate(const v8::FunctionCallbackInfo<v8::Value>& args);
+  static Handle<Value> Load(const Arguments& args);
+  static Handle<Value> ArrayBuffer(const Arguments& args);
+  static Handle<Value> Int8Array(const Arguments& args);
+  static Handle<Value> Uint8Array(const Arguments& args);
+  static Handle<Value> Int16Array(const Arguments& args);
+  static Handle<Value> Uint16Array(const Arguments& args);
+  static Handle<Value> Int32Array(const Arguments& args);
+  static Handle<Value> Uint32Array(const Arguments& args);
+  static Handle<Value> Float32Array(const Arguments& args);
+  static Handle<Value> Float64Array(const Arguments& args);
+  static Handle<Value> PixelArray(const Arguments& args);
   // The OS object on the global object contains methods for performing
   // operating system calls:
   //
@@ -437,20 +349,20 @@ class Shell : public i::AllStatic {
   // with the current umask.  Intermediate directories are created if necessary.
   // An exception is not thrown if the directory already exists.  Analogous to
   // the "mkdir -p" command.
-  static void System(const v8::FunctionCallbackInfo<v8::Value>& args);
-  static void ChangeDirectory(const v8::FunctionCallbackInfo<v8::Value>& args);
-  static void SetEnvironment(const v8::FunctionCallbackInfo<v8::Value>& args);
-  static void UnsetEnvironment(const v8::FunctionCallbackInfo<v8::Value>& args);
-  static void SetUMask(const v8::FunctionCallbackInfo<v8::Value>& args);
-  static void MakeDirectory(const v8::FunctionCallbackInfo<v8::Value>& args);
-  static void RemoveDirectory(const v8::FunctionCallbackInfo<v8::Value>& args);
+  static Handle<Value> OSObject(const Arguments& args);
+  static Handle<Value> System(const Arguments& args);
+  static Handle<Value> ChangeDirectory(const Arguments& args);
+  static Handle<Value> SetEnvironment(const Arguments& args);
+  static Handle<Value> UnsetEnvironment(const Arguments& args);
+  static Handle<Value> SetUMask(const Arguments& args);
+  static Handle<Value> MakeDirectory(const Arguments& args);
+  static Handle<Value> RemoveDirectory(const Arguments& args);
 
-  static void AddOSMethods(v8::Isolate* isolate,
-                           Handle<ObjectTemplate> os_template);
+  static void AddOSMethods(Handle<ObjectTemplate> os_template);
 
+  static LineEditor* console;
   static const char* kPrompt;
   static ShellOptions options;
-  static ArrayBuffer::Allocator* array_buffer_allocator;
 
  private:
   static Persistent<Context> evaluation_context_;
@@ -461,23 +373,22 @@ class Shell : public i::AllStatic {
   // don't want to store the stats in a memory-mapped file
   static CounterCollection local_counters_;
   static CounterCollection* counters_;
-  static base::OS::MemoryMappedFile* counters_file_;
-  static base::Mutex context_mutex_;
-  static const base::TimeTicks kInitialTicks;
-
-  static base::Mutex workers_mutex_;
-  static bool allow_new_workers_;
-  static i::List<Worker*> workers_;
-  static i::List<SharedArrayBuffer::Contents> externalized_shared_contents_;
+  static i::OS::MemoryMappedFile* counters_file_;
+  static i::Mutex* context_mutex_;
 
   static Counter* GetCounter(const char* name, bool is_histogram);
-  static void InstallUtilityScript(Isolate* isolate);
-#endif  // !V8_SHARED
-  static void Initialize(Isolate* isolate);
-  static void InitializeDebugger(Isolate* isolate);
-  static void RunShell(Isolate* isolate);
+  static void InstallUtilityScript();
+#endif  // V8_SHARED
+  static void Initialize();
+  static void RunShell();
   static bool SetOptions(int argc, char* argv[]);
-  static Handle<ObjectTemplate> CreateGlobalTemplate(Isolate* isolate);
+  static Handle<ObjectTemplate> CreateGlobalTemplate();
+  static Handle<Value> CreateExternalArrayBuffer(int32_t size);
+  static Handle<Value> CreateExternalArrayBuffer(const Arguments& args);
+  static Handle<Value> CreateExternalArray(const Arguments& args,
+                                           ExternalArrayType type,
+                                           int32_t element_size);
+  static void ExternalArrayWeakCallback(Persistent<Value> object, void* data);
 };
 
 

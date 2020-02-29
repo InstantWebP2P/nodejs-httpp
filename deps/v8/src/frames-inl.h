@@ -1,30 +1,45 @@
 // Copyright 2012 the V8 project authors. All rights reserved.
-// Use of this source code is governed by a BSD-style license that can be
-// found in the LICENSE file.
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are
+// met:
+//
+//     * Redistributions of source code must retain the above copyright
+//       notice, this list of conditions and the following disclaimer.
+//     * Redistributions in binary form must reproduce the above
+//       copyright notice, this list of conditions and the following
+//       disclaimer in the documentation and/or other materials provided
+//       with the distribution.
+//     * Neither the name of Google Inc. nor the names of its
+//       contributors may be used to endorse or promote products derived
+//       from this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+// "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+// LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+// A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+// OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+// LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+// DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+// THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #ifndef V8_FRAMES_INL_H_
 #define V8_FRAMES_INL_H_
 
-#include "src/frames.h"
-#include "src/isolate.h"
-#include "src/v8memory.h"
+#include "frames.h"
+#include "isolate.h"
+#include "v8memory.h"
 
 #if V8_TARGET_ARCH_IA32
-#include "src/ia32/frames-ia32.h"  // NOLINT
+#include "ia32/frames-ia32.h"
 #elif V8_TARGET_ARCH_X64
-#include "src/x64/frames-x64.h"  // NOLINT
-#elif V8_TARGET_ARCH_ARM64
-#include "src/arm64/frames-arm64.h"  // NOLINT
+#include "x64/frames-x64.h"
 #elif V8_TARGET_ARCH_ARM
-#include "src/arm/frames-arm.h"  // NOLINT
-#elif V8_TARGET_ARCH_PPC
-#include "src/ppc/frames-ppc.h"  // NOLINT
+#include "arm/frames-arm.h"
 #elif V8_TARGET_ARCH_MIPS
-#include "src/mips/frames-mips.h"  // NOLINT
-#elif V8_TARGET_ARCH_MIPS64
-#include "src/mips64/frames-mips64.h"  // NOLINT
-#elif V8_TARGET_ARCH_X87
-#include "src/x87/frames-x87.h"  // NOLINT
+#include "mips/frames-mips.h"
 #else
 #error Unsupported target architecture.
 #endif
@@ -44,12 +59,58 @@ inline StackHandler* StackHandler::next() const {
 }
 
 
+inline bool StackHandler::includes(Address address) const {
+  Address start = this->address();
+  Address end = start + StackHandlerConstants::kSize;
+  return start <= address && address <= end;
+}
+
+
+inline void StackHandler::Iterate(ObjectVisitor* v, Code* holder) const {
+  v->VisitPointer(context_address());
+  v->VisitPointer(code_address());
+}
+
+
 inline StackHandler* StackHandler::FromAddress(Address address) {
   return reinterpret_cast<StackHandler*>(address);
 }
 
 
-inline StackFrame::StackFrame(StackFrameIteratorBase* iterator)
+inline bool StackHandler::is_js_entry() const {
+  return kind() == JS_ENTRY;
+}
+
+
+inline bool StackHandler::is_catch() const {
+  return kind() == CATCH;
+}
+
+
+inline bool StackHandler::is_finally() const {
+  return kind() == FINALLY;
+}
+
+
+inline StackHandler::Kind StackHandler::kind() const {
+  const int offset = StackHandlerConstants::kStateOffset;
+  return KindField::decode(Memory::unsigned_at(address() + offset));
+}
+
+
+inline Object** StackHandler::context_address() const {
+  const int offset = StackHandlerConstants::kContextOffset;
+  return reinterpret_cast<Object**>(address() + offset);
+}
+
+
+inline Object** StackHandler::code_address() const {
+  const int offset = StackHandlerConstants::kCodeOffset;
+  return reinterpret_cast<Object**>(address() + offset);
+}
+
+
+inline StackFrame::StackFrame(StackFrameIterator* iterator)
     : iterator_(iterator), isolate_(iterator_->isolate()) {
 }
 
@@ -69,34 +130,22 @@ inline Code* StackFrame::GetContainingCode(Isolate* isolate, Address pc) {
 }
 
 
-inline Address* StackFrame::ResolveReturnAddressLocation(Address* pc_address) {
-  if (return_address_location_resolver_ == NULL) {
-    return pc_address;
-  } else {
-    return reinterpret_cast<Address*>(
-        return_address_location_resolver_(
-            reinterpret_cast<uintptr_t>(pc_address)));
-  }
-}
-
-
-inline EntryFrame::EntryFrame(StackFrameIteratorBase* iterator)
+inline EntryFrame::EntryFrame(StackFrameIterator* iterator)
     : StackFrame(iterator) {
 }
 
 
-inline EntryConstructFrame::EntryConstructFrame(
-    StackFrameIteratorBase* iterator)
+inline EntryConstructFrame::EntryConstructFrame(StackFrameIterator* iterator)
     : EntryFrame(iterator) {
 }
 
 
-inline ExitFrame::ExitFrame(StackFrameIteratorBase* iterator)
+inline ExitFrame::ExitFrame(StackFrameIterator* iterator)
     : StackFrame(iterator) {
 }
 
 
-inline StandardFrame::StandardFrame(StackFrameIteratorBase* iterator)
+inline StandardFrame::StandardFrame(StackFrameIterator* iterator)
     : StackFrame(iterator) {
 }
 
@@ -132,11 +181,6 @@ inline Address StandardFrame::ComputePCAddress(Address fp) {
 }
 
 
-inline Address StandardFrame::ComputeConstantPoolAddress(Address fp) {
-  return fp + StandardFrameConstants::kConstantPoolOffset;
-}
-
-
 inline bool StandardFrame::IsArgumentsAdaptorFrame(Address fp) {
   Object* marker =
       Memory::Object_at(fp + StandardFrameConstants::kContextOffset);
@@ -151,14 +195,14 @@ inline bool StandardFrame::IsConstructFrame(Address fp) {
 }
 
 
-inline JavaScriptFrame::JavaScriptFrame(StackFrameIteratorBase* iterator)
+inline JavaScriptFrame::JavaScriptFrame(StackFrameIterator* iterator)
     : StandardFrame(iterator) {
 }
 
 
 Address JavaScriptFrame::GetParameterSlot(int index) const {
   int param_count = ComputeParametersCount();
-  DCHECK(-1 <= index && index < param_count);
+  ASSERT(-1 <= index && index < param_count);
   int parameter_offset = (param_count - index - 1) * kPointerSize;
   return caller_sp() + parameter_offset;
 }
@@ -166,34 +210,6 @@ Address JavaScriptFrame::GetParameterSlot(int index) const {
 
 Object* JavaScriptFrame::GetParameter(int index) const {
   return Memory::Object_at(GetParameterSlot(index));
-}
-
-
-inline Address JavaScriptFrame::GetOperandSlot(int index) const {
-  Address base = fp() + JavaScriptFrameConstants::kLocal0Offset;
-  DCHECK(IsAddressAligned(base, kPointerSize));
-  DCHECK_EQ(type(), JAVA_SCRIPT);
-  DCHECK_LT(index, ComputeOperandsCount());
-  DCHECK_LE(0, index);
-  // Operand stack grows down.
-  return base - index * kPointerSize;
-}
-
-
-inline Object* JavaScriptFrame::GetOperand(int index) const {
-  return Memory::Object_at(GetOperandSlot(index));
-}
-
-
-inline int JavaScriptFrame::ComputeOperandsCount() const {
-  Address base = fp() + JavaScriptFrameConstants::kLocal0Offset;
-  // Base points to low address of first operand and stack grows down, so add
-  // kPointerSize to get the actual stack size.
-  intptr_t stack_size_in_bytes = (base + kPointerSize) - sp();
-  DCHECK(IsAligned(stack_size_in_bytes, kPointerSize));
-  DCHECK(type() == JAVA_SCRIPT);
-  DCHECK(stack_size_in_bytes >= 0);
-  return static_cast<int>(stack_size_in_bytes >> kPointerSizeLog2);
 }
 
 
@@ -212,70 +228,98 @@ inline bool JavaScriptFrame::has_adapted_arguments() const {
 }
 
 
-inline JSFunction* JavaScriptFrame::function() const {
-  return JSFunction::cast(function_slot_object());
+inline Object* JavaScriptFrame::function() const {
+  Object* result = function_slot_object();
+  ASSERT(result->IsJSFunction());
+  return result;
 }
 
 
-inline StubFrame::StubFrame(StackFrameIteratorBase* iterator)
-    : StandardFrame(iterator) {
-}
-
-
-inline OptimizedFrame::OptimizedFrame(StackFrameIteratorBase* iterator)
+inline OptimizedFrame::OptimizedFrame(StackFrameIterator* iterator)
     : JavaScriptFrame(iterator) {
 }
 
 
 inline ArgumentsAdaptorFrame::ArgumentsAdaptorFrame(
-    StackFrameIteratorBase* iterator) : JavaScriptFrame(iterator) {
+    StackFrameIterator* iterator) : JavaScriptFrame(iterator) {
 }
 
 
-inline InternalFrame::InternalFrame(StackFrameIteratorBase* iterator)
+inline InternalFrame::InternalFrame(StackFrameIterator* iterator)
     : StandardFrame(iterator) {
 }
 
 
-inline StubFailureTrampolineFrame::StubFailureTrampolineFrame(
-    StackFrameIteratorBase* iterator) : StandardFrame(iterator) {
-}
-
-
-inline ConstructFrame::ConstructFrame(StackFrameIteratorBase* iterator)
+inline ConstructFrame::ConstructFrame(StackFrameIterator* iterator)
     : InternalFrame(iterator) {
 }
 
 
-inline JavaScriptFrameIterator::JavaScriptFrameIterator(
+template<typename Iterator>
+inline JavaScriptFrameIteratorTemp<Iterator>::JavaScriptFrameIteratorTemp(
     Isolate* isolate)
     : iterator_(isolate) {
   if (!done()) Advance();
 }
 
 
-inline JavaScriptFrameIterator::JavaScriptFrameIterator(
+template<typename Iterator>
+inline JavaScriptFrameIteratorTemp<Iterator>::JavaScriptFrameIteratorTemp(
     Isolate* isolate, ThreadLocalTop* top)
     : iterator_(isolate, top) {
   if (!done()) Advance();
 }
 
 
-inline JavaScriptFrame* JavaScriptFrameIterator::frame() const {
+template<typename Iterator>
+inline JavaScriptFrame* JavaScriptFrameIteratorTemp<Iterator>::frame() const {
   // TODO(1233797): The frame hierarchy needs to change. It's
   // problematic that we can't use the safe-cast operator to cast to
   // the JavaScript frame type, because we may encounter arguments
   // adaptor frames.
   StackFrame* frame = iterator_.frame();
-  DCHECK(frame->is_java_script() || frame->is_arguments_adaptor());
+  ASSERT(frame->is_java_script() || frame->is_arguments_adaptor());
   return static_cast<JavaScriptFrame*>(frame);
 }
 
 
-inline StackFrame* SafeStackFrameIterator::frame() const {
-  DCHECK(!done());
-  DCHECK(frame_->is_java_script() || frame_->is_exit());
-  return frame_;
+template<typename Iterator>
+JavaScriptFrameIteratorTemp<Iterator>::JavaScriptFrameIteratorTemp(
+    Isolate* isolate, StackFrame::Id id)
+    : iterator_(isolate) {
+  AdvanceToId(id);
+}
+
+
+template<typename Iterator>
+void JavaScriptFrameIteratorTemp<Iterator>::Advance() {
+  do {
+    iterator_.Advance();
+  } while (!iterator_.done() && !iterator_.frame()->is_java_script());
+}
+
+
+template<typename Iterator>
+void JavaScriptFrameIteratorTemp<Iterator>::AdvanceToArgumentsFrame() {
+  if (!frame()->has_adapted_arguments()) return;
+  iterator_.Advance();
+  ASSERT(iterator_.frame()->is_arguments_adaptor());
+}
+
+
+template<typename Iterator>
+void JavaScriptFrameIteratorTemp<Iterator>::AdvanceToId(StackFrame::Id id) {
+  while (!done()) {
+    Advance();
+    if (frame()->id() == id) return;
+  }
+}
+
+
+template<typename Iterator>
+void JavaScriptFrameIteratorTemp<Iterator>::Reset() {
+  iterator_.Reset();
+  if (!done()) Advance();
 }
 
 

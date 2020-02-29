@@ -1,14 +1,36 @@
 // Copyright 2008-2009 the V8 project authors. All rights reserved.
-// Use of this source code is governed by a BSD-style license that can be
-// found in the LICENSE file.
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are
+// met:
+//
+//     * Redistributions of source code must retain the above copyright
+//       notice, this list of conditions and the following disclaimer.
+//     * Redistributions in binary form must reproduce the above
+//       copyright notice, this list of conditions and the following
+//       disclaimer in the documentation and/or other materials provided
+//       with the distribution.
+//     * Neither the name of Google Inc. nor the names of its
+//       contributors may be used to endorse or promote products derived
+//       from this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+// "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+// LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+// A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+// OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+// LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+// DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+// THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#include "src/v8.h"
-
-#include "src/ast.h"
-#include "src/bytecodes-irregexp.h"
-#include "src/regexp-macro-assembler.h"
-#include "src/regexp-macro-assembler-irregexp.h"
-#include "src/regexp-macro-assembler-irregexp-inl.h"
+#include "v8.h"
+#include "ast.h"
+#include "bytecodes-irregexp.h"
+#include "regexp-macro-assembler.h"
+#include "regexp-macro-assembler-irregexp.h"
+#include "regexp-macro-assembler-irregexp-inl.h"
 
 
 namespace v8 {
@@ -16,15 +38,12 @@ namespace internal {
 
 #ifdef V8_INTERPRETED_REGEXP
 
-RegExpMacroAssemblerIrregexp::RegExpMacroAssemblerIrregexp(Isolate* isolate,
-                                                           Vector<byte> buffer,
-                                                           Zone* zone)
-    : RegExpMacroAssembler(isolate, zone),
-      buffer_(buffer),
+RegExpMacroAssemblerIrregexp::RegExpMacroAssemblerIrregexp(Vector<byte> buffer)
+    : buffer_(buffer),
       pc_(0),
       own_buffer_(false),
-      advance_current_end_(kInvalidPC),
-      isolate_(isolate) {}
+      advance_current_end_(kInvalidPC) {
+}
 
 
 RegExpMacroAssemblerIrregexp::~RegExpMacroAssemblerIrregexp() {
@@ -41,7 +60,7 @@ RegExpMacroAssemblerIrregexp::Implementation() {
 
 void RegExpMacroAssemblerIrregexp::Bind(Label* l) {
   advance_current_end_ = kInvalidPC;
-  DCHECK(!l->is_bound());
+  ASSERT(!l->is_bound());
   if (l->is_linked()) {
     int pos = l->pos();
     while (pos != 0) {
@@ -70,8 +89,8 @@ void RegExpMacroAssemblerIrregexp::EmitOrLink(Label* l) {
 
 
 void RegExpMacroAssemblerIrregexp::PopRegister(int register_index) {
-  DCHECK(register_index >= 0);
-  DCHECK(register_index <= kMaxRegister);
+  ASSERT(register_index >= 0);
+  ASSERT(register_index <= kMaxRegister);
   Emit(BC_POP_REGISTER, register_index);
 }
 
@@ -79,23 +98,23 @@ void RegExpMacroAssemblerIrregexp::PopRegister(int register_index) {
 void RegExpMacroAssemblerIrregexp::PushRegister(
     int register_index,
     StackCheckFlag check_stack_limit) {
-  DCHECK(register_index >= 0);
-  DCHECK(register_index <= kMaxRegister);
+  ASSERT(register_index >= 0);
+  ASSERT(register_index <= kMaxRegister);
   Emit(BC_PUSH_REGISTER, register_index);
 }
 
 
 void RegExpMacroAssemblerIrregexp::WriteCurrentPositionToRegister(
     int register_index, int cp_offset) {
-  DCHECK(register_index >= 0);
-  DCHECK(register_index <= kMaxRegister);
+  ASSERT(register_index >= 0);
+  ASSERT(register_index <= kMaxRegister);
   Emit(BC_SET_REGISTER_TO_CP, register_index);
   Emit32(cp_offset);  // Current position offset.
 }
 
 
 void RegExpMacroAssemblerIrregexp::ClearRegisters(int reg_from, int reg_to) {
-  DCHECK(reg_from <= reg_to);
+  ASSERT(reg_from <= reg_to);
   for (int reg = reg_from; reg <= reg_to; reg++) {
     SetRegister(reg, -1);
   }
@@ -104,45 +123,45 @@ void RegExpMacroAssemblerIrregexp::ClearRegisters(int reg_from, int reg_to) {
 
 void RegExpMacroAssemblerIrregexp::ReadCurrentPositionFromRegister(
     int register_index) {
-  DCHECK(register_index >= 0);
-  DCHECK(register_index <= kMaxRegister);
+  ASSERT(register_index >= 0);
+  ASSERT(register_index <= kMaxRegister);
   Emit(BC_SET_CP_TO_REGISTER, register_index);
 }
 
 
 void RegExpMacroAssemblerIrregexp::WriteStackPointerToRegister(
     int register_index) {
-  DCHECK(register_index >= 0);
-  DCHECK(register_index <= kMaxRegister);
+  ASSERT(register_index >= 0);
+  ASSERT(register_index <= kMaxRegister);
   Emit(BC_SET_REGISTER_TO_SP, register_index);
 }
 
 
 void RegExpMacroAssemblerIrregexp::ReadStackPointerFromRegister(
     int register_index) {
-  DCHECK(register_index >= 0);
-  DCHECK(register_index <= kMaxRegister);
+  ASSERT(register_index >= 0);
+  ASSERT(register_index <= kMaxRegister);
   Emit(BC_SET_SP_TO_REGISTER, register_index);
 }
 
 
 void RegExpMacroAssemblerIrregexp::SetCurrentPositionFromEnd(int by) {
-  DCHECK(is_uint24(by));
+  ASSERT(is_uint24(by));
   Emit(BC_SET_CURRENT_POSITION_FROM_END, by);
 }
 
 
 void RegExpMacroAssemblerIrregexp::SetRegister(int register_index, int to) {
-  DCHECK(register_index >= 0);
-  DCHECK(register_index <= kMaxRegister);
+  ASSERT(register_index >= 0);
+  ASSERT(register_index <= kMaxRegister);
   Emit(BC_SET_REGISTER, register_index);
   Emit32(to);
 }
 
 
 void RegExpMacroAssemblerIrregexp::AdvanceRegister(int register_index, int by) {
-  DCHECK(register_index >= 0);
-  DCHECK(register_index <= kMaxRegister);
+  ASSERT(register_index >= 0);
+  ASSERT(register_index <= kMaxRegister);
   Emit(BC_ADVANCE_REGISTER, register_index);
   Emit32(by);
 }
@@ -196,8 +215,8 @@ void RegExpMacroAssemblerIrregexp::Fail() {
 
 
 void RegExpMacroAssemblerIrregexp::AdvanceCurrentPosition(int by) {
-  DCHECK(by >= kMinCPOffset);
-  DCHECK(by <= kMaxCPOffset);
+  ASSERT(by >= kMinCPOffset);
+  ASSERT(by <= kMaxCPOffset);
   advance_current_start_ = pc_;
   advance_current_offset_ = by;
   Emit(BC_ADVANCE_CP, by);
@@ -216,8 +235,8 @@ void RegExpMacroAssemblerIrregexp::LoadCurrentCharacter(int cp_offset,
                                                         Label* on_failure,
                                                         bool check_bounds,
                                                         int characters) {
-  DCHECK(cp_offset >= kMinCPOffset);
-  DCHECK(cp_offset <= kMaxCPOffset);
+  ASSERT(cp_offset >= kMinCPOffset);
+  ASSERT(cp_offset <= kMaxCPOffset);
   int bytecode;
   if (check_bounds) {
     if (characters == 4) {
@@ -225,7 +244,7 @@ void RegExpMacroAssemblerIrregexp::LoadCurrentCharacter(int cp_offset,
     } else if (characters == 2) {
       bytecode = BC_LOAD_2_CURRENT_CHARS;
     } else {
-      DCHECK(characters == 1);
+      ASSERT(characters == 1);
       bytecode = BC_LOAD_CURRENT_CHAR;
     }
   } else {
@@ -234,7 +253,7 @@ void RegExpMacroAssemblerIrregexp::LoadCurrentCharacter(int cp_offset,
     } else if (characters == 2) {
       bytecode = BC_LOAD_2_CURRENT_CHARS_UNCHECKED;
     } else {
-      DCHECK(characters == 1);
+      ASSERT(characters == 1);
       bytecode = BC_LOAD_CURRENT_CHAR_UNCHECKED;
     }
   }
@@ -372,8 +391,8 @@ void RegExpMacroAssemblerIrregexp::CheckBitInTable(
 
 void RegExpMacroAssemblerIrregexp::CheckNotBackReference(int start_reg,
                                                          Label* on_not_equal) {
-  DCHECK(start_reg >= 0);
-  DCHECK(start_reg <= kMaxRegister);
+  ASSERT(start_reg >= 0);
+  ASSERT(start_reg <= kMaxRegister);
   Emit(BC_CHECK_NOT_BACK_REF, start_reg);
   EmitOrLink(on_not_equal);
 }
@@ -382,18 +401,40 @@ void RegExpMacroAssemblerIrregexp::CheckNotBackReference(int start_reg,
 void RegExpMacroAssemblerIrregexp::CheckNotBackReferenceIgnoreCase(
     int start_reg,
     Label* on_not_equal) {
-  DCHECK(start_reg >= 0);
-  DCHECK(start_reg <= kMaxRegister);
+  ASSERT(start_reg >= 0);
+  ASSERT(start_reg <= kMaxRegister);
   Emit(BC_CHECK_NOT_BACK_REF_NO_CASE, start_reg);
   EmitOrLink(on_not_equal);
+}
+
+
+void RegExpMacroAssemblerIrregexp::CheckCharacters(
+  Vector<const uc16> str,
+  int cp_offset,
+  Label* on_failure,
+  bool check_end_of_string) {
+  ASSERT(cp_offset >= kMinCPOffset);
+  ASSERT(cp_offset + str.length() - 1 <= kMaxCPOffset);
+  // It is vital that this loop is backwards due to the unchecked character
+  // load below.
+  for (int i = str.length() - 1; i >= 0; i--) {
+    if (check_end_of_string && i == str.length() - 1) {
+      Emit(BC_LOAD_CURRENT_CHAR, cp_offset + i);
+      EmitOrLink(on_failure);
+    } else {
+      Emit(BC_LOAD_CURRENT_CHAR_UNCHECKED, cp_offset + i);
+    }
+    Emit(BC_CHECK_NOT_CHAR, str[i]);
+    EmitOrLink(on_failure);
+  }
 }
 
 
 void RegExpMacroAssemblerIrregexp::IfRegisterLT(int register_index,
                                                 int comparand,
                                                 Label* on_less_than) {
-  DCHECK(register_index >= 0);
-  DCHECK(register_index <= kMaxRegister);
+  ASSERT(register_index >= 0);
+  ASSERT(register_index <= kMaxRegister);
   Emit(BC_CHECK_REGISTER_LT, register_index);
   Emit32(comparand);
   EmitOrLink(on_less_than);
@@ -403,8 +444,8 @@ void RegExpMacroAssemblerIrregexp::IfRegisterLT(int register_index,
 void RegExpMacroAssemblerIrregexp::IfRegisterGE(int register_index,
                                                 int comparand,
                                                 Label* on_greater_or_equal) {
-  DCHECK(register_index >= 0);
-  DCHECK(register_index <= kMaxRegister);
+  ASSERT(register_index >= 0);
+  ASSERT(register_index <= kMaxRegister);
   Emit(BC_CHECK_REGISTER_GE, register_index);
   Emit32(comparand);
   EmitOrLink(on_greater_or_equal);
@@ -413,8 +454,8 @@ void RegExpMacroAssemblerIrregexp::IfRegisterGE(int register_index,
 
 void RegExpMacroAssemblerIrregexp::IfRegisterEqPos(int register_index,
                                                    Label* on_eq) {
-  DCHECK(register_index >= 0);
-  DCHECK(register_index <= kMaxRegister);
+  ASSERT(register_index >= 0);
+  ASSERT(register_index <= kMaxRegister);
   Emit(BC_CHECK_REGISTER_EQ_POS, register_index);
   EmitOrLink(on_eq);
 }
@@ -424,7 +465,7 @@ Handle<HeapObject> RegExpMacroAssemblerIrregexp::GetCode(
     Handle<String> source) {
   Bind(&backtrack_);
   Emit(BC_POP_BT, 0);
-  Handle<ByteArray> array = isolate_->factory()->NewByteArray(length());
+  Handle<ByteArray> array = FACTORY->NewByteArray(length());
   Copy(array->GetDataStartAddress());
   return array;
 }
@@ -436,7 +477,7 @@ int RegExpMacroAssemblerIrregexp::length() {
 
 
 void RegExpMacroAssemblerIrregexp::Copy(Address a) {
-  MemCopy(a, buffer_.start(), length());
+  memcpy(a, buffer_.start(), length());
 }
 
 
@@ -445,7 +486,7 @@ void RegExpMacroAssemblerIrregexp::Expand() {
   Vector<byte> old_buffer = buffer_;
   buffer_ = Vector<byte>::New(old_buffer.length() * 2);
   own_buffer_ = true;
-  MemCopy(buffer_.start(), old_buffer.start(), old_buffer.length());
+  memcpy(buffer_.start(), old_buffer.start(), old_buffer.length());
   if (old_buffer_was_our_own) {
     old_buffer.Dispose();
   }
@@ -453,5 +494,4 @@ void RegExpMacroAssemblerIrregexp::Expand() {
 
 #endif  // V8_INTERPRETED_REGEXP
 
-}  // namespace internal
-}  // namespace v8
+} }  // namespace v8::internal

@@ -1,71 +1,98 @@
 // Copyright 2012 the V8 project authors. All rights reserved.
-// Use of this source code is governed by a BSD-style license that can be
-// found in the LICENSE file.
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are
+// met:
+//
+//     * Redistributions of source code must retain the above copyright
+//       notice, this list of conditions and the following disclaimer.
+//     * Redistributions in binary form must reproduce the above
+//       copyright notice, this list of conditions and the following
+//       disclaimer in the documentation and/or other materials provided
+//       with the distribution.
+//     * Neither the name of Google Inc. nor the names of its
+//       contributors may be used to endorse or promote products derived
+//       from this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+// "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+// LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+// A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+// OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+// LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+// DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+// THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#include "src/v8.h"
+#include "v8.h"
 
-#if V8_TARGET_ARCH_IA32
+#if defined(V8_TARGET_ARCH_IA32)
 
-#include "src/codegen.h"
-#include "src/debug.h"
+#include "codegen.h"
+#include "debug.h"
 
 
 namespace v8 {
 namespace internal {
 
+#ifdef ENABLE_DEBUGGER_SUPPORT
 
-// Patch the code at the current PC with a call to the target address.
-// Additional guard int3 instructions can be added if required.
-void PatchCodeWithCall(Address pc, Address target, int guard_bytes) {
-  // Call instruction takes up 5 bytes and int3 takes up one byte.
-  static const int kCallCodeSize = 5;
-  int code_size = kCallCodeSize + guard_bytes;
-
-  // Create a code patcher.
-  CodePatcher patcher(pc, code_size);
-
-// Add a label for checking the size of the code used for returning.
-#ifdef DEBUG
-  Label check_codesize;
-  patcher.masm()->bind(&check_codesize);
-#endif
-
-  // Patch the code.
-  patcher.masm()->call(target, RelocInfo::NONE32);
-
-  // Check that the size of the code generated is as expected.
-  DCHECK_EQ(kCallCodeSize,
-            patcher.masm()->SizeOfCodeGeneratedSince(&check_codesize));
-
-  // Add the requested number of int3 instructions after the call.
-  DCHECK_GE(guard_bytes, 0);
-  for (int i = 0; i < guard_bytes; i++) {
-    patcher.masm()->int3();
-  }
-
-  CpuFeatures::FlushICache(pc, code_size);
+bool BreakLocationIterator::IsDebugBreakAtReturn() {
+  return Debug::IsDebugBreakAtReturn(rinfo());
 }
 
 
 // Patch the JS frame exit code with a debug break call. See
 // CodeGenerator::VisitReturnStatement and VirtualFrame::Exit in codegen-ia32.cc
 // for the precise return instructions sequence.
-void BreakLocation::SetDebugBreakAtReturn() {
-  DCHECK(Assembler::kJSReturnSequenceLength >=
+void BreakLocationIterator::SetDebugBreakAtReturn() {
+  ASSERT(Assembler::kJSReturnSequenceLength >=
          Assembler::kCallInstructionLength);
-  PatchCodeWithCall(
-      pc(), debug_info_->GetIsolate()->builtins()->Return_DebugBreak()->entry(),
+  Isolate* isolate = Isolate::Current();
+  rinfo()->PatchCodeWithCall(isolate->debug()->debug_break_return()->entry(),
       Assembler::kJSReturnSequenceLength - Assembler::kCallInstructionLength);
 }
 
 
-void BreakLocation::SetDebugBreakAtSlot() {
-  DCHECK(IsDebugBreakSlot());
-  Isolate* isolate = debug_info_->GetIsolate();
-  PatchCodeWithCall(
-      pc(), isolate->builtins()->Slot_DebugBreak()->entry(),
+// Restore the JS frame exit code.
+void BreakLocationIterator::ClearDebugBreakAtReturn() {
+  rinfo()->PatchCode(original_rinfo()->pc(),
+                     Assembler::kJSReturnSequenceLength);
+}
+
+
+// A debug break in the frame exit code is identified by the JS frame exit code
+// having been patched with a call instruction.
+bool Debug::IsDebugBreakAtReturn(RelocInfo* rinfo) {
+  ASSERT(RelocInfo::IsJSReturn(rinfo->rmode()));
+  return rinfo->IsPatchedReturnSequence();
+}
+
+
+bool BreakLocationIterator::IsDebugBreakAtSlot() {
+  ASSERT(IsDebugBreakSlot());
+  // Check whether the debug break slot instructions have been patched.
+  return rinfo()->IsPatchedDebugBreakSlotSequence();
+}
+
+
+void BreakLocationIterator::SetDebugBreakAtSlot() {
+  ASSERT(IsDebugBreakSlot());
+  Isolate* isolate = Isolate::Current();
+  rinfo()->PatchCodeWithCall(
+      isolate->debug()->debug_break_slot()->entry(),
       Assembler::kDebugBreakSlotLength - Assembler::kCallInstructionLength);
 }
+
+
+void BreakLocationIterator::ClearDebugBreakAtSlot() {
+  ASSERT(IsDebugBreakSlot());
+  rinfo()->PatchCode(original_rinfo()->pc(), Assembler::kDebugBreakSlotLength);
+}
+
+// All debug break stubs support padding for LiveEdit.
+const bool Debug::FramePaddingLayout::kIsSupported = true;
 
 
 #define __ ACCESS_MASM(masm)
@@ -79,17 +106,18 @@ static void Generate_DebugBreakCallHelper(MacroAssembler* masm,
     FrameScope scope(masm, StackFrame::INTERNAL);
 
     // Load padding words on stack.
-    for (int i = 0; i < LiveEdit::kFramePaddingInitialSize; i++) {
-      __ push(Immediate(Smi::FromInt(LiveEdit::kFramePaddingValue)));
+    for (int i = 0; i < Debug::FramePaddingLayout::kInitialSize; i++) {
+      __ push(Immediate(Smi::FromInt(
+          Debug::FramePaddingLayout::kPaddingValue)));
     }
-    __ push(Immediate(Smi::FromInt(LiveEdit::kFramePaddingInitialSize)));
+    __ push(Immediate(Smi::FromInt(Debug::FramePaddingLayout::kInitialSize)));
 
     // Store the registers containing live values on the expression stack to
     // make sure that these are correctly updated during GC. Non object values
     // are stored as a smi causing it to be untouched by GC.
-    DCHECK((object_regs & ~kJSCallerSaved) == 0);
-    DCHECK((non_object_regs & ~kJSCallerSaved) == 0);
-    DCHECK((object_regs & non_object_regs) == 0);
+    ASSERT((object_regs & ~kJSCallerSaved) == 0);
+    ASSERT((non_object_regs & ~kJSCallerSaved) == 0);
+    ASSERT((object_regs & non_object_regs) == 0);
     for (int i = 0; i < kNumJSCallerSaved; i++) {
       int r = JSCallerSavedCode(i);
       Register reg = { r };
@@ -99,7 +127,7 @@ static void Generate_DebugBreakCallHelper(MacroAssembler* masm,
       if ((non_object_regs & (1 << r)) != 0) {
         if (FLAG_debug_code) {
           __ test(reg, Immediate(0xc0000000));
-          __ Assert(zero, kUnableToEncodeValueAsSmi);
+          __ Assert(zero, "Unable to encode value as smi");
         }
         __ SmiTag(reg);
         __ push(reg);
@@ -109,10 +137,10 @@ static void Generate_DebugBreakCallHelper(MacroAssembler* masm,
 #ifdef DEBUG
     __ RecordComment("// Calling from debug break to runtime - come in - over");
 #endif
-    __ Move(eax, Immediate(0));  // No arguments.
+    __ Set(eax, Immediate(0));  // No arguments.
     __ mov(ebx, Immediate(ExternalReference::debug_break(masm->isolate())));
 
-    CEntryStub ceb(masm->isolate(), 1);
+    CEntryStub ceb(1);
     __ CallStub(&ceb);
 
     // Automatically find register that could be used after register restore.
@@ -125,7 +153,7 @@ static void Generate_DebugBreakCallHelper(MacroAssembler* masm,
       int r = JSCallerSavedCode(i);
       Register reg = { r };
       if (FLAG_debug_code) {
-        __ Move(reg, Immediate(kDebugZapValue));
+        __ Set(reg, Immediate(kDebugZapValue));
       }
       bool taken = reg.code() == esi.code();
       if ((object_regs & (1 << r)) != 0) {
@@ -142,7 +170,7 @@ static void Generate_DebugBreakCallHelper(MacroAssembler* masm,
       }
     }
 
-    DCHECK(unused_reg.code() != -1);
+    ASSERT(unused_reg.code() != -1);
 
     // Read current padding counter and skip corresponding number of words.
     __ pop(unused_reg);
@@ -163,23 +191,65 @@ static void Generate_DebugBreakCallHelper(MacroAssembler* masm,
   // jumping to the target address intended by the caller and that was
   // overwritten by the address of DebugBreakXXX.
   ExternalReference after_break_target =
-      ExternalReference::debug_after_break_target_address(masm->isolate());
+      ExternalReference(Debug_Address::AfterBreakTarget(), masm->isolate());
   __ jmp(Operand::StaticVariable(after_break_target));
 }
 
 
-void DebugCodegen::GenerateCallICStubDebugBreak(MacroAssembler* masm) {
-  // Register state for CallICStub
+void Debug::GenerateLoadICDebugBreak(MacroAssembler* masm) {
+  // Register state for IC load call (from ic-ia32.cc).
   // ----------- S t a t e -------------
-  //  -- edx    : type feedback slot (smi)
-  //  -- edi    : function
+  //  -- ecx    : name
+  //  -- edx    : receiver
   // -----------------------------------
-  Generate_DebugBreakCallHelper(masm, edx.bit() | edi.bit(),
-                                0, false);
+  Generate_DebugBreakCallHelper(masm, ecx.bit() | edx.bit(), 0, false);
 }
 
 
-void DebugCodegen::GenerateReturnDebugBreak(MacroAssembler* masm) {
+void Debug::GenerateStoreICDebugBreak(MacroAssembler* masm) {
+  // Register state for IC store call (from ic-ia32.cc).
+  // ----------- S t a t e -------------
+  //  -- eax    : value
+  //  -- ecx    : name
+  //  -- edx    : receiver
+  // -----------------------------------
+  Generate_DebugBreakCallHelper(
+      masm, eax.bit() | ecx.bit() | edx.bit(), 0, false);
+}
+
+
+void Debug::GenerateKeyedLoadICDebugBreak(MacroAssembler* masm) {
+  // Register state for keyed IC load call (from ic-ia32.cc).
+  // ----------- S t a t e -------------
+  //  -- ecx    : key
+  //  -- edx    : receiver
+  // -----------------------------------
+  Generate_DebugBreakCallHelper(masm, ecx.bit() | edx.bit(), 0, false);
+}
+
+
+void Debug::GenerateKeyedStoreICDebugBreak(MacroAssembler* masm) {
+  // Register state for keyed IC load call (from ic-ia32.cc).
+  // ----------- S t a t e -------------
+  //  -- eax    : value
+  //  -- ecx    : key
+  //  -- edx    : receiver
+  // -----------------------------------
+  Generate_DebugBreakCallHelper(
+      masm, eax.bit() | ecx.bit() | edx.bit(), 0, false);
+}
+
+
+void Debug::GenerateCallICDebugBreak(MacroAssembler* masm) {
+  // Register state for keyed IC call call (from ic-ia32.cc)
+  // ----------- S t a t e -------------
+  //  -- ecx: name
+  // -----------------------------------
+  Generate_DebugBreakCallHelper(masm, ecx.bit(), 0, false);
+}
+
+
+void Debug::GenerateReturnDebugBreak(MacroAssembler* masm) {
   // Register state just before return from JS function (from codegen-ia32.cc).
   // ----------- S t a t e -------------
   //  -- eax: return value
@@ -188,7 +258,7 @@ void DebugCodegen::GenerateReturnDebugBreak(MacroAssembler* masm) {
 }
 
 
-void DebugCodegen::GenerateCallFunctionStubDebugBreak(MacroAssembler* masm) {
+void Debug::GenerateCallFunctionStubDebugBreak(MacroAssembler* masm) {
   // Register state for CallFunctionStub (from code-stubs-ia32.cc).
   // ----------- S t a t e -------------
   //  -- edi: function
@@ -197,7 +267,17 @@ void DebugCodegen::GenerateCallFunctionStubDebugBreak(MacroAssembler* masm) {
 }
 
 
-void DebugCodegen::GenerateCallConstructStubDebugBreak(MacroAssembler* masm) {
+void Debug::GenerateCallFunctionStubRecordDebugBreak(MacroAssembler* masm) {
+  // Register state for CallFunctionStub (from code-stubs-ia32.cc).
+  // ----------- S t a t e -------------
+  //  -- ebx: cache cell for call target
+  //  -- edi: function
+  // -----------------------------------
+  Generate_DebugBreakCallHelper(masm, ebx.bit() | edi.bit(), 0, false);
+}
+
+
+void Debug::GenerateCallConstructStubDebugBreak(MacroAssembler* masm) {
   // Register state for CallConstructStub (from code-stubs-ia32.cc).
   // eax is the actual number of arguments not encoded as a smi see comment
   // above IC call.
@@ -210,48 +290,47 @@ void DebugCodegen::GenerateCallConstructStubDebugBreak(MacroAssembler* masm) {
 }
 
 
-void DebugCodegen::GenerateCallConstructStubRecordDebugBreak(
-    MacroAssembler* masm) {
+void Debug::GenerateCallConstructStubRecordDebugBreak(MacroAssembler* masm) {
   // Register state for CallConstructStub (from code-stubs-ia32.cc).
   // eax is the actual number of arguments not encoded as a smi see comment
   // above IC call.
   // ----------- S t a t e -------------
   //  -- eax: number of arguments (not smi)
-  //  -- ebx: feedback array
-  //  -- edx: feedback slot (smi)
+  //  -- ebx: cache cell for call target
   //  -- edi: constructor function
   // -----------------------------------
   // The number of arguments in eax is not smi encoded.
-  Generate_DebugBreakCallHelper(masm, ebx.bit() | edx.bit() | edi.bit(),
-                                eax.bit(), false);
+  Generate_DebugBreakCallHelper(masm, ebx.bit() | edi.bit(), eax.bit(), false);
 }
 
 
-void DebugCodegen::GenerateSlot(MacroAssembler* masm) {
+void Debug::GenerateSlot(MacroAssembler* masm) {
   // Generate enough nop's to make space for a call instruction.
   Label check_codesize;
   __ bind(&check_codesize);
   __ RecordDebugBreakSlot();
   __ Nop(Assembler::kDebugBreakSlotLength);
-  DCHECK_EQ(Assembler::kDebugBreakSlotLength,
+  ASSERT_EQ(Assembler::kDebugBreakSlotLength,
             masm->SizeOfCodeGeneratedSince(&check_codesize));
 }
 
 
-void DebugCodegen::GenerateSlotDebugBreak(MacroAssembler* masm) {
+void Debug::GenerateSlotDebugBreak(MacroAssembler* masm) {
+  // In the places where a debug break slot is inserted no registers can contain
+  // object pointers.
   Generate_DebugBreakCallHelper(masm, 0, 0, true);
 }
 
 
-void DebugCodegen::GeneratePlainReturnLiveEdit(MacroAssembler* masm) {
+void Debug::GeneratePlainReturnLiveEdit(MacroAssembler* masm) {
   masm->ret(0);
 }
 
 
-void DebugCodegen::GenerateFrameDropperLiveEdit(MacroAssembler* masm) {
+void Debug::GenerateFrameDropperLiveEdit(MacroAssembler* masm) {
   ExternalReference restarter_frame_function_slot =
-      ExternalReference::debug_restarter_frame_function_pointer_address(
-          masm->isolate());
+      ExternalReference(Debug_Address::RestarterFrameFunctionPointer(),
+                        masm->isolate());
   __ mov(Operand::StaticVariable(restarter_frame_function_slot), Immediate(0));
 
   // We do not know our frame height, but set esp based on ebp.
@@ -272,12 +351,12 @@ void DebugCodegen::GenerateFrameDropperLiveEdit(MacroAssembler* masm) {
   __ jmp(edx);
 }
 
-
-const bool LiveEdit::kFrameDropperSupported = true;
+const bool Debug::kFrameDropperSupported = true;
 
 #undef __
 
-}  // namespace internal
-}  // namespace v8
+#endif  // ENABLE_DEBUGGER_SUPPORT
+
+} }  // namespace v8::internal
 
 #endif  // V8_TARGET_ARCH_IA32
