@@ -17,10 +17,9 @@ ENV HOME /root
 ENV PATH /appins/bin:$PATH
 ENV LD_LIBRARY_PATH /appins/lib:$LD_LIBRARY_PATH
 
-# Update npm
+# Install es6-shim 
 RUN \
-  npm config set strict-ssl false -g && \
-  npm i npm@3.10.10 -g
+  npm i es6-shim@0.35.5 -g --only=production
 
 # Define working directory.
 WORKDIR /appins
