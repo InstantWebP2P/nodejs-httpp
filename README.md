@@ -66,16 +66,6 @@ Unix/Macintosh:
     make
     make install
 
-Linux building with Docker:
-
-    ./appbld ./configure --prefix=/appins
-    ./appbld make -j 6
-    ./appbld make install
-
-Linux packaging with Docker:
-
-    ./apppkg
-
 Cross compile for Raspberry Pi:
 
     setup toolchain env first, then
@@ -97,12 +87,20 @@ non-standard name, run the following instead:
 
 Windows:
 
-    vcbuild.bat
-
-### Must to stuck NPM at v3.10.10 right now
+    vcbuild.bat    
     
-    npm config set strict-ssl false -g
-    npm i npm@3.10.10 -g
+### Build on Linux with Docker
+
+  building:
+  
+    ./appbld ./configure --prefix=/appins
+    ./appbld make -j 6
+    ./appbld make install
+    
+  packaging and start Node.js REPL:
+    
+    ./apppkg
+
 
 ### To run the tests:
 
