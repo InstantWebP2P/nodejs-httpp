@@ -3,8 +3,8 @@
 # building
 ./appbld make distclean
 ./appbld ./configure --prefix=/appins
-./appbld make -j 4 
+./appbld make -j 6 
 ./appbld make install
 
 # packaging and start node.js REPL
-./apppkg redo
+./apppkg
