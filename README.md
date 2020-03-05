@@ -4,12 +4,7 @@
 
 HTTPP - Run HTTP over UDP and Bring Web in Peer or P2P styles.
 
-It consists of four modules: udt.js, httpp.js, udts.js, httpps.js, that keeps the same api like net.js/http.js/tls.js/https.js.
-
-### It's straightforward to use node-httpp: 	
-
-* Replace net with udt, http with httpp, tls with udts, https with httpps, when require net/http/tls/httpps modules	
-* Do the rest as http
+* Consists of four modules: udt.js, httpp.js, udts.js, httpps.js with the compatible api to net.js,http.js,tls.js and https.js
 
 [Discussion group](https://groups.google.com/d/forum/iwebpp)
 
