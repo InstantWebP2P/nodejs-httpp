@@ -4,19 +4,16 @@ npm-publish(1) -- Publish a package
 
 ## SYNOPSIS
 
-    npm publish [<tarball>|<folder>] [--tag <tag>] [--access <public|restricted>]
-
-    Publishes '.' if no argument supplied
-    Sets tag 'latest' if no --tag specified
+    npm publish <tarball> [--tag <tag>] [--access <public|restricted>]
+    npm publish <folder> [--tag <tag>] [--access <public|restricted>]
 
 ## DESCRIPTION
 
 Publishes a package to the registry so that it can be installed by name. All
 files in the package directory are included if no local `.gitignore` or
-`.npmignore` file exists. If both files exist and a file is ignored by
-`.gitignore` but not by `.npmignore` then it will be included.  See
-`npm-developers(7)` for full details on what's included in the published
-package, as well as details on how the package is built.
+`.npmignore` file is present. See `npm-developers(7)` for full details on
+what's included in the published package, as well as details on how the package
+is built.
 
 By default npm will publish to the public registry. This can be overridden by
 specifying a different default registry or using a `npm-scope(7)` in the name
@@ -48,10 +45,6 @@ Once a package is published with a given name and version, that
 specific name and version combination can never be used again, even if
 it is removed with npm-unpublish(1).
 
-For a "dry run" that does everything except actually publishing to the
-registry, see `npm-pack(1)`, which figures out the files to be included and
-packs them into a tarball to be uploaded to the registry.
-
 ## SEE ALSO
 
 * npm-registry(7)
@@ -60,4 +53,3 @@ packs them into a tarball to be uploaded to the registry.
 * npm-owner(1)
 * npm-deprecate(1)
 * npm-tag(1)
-* npm-pack(1)

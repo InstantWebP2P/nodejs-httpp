@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 
 # check docker image for packaging 
-if [ "$(docker images -q httpp:16.04 2> /dev/null)" == "" ]; then
-  echo "Build Docker image as httpp:16.04"
-  docker image build --compress -t httpp:16.04 -f ./Dockerfile.pkg ./appins
+if [ "$(docker images -q httpp:0.8 2> /dev/null)" == "" ]; then
+  echo "Build Docker image as httpp:0.8"
+  docker image build --compress -t httpp:0.8 -t httpp:16.04 -f ./Dockerfile.pkg ./appins
 fi
 
 # execute commands 
@@ -11,10 +11,10 @@ if [ $# -ne 0 ]; then
   echo "$@ ..."
   docker run -v `pwd`:`pwd` -w `pwd` -i -t \
   --rm --network host \
-  httpp:16.04 $@
+  httpp:0.8 $@
 else
   echo "Enter Node.js repl ..."
   docker run                         -i -t \
   --rm --network host \
-  httpp:16.04
+  httpp:0.8
 fi

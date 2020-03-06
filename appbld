@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 
 # check docker image for building
-if [ "$(docker images -q httpp-bld:16.04 2> /dev/null)" == "" ]; then
-  echo "Build Docker image as httpp-bld:16.04"
-  docker image build --compress -t httpp-bld:16.04 -f ./Dockerfile.bld .
+if [ "$(docker images -q httpp-bld:0.8 2> /dev/null)" == "" ]; then
+  echo "Build Docker image as httpp-bld:0.8"
+  docker image build --compress -t httpp-bld:0.8 -t httpp-bld:16.04 -f ./Dockerfile.bld .
 fi
 
 # create install dir
@@ -14,5 +14,10 @@ if [ $# -ne 0 ]; then
   echo "$@ ..."
   docker run -v `pwd`/appins:/appins -v `pwd`:`pwd` -w `pwd` -i -t \
   --rm --network host \
-  httpp-bld:16.04 $@
+  httpp-bld:0.8 $@
+else
+  echo "Start building ..."
+  docker run -v `pwd`/appins:/appins -v `pwd`:`pwd` -w `pwd` -i -t \
+  --rm --network host \
+  httpp-bld:0.8 bash -c "make distclean && ./configure --prefix=/appins && make -j 6 && make install"
 fi

@@ -10,7 +10,7 @@ var common = require('../common-tap.js')
 
 var pkg = path.resolve(__dirname, 'optional-metadep-rollback-collision')
 var deps = path.resolve(pkg, 'deps')
-var opdep = path.resolve(pkg, 'node_modules', 'opdep')
+var nm = path.resolve(pkg, 'node_modules')
 var cache = path.resolve(pkg, 'cache')
 var pidfile = path.resolve(pkg, 'child.pid')
 
@@ -49,7 +49,7 @@ var d2 = {
   }
 }
 
-var opdep_json = {
+var opdep = {
   name: 'opdep',
   version: '1.0.0',
   description: 'To explode, of course!',
@@ -63,7 +63,8 @@ var opdep_json = {
   }
 }
 
-var badServer = function () { /*
+
+var badServer = function () {/*
 var createServer = require('http').createServer
 var spawn = require('child_process').spawn
 var fs = require('fs')
@@ -98,9 +99,9 @@ if (process.argv[2]) {
 
   fs.writeFileSync(pidfile, child.pid + '\n')
 }
-*/ }.toString().split('\n').slice(1, -1).join('\n')
+*/}.toString().split('\n').slice(1, -1).join('\n')
 
-var blart = function () { /*
+var blart = function () {/*
 var rando = require('crypto').randomBytes
 var resolve = require('path').resolve
 
@@ -152,7 +153,7 @@ mkdirp(BASEDIR, function go () {
     keepItGoingLouder = {}
   }, 3 * 1000)
 })
-*/ }.toString().split('\n').slice(1, -1).join('\n')
+*/}.toString().split('\n').slice(1, -1).join('\n')
 test('setup', function (t) {
   cleanup()
 
@@ -178,7 +179,7 @@ test('setup', function (t) {
   mkdirp.sync(path.join(deps, 'opdep'))
   fs.writeFileSync(
     path.join(deps, 'opdep', 'package.json'),
-    JSON.stringify(opdep_json, null, 2)
+    JSON.stringify(opdep, null, 2)
   )
   fs.writeFileSync(path.join(deps, 'opdep', 'bad-server.js'), badServer)
 
@@ -199,15 +200,14 @@ test('go go test racer', function (t) {
       env: {
         PATH: process.env.PATH,
         Path: process.env.Path
-      }
+      },
+      stdio: [0, 'pipe', 2]
     },
     function (er, code, stdout, stderr) {
       t.ifError(er, 'install ran to completion without error')
-      t.is(code, 0, 'npm install exited with code 0')
-      t.comment(stdout.trim())
-      // stdout should be empty, because we only have one, optional, dep and
-      // if it fails we shouldn't try installing anything
-      t.equal(stdout, '')
+      t.notOk(code, 'npm install exited with code 0')
+
+      t.equal(stdout, 'ok\nok\n')
       t.notOk(/not ok/.test(stdout), 'should not contain the string \'not ok\'')
       t.end()
     }
@@ -216,7 +216,7 @@ test('go go test racer', function (t) {
 
 test('verify results', function (t) {
   t.throws(function () {
-    fs.statSync(opdep)
+    fs.statSync(nm)
   })
   t.end()
 })

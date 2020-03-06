@@ -19,12 +19,10 @@ following scripts:
   Run BEFORE the package is uninstalled.
 * postuninstall:
   Run AFTER the package is uninstalled.
-* preversion:
-  Run BEFORE bumping the package version.
-* version:
-  Run AFTER bumping the package version, but BEFORE commit.
+* preversion, version:
+  Run BEFORE bump the package version.
 * postversion:
-  Run AFTER bumping the package version, and AFTER commit.
+  Run AFTER bump the package version.
 * pretest, test, posttest:
   Run by the `npm test` command.
 * prestop, stop, poststop:
@@ -34,8 +32,6 @@ following scripts:
 * prerestart, restart, postrestart:
   Run by the `npm restart` command. Note: `npm restart` will run the
   stop and start scripts if no `restart` script is provided.
-* preshrinkwrap, shrinkwrap, postshrinkwrap:
-  Run by the `npm shrinkwrap` command.
 
 Additionally, arbitrary scripts can be executed by running `npm
 run-script <stage>`. *Pre* and *post* commands with matching

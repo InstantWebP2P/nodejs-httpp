@@ -70,6 +70,12 @@ discover your package as it's listed in `npm search`.
 
 The url to the project homepage.
 
+**NOTE**: This is *not* the same as "url".  If you put a "url" field,
+then the registry will think it's a redirection to your package that has
+been published somewhere else, and spit at you.
+
+Literally.  Spit.  I'm so not kidding.
+
 ## bugs
 
 The url to your project's issue tracker and / or the email address to which
@@ -181,12 +187,9 @@ Certain files are always included, regardless of settings:
 
 * `package.json`
 * `README`
-* `CHANGES` / `CHANGELOG` / `HISTORY`
+* `CHANGES` / `CHANGELOG` / `HISTORY` (any casing and file extension)
 * `LICENSE` / `LICENCE`
-* `NOTICE`
 * The file in the "main" field
-
-`README`, `CHANGES`, `LICENSE` & `NOTICE` can have any case and extension.
 
 Conversely, some files are always ignored:
 
@@ -202,8 +205,6 @@ Conversely, some files are always ignored:
 * `npm-debug.log`
 * `.npmrc`
 * `node_modules`
-* `config.gypi`
-* `*.orig`
 
 ## main
 
@@ -247,10 +248,6 @@ would be the same as this:
     { "name": "my-program"
     , "version": "1.2.5"
     , "bin" : { "my-program" : "./path/to/program" } }
-
-Please make sure that your file(s) referenced in `bin` starts with
-`#!/usr/bin/env node`, otherwise the scripts are started without the node
-executable!
 
 ## man
 
@@ -472,16 +469,15 @@ included.  For example:
       "version": "0.0.0",
       "dependencies": {
         "express": "visionmedia/express",
-        "mocha": "visionmedia/mocha#4727d357ea",
-        "module": "user/repo#feature\/branch"
+        "mocha": "visionmedia/mocha#4727d357ea"
       }
     }
 
 ## Local Paths
 
 As of version 2.0.0 you can provide a path to a local directory that contains a
-package. Local paths can be saved using `npm install -S` or
-`npm install --save`, using any of these forms:
+package. Local paths can be saved using `npm install --save`, using any of
+these forms:
 
     ../foo/bar
     ~/foo/bar
@@ -581,16 +577,11 @@ this. If you depend on features introduced in 1.5.2, use `">= 1.5.2 < 2"`.
 
 ## bundledDependencies
 
-This defines an array of package names that will be bundled when publishing
-the package.
+This defines an array of package names that will be bundled when publishing the package.
 
-In cases where you need to preserve npm packages locally or have them
-available through a single file download, you can bundle the packages in a
-tarball file by specifying the package names in the `bundledDependencies`
-array and executing `npm pack`.
+In cases where you need to preserve npm packages locally or have them available through a single file download, you can bundle the packages in a tarball file by specifying the package names in the `bundledDependencies` array and executing `npm pack`.
 
 For example:
-
 If we define a package.json like this:
 
 ```
@@ -602,10 +593,7 @@ If we define a package.json like this:
   ]
 }
 ```
-we can obtain `awesome-web-framework-1.0.0.tgz` file by running `npm pack`.
-This file contains the dependencies `renderized` and `super-streams` which
-can be installed in a new project by executing `npm install
-awesome-web-framework-1.0.0.tgz`.
+we can obtain `awesome-web-framework-1.0.0.tgz` file by running `npm pack`. This file contains the dependencies `renderized` and `super-streams` which can be installed in a new project by executing `npm install awesome-web-framework-1.0.0.tgz`.
 
 If this is spelled `"bundleDependencies"`, then that is also honored.
 
@@ -662,10 +650,17 @@ field is advisory only will produce warnings when your package is installed as a
 
 ## engineStrict
 
-**This feature was removed in npm 3.0.0**
+**NOTE: This feature is deprecated and will be removed in npm 3.0.0.**
 
-Prior to npm 3.0.0, this feature was used to treat this package as if the
-user had set `engine-strict`. It is no longer used.
+If you are sure that your module will *definitely not* run properly on
+versions of Node/npm other than those specified in the `engines` object,
+then you can set `"engineStrict": true` in your package.json file.
+This will override the user's `engine-strict` config setting.
+
+Please do not do this unless you are really very very sure.  If your
+engines object is something overly restrictive, you can quite easily and
+inadvertently lock yourself into obscurity and prevent your users from
+updating to new versions of Node.  Consider this choice carefully.
 
 ## os
 
@@ -759,6 +754,7 @@ npm will default some values based on package contents.
 * npm-config(1)
 * npm-config(7)
 * npm-help(1)
+* npm-faq(7)
 * npm-install(1)
 * npm-publish(1)
 * npm-uninstall(1)

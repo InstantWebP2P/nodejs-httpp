@@ -11,12 +11,13 @@ var modules = join(pkg, 'node_modules')
 
 var EXEC_OPTS = { cwd: pkg }
 
-var body = [
-  '@scope/shared@2.1.6 node_modules/first/node_modules/@scope/shared -> node_modules/@scope/shared',
-  'firstUnique@0.6.0 node_modules/first/node_modules/firstUnique -> node_modules/firstUnique',
-  'secondUnique@1.2.0 node_modules/second/node_modules/secondUnique -> node_modules/secondUnique',
-  '- @scope/shared@2.1.6 node_modules/second/node_modules/@scope/shared'
-]
+var prolog = 'dedupe@0.0.0 ' + pkg
+var body = function () {/*
+├─┬ first@1.0.0
+│ └── @scope/shared@2.1.6
+└─┬ second@2.0.0
+  └── @scope/shared@2.1.6
+*/}.toString().split('\n').slice(1, -1)
 
 var deduper = {
   'name': 'dedupe',
@@ -60,6 +61,7 @@ var secondUnique = {
   'version': '1.2.0'
 }
 
+
 test('setup', function (t) {
   setup()
   t.end()
@@ -79,8 +81,8 @@ test('dedupe finds the common scoped modules and moves it up one level', functio
       t.notOk(code, 'npm ran without issue')
       t.notOk(stderr, 'npm printed no errors')
       t.same(
-        stdout.trim().replace(/\\/g, '/').split('\n').map(ltrimm),
-        body.map(ltrimm),
+        stdout.trim().split('\n').map(ltrimm),
+        [prolog].concat(body).map(ltrimm),
         'got expected output'
       )
 

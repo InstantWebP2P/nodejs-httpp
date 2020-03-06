@@ -1,5 +1,4 @@
 var npm = require('./npm.js')
-var output = require('./utils/output.js')
 
 module.exports = ping
 
@@ -15,7 +14,7 @@ function ping (args, silent, cb) {
   var auth = npm.config.getCredentialsByURI(registry)
 
   npm.registry.ping(registry, {auth: auth}, function (er, pong) {
-    if (!silent) output(JSON.stringify(pong))
+    if (!silent) console.log(JSON.stringify(pong))
     cb(er, er ? null : pong)
   })
 }

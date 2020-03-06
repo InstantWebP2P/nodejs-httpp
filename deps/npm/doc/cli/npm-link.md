@@ -3,10 +3,9 @@ npm-link(1) -- Symlink a package folder
 
 ## SYNOPSIS
 
-    npm link (in package dir)
-    npm link [<@scope>/]<pkg>[@<version>]
-
-    alias: npm ln
+    npm link (in package folder)
+    npm link [@<scope>/]<pkgname>
+    npm ln (with any of the previous argument usage)
 
 ## DESCRIPTION
 
@@ -14,8 +13,7 @@ Package linking is a two-step process.
 
 First, `npm link` in a package folder will create a symlink in the global folder
 `{prefix}/lib/node_modules/<package>` that links to the package where the `npm
-link` command was executed. (see `npm-config(7)` for the value of `prefix`). It
-will also link any bins in the package to `{prefix}/bin/{name}`.
+link` command was executed. (see `npm-config(7)` for the value of `prefix`).
 
 Next, in some other location, `npm link package-name` will create a
 symbolic link from globally-installed `package-name` to `node_modules/`
@@ -66,6 +64,7 @@ include that scope, e.g.
 ## SEE ALSO
 
 * npm-developers(7)
+* npm-faq(7)
 * package.json(5)
 * npm-install(1)
 * npm-folders(5)

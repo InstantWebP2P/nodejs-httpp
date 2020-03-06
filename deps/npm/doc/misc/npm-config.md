@@ -26,19 +26,17 @@ same.
 
 The four relevant files are:
 
-* per-project configuration file (`/path/to/my/project/.npmrc`)
-* per-user configuration file (defaults to `$HOME/.npmrc`; configurable via CLI
-  option `--userconfig` or environment variable `$NPM_CONF_USERCONFIG`)
-* global configuration file (defaults to `$PREFIX/etc/npmrc`; configurable via
-  CLI option `--globalconfig` or environment variable `$NPM_CONF_GLOBALCONFIG`)
-* npm's built-in configuration file (`/path/to/npm/npmrc`)
+* per-project config file (/path/to/my/project/.npmrc)
+* per-user config file (~/.npmrc)
+* global config file ($PREFIX/npmrc)
+* npm builtin config file (/path/to/npm/npmrc)
 
 See npmrc(5) for more details.
 
 ### Default Configs
 
-Run `npm config ls -l` to see a set of configuration parameters that are
-internal to npm, and are defaults if nothing else is specified.
+A set of configuration parameters that are internal to npm, and are
+defaults if nothing else is specified.
 
 ## Shorthands and Other CLI Niceties
 
@@ -125,14 +123,6 @@ you want your scoped package to be publicly viewable (and installable) set
 
 Force npm to always require authentication when accessing the registry,
 even for `GET` requests.
-
-### also
-
-* Default: null
-* Type: String
-
-When "dev" or "development" and running local `npm shrinkwrap`,
-`npm outdated`, or `npm update`, is an alias for `--dev`.
 
 ### bin-links
 
@@ -283,17 +273,6 @@ Install `dev-dependencies` along with packages.
 Note that `dev-dependencies` are also installed if the `npat` flag is
 set.
 
-### dry-run
-
-* Default: false
-* Type: Boolean
-
-Indicates that you don't want npm to make any changes and that it should
-only report what it would have done.  This can be passed into any of the
-commands that modify your local installation, eg, `install`, `update`,
-`dedupe`, `uninstall`.  This is NOT currently honored by network related
-commands, eg `dist-tags`, `owner`, `publish`, etc.
-
 ### editor
 
 * Default: `EDITOR` environment variable if set, or `"vi"` on Posix,
@@ -391,18 +370,6 @@ Operates in "global" mode, so that packages are installed into the
 * Type: path
 
 The config file to read for global config options.
-
-### global-style
-
-* Default: false
-* Type: Boolean
-
-Causes npm to install the package into your local `node_modules` folder with
-the same layout it uses with the global `node_modules` folder.  Only your
-direct dependencies will show in `node_modules` and everything they depend
-on will be flattened in their `node_modules` folders.  This obviously will
-eliminate some deduping. If used with `legacy-bundling`, `legacy-bundling` will be
-preferred.
 
 ### group
 
@@ -515,16 +482,6 @@ format with newlines replaced by the string "\n". For example:
 
 It is _not_ the path to a key file (and there is no "keyfile" option).
 
-### legacy-bundling
-
-* Default: false
-* Type: Boolean
-
-Causes npm to install the package such that versions of npm prior to 1.4,
-such as the one included with node 0.8, can install the package.  This
-eliminates all automatic deduping. If used with `global-style` this option
-will be preferred.
-
 ### link
 
 * Default: false
@@ -622,24 +579,6 @@ Run tests on installation.
 A node module to `require()` when npm loads.  Useful for programmatic
 usage.
 
-### only
-
-* Default: null
-* Type: String
-
-When "dev" or "development" and running local `npm install` without any
-arguments, only devDependencies (and their dependencies) are installed.
-
-When "dev" or "development" and running local `npm ls`, `npm outdated`, or
-`npm update`, is an alias for `--dev`.
-
-When "prod" or "production" and running local `npm install` without any
-arguments, only non-devDependencies (and their dependencies) are
-installed.
-
-When "prod" or "production" and running local `npm ls`, `npm outdated`, or
-`npm update`, is an alias for `--production`.
-
 ### optional
 
 * Default: true
@@ -675,16 +614,6 @@ Set to true to run in "production" mode.
 1. devDependencies are not installed at the topmost level when running
    local `npm install` without any arguments.
 2. Set the NODE_ENV="production" for lifecycle scripts.
-
-### progress
-
-* Default: true, unless TRAVIS or CI env vars set.
-* Type: Boolean
-
-When set to `true`, npm will display a progress bar during time intensive
-operations, if `process.stderr` is a TTY.
-
-Set to `false` to suppress the progress bar.
 
 ### proprietary-attribs
 
@@ -861,6 +790,17 @@ using `-s` to add a signature.
 Note that git requires you to have set up GPG keys in your git configs
 for this to work properly.
 
+### spin
+
+* Default: true
+* Type: Boolean or `"always"`
+
+When set to `true`, npm will display an ascii spinner while it is doing
+things, if `process.stderr` is a TTY.
+
+Set to `false` to suppress the spinner, or set to `always` to output
+the spinner even for non-TTY outputs.
+
 ### strict-ssl
 
 * Default: true
@@ -905,7 +845,7 @@ on success, but left behind on failure for forensic purposes.
 
 ### unicode
 
-* Default: false on windows, true on mac/unix systems with a unicode locale
+* Default: true
 * Type: Boolean
 
 When set to true, npm uses unicode characters in the tree output.  When

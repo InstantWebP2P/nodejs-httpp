@@ -1,4 +1,5 @@
 var assert = require('assert')
+var crypto = require('crypto')
 var fs = require('graceful-fs')
 var path = require('path')
 var url = require('url')
@@ -12,21 +13,18 @@ var mkdir = require('mkdirp')
 var normalizeGitUrl = require('normalize-git-url')
 var npa = require('npm-package-arg')
 var realizePackageSpecifier = require('realize-package-specifier')
-var uniqueFilename = require('unique-filename')
 
 var addLocal = require('./add-local.js')
 var correctMkdir = require('../utils/correct-mkdir.js')
 var git = require('../utils/git.js')
 var npm = require('../npm.js')
 var rm = require('../utils/gently-rm.js')
-var tempFilename = require('../utils/temp-filename.js')
 
 var remotes = path.resolve(npm.config.get('cache'), '_git-remotes')
 var templates = path.join(remotes, '_templates')
 
 var VALID_VARIABLES = [
   'GIT_ASKPASS',
-  'GIT_EXEC_PATH',
   'GIT_PROXY_COMMAND',
   'GIT_SSH',
   'GIT_SSH_COMMAND',
@@ -49,7 +47,7 @@ function addRemoteGit (uri, _cb) {
   if (parsed) {
     // normalize GitHub syntax to org/repo (for now)
     var from
-    if (parsed.type === 'github' && parsed.getDefaultRepresentation() === 'shortcut') {
+    if (parsed.type === 'github' && parsed.default === 'shortcut') {
       from = parsed.path()
     } else {
       from = parsed.toString()
@@ -58,7 +56,7 @@ function addRemoteGit (uri, _cb) {
     log.verbose('addRemoteGit', from, 'is a repository hosted by', parsed.type)
 
     // prefer explicit URLs to pushing everything through shortcuts
-    if (parsed.getDefaultRepresentation() !== 'shortcut') {
+    if (parsed.default !== 'shortcut') {
       return tryClone(from, parsed.toString(), false, cb)
     }
 
@@ -77,7 +75,7 @@ function addRemoteGit (uri, _cb) {
 
 function tryGitProto (from, hostedInfo, cb) {
   var gitURL = hostedInfo.git()
-  if (!gitURL) return tryHTTPS(from, hostedInfo, cb)
+  if (!gitURL) return trySSH(from, hostedInfo, cb)
 
   log.silly('tryGitProto', 'attempting to clone', gitURL)
   tryClone(from, gitURL, true, function (er) {
@@ -117,9 +115,9 @@ function tryClone (from, combinedURL, silent, cb) {
   var treeish = normalized.branch
 
   // ensure that similarly-named remotes don't collide
-  var cachedRemote = uniqueFilename(remotes, combinedURL.replace(/[^a-zA-Z0-9]+/g, '-'), cloneURL)
-  var repoID = path.relative(remotes, cachedRemote)
-  cachedRemote = path.join(remotes, repoID)
+  var repoID = cloneURL.replace(/[^a-zA-Z0-9]+/g, '-') + '-' +
+    crypto.createHash('sha1').update(combinedURL).digest('hex').slice(0, 8)
+  var cachedRemote = path.join(remotes, repoID)
 
   cb = inflight(repoID, cb)
   if (!cb) {
@@ -299,7 +297,11 @@ function resolveHead (from, cloneURL, treeish, cachedRemote, cb) {
       log.verbose('resolveHead', from, 'resolved Git URL:', resolvedURL)
 
       // generate a unique filename
-      var tmpdir = path.join(tempFilename('git-cache'), resolvedTreeish)
+      var tmpdir = path.join(
+        npm.tmp,
+        'git-cache-' + crypto.pseudoRandomBytes(6).toString('hex'),
+        resolvedTreeish
+      )
       log.silly('resolveHead', 'Git working directory:', tmpdir)
 
       mkdir(tmpdir, function (er) {
@@ -346,24 +348,6 @@ function checkoutTreeish (from, resolvedURL, resolvedTreeish, tmpdir, cb) {
         return cb(er)
       }
       log.verbose('checkoutTreeish', from, 'checkout', stdout)
-
-      updateSubmodules(from, resolvedURL, tmpdir, cb)
-    }
-  )
-}
-
-function updateSubmodules (from, resolvedURL, tmpdir, cb) {
-  var args = ['submodule', '-q', 'update', '--init', '--recursive']
-  git.whichAndExec(
-    args,
-    { cwd: tmpdir, env: gitEnv() },
-    function (er, stdout, stderr) {
-      stdout = (stdout + '\n' + stderr).trim()
-      if (er) {
-        log.error('git ' + args.join(' ') + ':', stderr)
-        return cb(er)
-      }
-      log.verbose('updateSubmodules', from, 'submodule update', stdout)
 
       // convince addLocal that the checkout is a local dependency
       realizePackageSpecifier(tmpdir, function (er, spec) {
@@ -444,7 +428,7 @@ function getResolved (uri, treeish) {
   // Checks for known protocols:
   // http:, https:, ssh:, and git:, with optional git+ prefix.
   if (!parsed.protocol ||
-      !parsed.protocol.match(/^(((git\+)?(https?|ssh|file))|git|file):$/)) {
+      !parsed.protocol.match(/^(((git\+)?(https?|ssh))|git|file):$/)) {
     uri = 'git+ssh://' + uri
   }
 
