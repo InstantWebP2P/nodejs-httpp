@@ -2,7 +2,7 @@
 # node-httpp building Dockerfile
 #
 # https://github.com/InstantWebP2P/node-httpp
-#
+# Copyright (c) 2020 Tom Zhou<iwebpp@gmail.com>
 
 # Pull base image.
 FROM ubuntu:16.04
