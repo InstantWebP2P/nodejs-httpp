@@ -54,7 +54,6 @@ Prerequisites (Unix only):
     * Python 2.6 or 2.7
     * GNU Make 3.81 or newer
     * libexecinfo (FreeBSD and OpenBSD only)
-    * npm i npm@2.15.9 -g
 
 Unix/Macintosh:
 
@@ -97,6 +96,10 @@ Windows:
     
     ./apppkg
 
+### Stay on NPM v2.15.9
+
+    * npm i npm@2.15.9 -g
+    
 
 ### To run the tests:
 
