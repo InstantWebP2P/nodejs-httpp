@@ -242,9 +242,9 @@ public:
    int32_t m_iMSS;              // maximum segment size
    int32_t m_iFlightFlagSize;   // flow control window size
    int32_t m_iReqType;          // connection request type: 1: regular connection request, 0: rendezvous connection request, -1/-2: response
-   int32_t m_iID;		// socket ID
-   int32_t m_iCookie;		// cookie
-   uint32_t m_piPeerIP[4];	// The IP address that the peer's UDP port is bound to
+   int32_t m_iID;               // socket ID
+   int32_t m_iCookie;		     // cookie
+   uint32_t m_piPeerIP[4];	     // The IP address that the peer's UDP port is bound to
 };
 
 

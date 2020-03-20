@@ -173,33 +173,35 @@ enum UDT_UDTSTATUS {
 };
 
 // UDT option
-enum UDT_UDTOpt {
-	UDT_UDT_MSS = 0,         // the Maximum Transfer Unit
-	UDT_UDT_SNDSYN,          // if sending is blocking
-	UDT_UDT_RCVSYN,          // if receiving is blocking
-	UDT_UDT_CC,              // custom congestion control algorithm
-	UDT_UDT_FC,              // Flight flag size (window size)
-	UDT_UDT_SNDBUF,          // maximum buffer in sending queue
-	UDT_UDT_RCVBUF,          // UDT receiving buffer size
-	UDT_UDT_LINGER,          // waiting for unsent data when closing
-	UDT_UDP_SNDBUF,          // UDP sending buffer size
-	UDT_UDP_RCVBUF,          // UDP receiving buffer size
-	UDT_UDT_MAXMSG,          // maximum datagram message size
-	UDT_UDT_MSGTTL,          // time-to-live of a datagram message
-	UDT_UDT_RENDEZVOUS,      // rendezvous connection mode
-	UDT_UDT_SNDTIMEO,        // send() timeout
-	UDT_UDT_RCVTIMEO,        // recv() timeout
-	UDT_UDT_REUSEADDR,       // reuse an existing port or create a new one
-	UDT_UDT_MAXBW,           // maximum bandwidth (bytes per second) that the connection can use
-	UDT_UDT_STATE,           // current socket state, see UDTSTATUS, read only
-	UDT_UDT_EVENT,           // current available events associated with the socket
-	UDT_UDT_SNDDATA,         // size of data in the sending buffer
-	UDT_UDT_RCVDATA,         // size of data available for recv
-	UDT_UDT_OSFD,            // OS fd associated with the UDT socket, read only.
-   UDT_UDT_QOS,             // UDT socket Qos/priority
-   UDT_UDT_SECMOD,          // socket security mode: 0 - no secure, 1 - authentication control packet, 2 - authentication both control and data packet
-   UDT_UDT_SECKEY           // symmetric key
-};
+enum UDT_UDTOpt
+{
+   UDT_UDT_MSS = 0,    // the Maximum Transfer Unit
+   UDT_UDT_SNDSYN,     // if sending is blocking
+   UDT_UDT_RCVSYN,     // if receiving is blocking
+   UDT_UDT_CC,         // custom congestion control algorithm
+   UDT_UDT_FC,         // Flight flag size (window size)
+   UDT_UDT_SNDBUF,     // maximum buffer in sending queue
+   UDT_UDT_RCVBUF,     // UDT receiving buffer size
+   UDT_UDT_LINGER,     // waiting for unsent data when closing
+   UDT_UDP_SNDBUF,     // UDP sending buffer size
+   UDT_UDP_RCVBUF,     // UDP receiving buffer size
+   UDT_UDT_MAXMSG,     // maximum datagram message size
+   UDT_UDT_MSGTTL,     // time-to-live of a datagram message
+   UDT_UDT_RENDEZVOUS, // rendezvous connection mode
+   UDT_UDT_SNDTIMEO,   // send() timeout
+   UDT_UDT_RCVTIMEO,   // recv() timeout
+   UDT_UDT_REUSEADDR,  // reuse an existing port or create a new one
+   UDT_UDT_MAXBW,      // maximum bandwidth (bytes per second) that the connection can use
+   UDT_UDT_STATE,      // current socket state, see UDTSTATUS, read only
+   UDT_UDT_EVENT,      // current available events associated with the socket
+   UDT_UDT_SNDDATA,    // size of data in the sending buffer
+   UDT_UDT_RCVDATA,    // size of data available for recv
+   UDT_UDT_OSFD,       // OS fd associated with the UDT socket, read only.
+   UDT_UDT_QOS,        // UDT socket Qos/priority
+   UDT_UDT_SECMOD,     // socket security mode: 0 - no secure, 1 - authentication control packet, 2 - authentication both control and data packet
+   UDT_UDT_SECKEY,     // symmetric key
+   UDT_UDT_UDPFD       // UDP fd associated with the UDT socket, read only.  
+ };
 
 // UDT CCC option
 enum UDT_CCCOpt {

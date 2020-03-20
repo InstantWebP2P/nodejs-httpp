@@ -349,8 +349,8 @@ int CPacket::setMAC(const unsigned char* key, const int len)
 	for (int i=0; i<len; i++) {
 		printf("%02x ", key[i]);
 	}
-	printf("\n");
-*/
+	printf("\n");*/
+
 	// nothing to do again
 	if (m_nHeader[0] & 0x40000000) {
         return m_nHeader[4];
@@ -389,8 +389,8 @@ int CPacket::chkMAC(const unsigned char* key, const int len)
 	for (int i=0; i<len; i++) {
 		printf("%02x ", key[i]);
 	}
-	printf("\n");
-	 */
+	printf("\n");*/
+   
 	// check security flag
 	if (!(m_nHeader[0] & 0x40000000)) {
 		// bypass ACK,ACK-2 packet check for connection in early setup stage

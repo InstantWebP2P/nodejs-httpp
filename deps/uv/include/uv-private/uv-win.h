@@ -304,6 +304,7 @@ RB_HEAD(uv_timer_tree_s, uv_timer_s);
     UV_REQ_FIELDS                         \
     SOCKET accept_socket;                 \
     int accept_udtfd;                     \
+    SOCKET accept_udt_udpfd;              \
     char accept_buffer[sizeof(struct sockaddr_storage) * 2 + 32]; \
     HANDLE event_handle;                  \
     HANDLE wait_handle;                   \
@@ -369,7 +370,9 @@ RB_HEAD(uv_timer_tree_s, uv_timer_s);
 
 #define UV_UDT_PRIVATE_FIELDS                                                   \
     int udtfd;                                                                  \
+    SOCKET udpfd;                                                               \
     int accepted_udtfd;                                                         \
+    SOCKET accepted_udpfd;                                                      \
     int udtflag;                                                                \
     /* Tail of a single-linked circular queue of pending reqs. If the queue */  \
     /* is empty, tail_ is NULL. If there is only one item, */                   \

@@ -296,11 +296,12 @@ static int uv__bind(uv_udt_t* handle,
       uv__set_sys_error(handle->loop, uv_translate_udt_error());
       return -1;
     }
-	
-    // fill Osfd
-    assert(udt_getsockopt(handle->udtfd, 0, (int)UDT_UDT_OSFD, &sock, &optlen) == 0);
 
-    if (uv_udt_set_socket(handle->loop, handle, sock, family, 0) == -1) {
+	// fill Osfd, UDP FD
+	assert(udt_getsockopt(handle->udtfd, 0, (int)UDT_UDT_OSFD, &sock, &optlen) == 0);
+	assert(udt_getsockopt(handle->udtfd, 0, (int)UDT_UDT_UDPFD, &handle->udpfd, &optlen) == 0);
+
+	if (uv_udt_set_socket(handle->loop, handle, sock, family, 0) == -1) {
        closesocket(sock);
        udt_close(handle->udtfd);
        return -1;
@@ -403,10 +404,11 @@ static int uv__bindfd(
       return -1;
     }
 	
-    // fill Osfd
+    // fill Osfd, UDP FD
     assert(udt_getsockopt(handle->udtfd, 0, (int)UDT_UDT_OSFD, &sock, &optlen) == 0);
+	assert(udt_getsockopt(handle->udtfd, 0, (int)UDT_UDT_UDPFD, &handle->udpfd, &optlen) == 0);
 
-    if (uv_udt_set_socket(handle->loop, handle, sock, family, 0) == -1) {
+	if (uv_udt_set_socket(handle->loop, handle, sock, family, 0) == -1) {
       closesocket(sock);
       udt_close(handle->udtfd);
       return -1;
@@ -776,8 +778,9 @@ int uv_udt_accept(uv_udt_t* server, uv_udt_t* client) {
 	  }
   }
   client->udtfd = req->accept_udtfd;
-  // fill Os fd
+  // fill Os fd, udp fd
   assert(udt_getsockopt(client->udtfd, 0, (int)UDT_UDT_OSFD, &req->accept_socket, &optlen) == 0);
+  assert(udt_getsockopt(client->udtfd, 0, (int)UDT_UDT_UDPFD, &req->accept_udt_udpfd, &optlen) == 0);
 
   if (server->flags & UV_HANDLE_IPV6) {
     family = AF_INET6;

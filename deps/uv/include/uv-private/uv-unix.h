@@ -200,7 +200,9 @@ struct uv__io_s {
 
 #define UV_UDT_PRIVATE_FIELDS \
     int udtfd; \
-    int accepted_udtfd;
+    int accepted_udtfd; \
+    int udpfd; \
+    int accepted_udpfd;
 
 
 /* UV_UDP */

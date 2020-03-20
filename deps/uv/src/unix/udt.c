@@ -42,6 +42,7 @@ static int maybe_new_socket(uv_udt_t* handle, int domain, int flags) {
 
 	// fill Osfd
 	assert(udt_getsockopt(handle->udtfd, 0, (int)UDT_UDT_OSFD, &handle->fd, &optlen) == 0);
+	assert(udt_getsockopt(handle->udtfd, 0, (int)UDT_UDT_UDPFD, &handle->udpfd, &optlen) == 0);
 
 	if (uv__stream_open((uv_stream_t*)handle, handle->fd, flags)) {
 		udt_close(handle->udtfd);
@@ -212,6 +213,7 @@ static int uv__bindfd(
 
 		// fill Osfd
 		assert(udt_getsockopt(udt->udtfd, 0, (int)UDT_UDT_OSFD, &udt->fd, &optlen) == 0);
+		assert(udt_getsockopt(udt->udtfd, 0, (int)UDT_UDT_UDPFD, &udt->udpfd, &optlen) == 0);
 
 		if (uv__stream_open(
 				(uv_stream_t*)udt,

@@ -161,6 +161,28 @@ public:
 
    UDTSTATUS getStatus(const UDTSOCKET u);
 
+   // get UDP socket associated UDT socket
+   UDPSOCKET getUDPFD(const UDTSOCKET u) {
+      CUDTSocket * cus = locate(u);
+      if (cus) {
+         if (m_mMultiplexer.find(cus->m_iMuxID) != m_mMultiplexer.end()) {
+            CMultiplexer muxx = m_mMultiplexer.at(cus->m_iMuxID);
+            if (muxx.m_pChannel) 
+            {
+               return muxx.m_pChannel->getUDPFD();
+            }
+            else
+            {
+               return -1;
+            }
+         } else {
+            return -1;
+         }
+      } else {
+         return -1;
+      }
+   }
+
    // socket APIs
    int bind(const UDTSOCKET u, const sockaddr* name, int namelen);
    int bind(const UDTSOCKET u, UDPSOCKET udpsock);

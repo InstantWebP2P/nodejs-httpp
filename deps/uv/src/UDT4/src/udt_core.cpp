@@ -755,6 +755,11 @@ void CUDT::getOpt(UDTOpt optName, void* optval, int& optlen)
 	  optlen = sizeof(m_pSecMod);
 	  break;
 
+   case UDT_UDPFD:
+      *(SYSSOCKET *)optval = s_UDTUnited.getUDPFD(m_SocketID);
+      optlen = sizeof(SYSSOCKET);
+      break;
+
    default:
       throw CUDTException(5, 0, 0);
    }

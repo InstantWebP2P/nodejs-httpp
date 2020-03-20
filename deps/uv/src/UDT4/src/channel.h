@@ -153,6 +153,9 @@ public:
       //    Actual size of data received.
 
    int recvfrom(sockaddr* addr, CPacket& packet) const;
+   
+   // get UDP socket associated UDT socket
+   UDPSOCKET getUDPFD(void) const { return m_iSocket; }
 
 private:
    void setUDPSockOpt();
