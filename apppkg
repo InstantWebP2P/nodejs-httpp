@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 
-# check docker image for packaging 
+# check docker image for packaging
+if [ $# == 0 ]; then
+  echo "Build Docker image as httpp:0.8"
+  docker image build --compress -t httpp:0.8 -t httpp:16.04 -f ./Dockerfile.pkg ./appins
+fi
+
 if [ "$(docker images -q httpp:0.8 2> /dev/null)" == "" ]; then
   echo "Build Docker image as httpp:0.8"
   docker image build --compress -t httpp:0.8 -t httpp:16.04 -f ./Dockerfile.pkg ./appins

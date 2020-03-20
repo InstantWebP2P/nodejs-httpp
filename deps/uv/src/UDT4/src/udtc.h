@@ -196,9 +196,9 @@ enum UDT_UDTOpt {
 	UDT_UDT_SNDDATA,         // size of data in the sending buffer
 	UDT_UDT_RCVDATA,         // size of data available for recv
 	UDT_UDT_OSFD,            // OS fd associated with the UDT socket, read only.
-    UDT_UDT_QOS,             // UDT socket Qos/priority
-    UDT_UDT_SECMOD,          // socket security mode: 0 - no secure, 1 - authentication control packet, 2 - authentication both control and data packet
-    UDT_UDT_SECKEY           // symmetric key
+   UDT_UDT_QOS,             // UDT socket Qos/priority
+   UDT_UDT_SECMOD,          // socket security mode: 0 - no secure, 1 - authentication control packet, 2 - authentication both control and data packet
+   UDT_UDT_SECKEY           // symmetric key
 };
 
 // UDT CCC option
@@ -210,43 +210,43 @@ enum UDT_CCCOpt {
 
 // UDT error code
 enum UDT_ERRNO {
-    UDT_SUCCESS = 0,
-    UDT_ECONNSETUP = 1000,
-    UDT_ENOSERVER = 1001,
-    UDT_ECONNREJ = 1002,
-    UDT_ESOCKFAIL = 1003,
-    UDT_ESECFAIL = 1004,
-    UDT_ECONNFAIL = 2000,
-    UDT_ECONNLOST = 2001,
-    UDT_ENOCONN = 2002,
-    UDT_ERESOURCE = 3000,
-    UDT_ETHREAD = 3001,
-    UDT_ENOBUF = 3002,
-    UDT_EFILE = 4000,
-    UDT_EINVRDOFF = 4001,
-    UDT_ERDPERM = 4002,
-    UDT_EINVWROFF = 4003,
-    UDT_EWRPERM = 4004,
-    UDT_EINVOP = 5000,
-    UDT_EBOUNDSOCK = 5001,
-    UDT_ECONNSOCK = 5002,
-    UDT_EINVPARAM = 5003,
-    UDT_EINVSOCK = 5004,
+    UDT_SUCCESS      = 0,
+    UDT_ECONNSETUP   = 1000,
+    UDT_ENOSERVER    = 1001,
+    UDT_ECONNREJ     = 1002,
+    UDT_ESOCKFAIL    = 1003,
+    UDT_ESECFAIL     = 1004,
+    UDT_ECONNFAIL    = 2000,
+    UDT_ECONNLOST    = 2001,
+    UDT_ENOCONN      = 2002,
+    UDT_ERESOURCE    = 3000,
+    UDT_ETHREAD      = 3001,
+    UDT_ENOBUF       = 3002,
+    UDT_EFILE        = 4000,
+    UDT_EINVRDOFF    = 4001,
+    UDT_ERDPERM      = 4002,
+    UDT_EINVWROFF    = 4003,
+    UDT_EWRPERM      = 4004,
+    UDT_EINVOP       = 5000,
+    UDT_EBOUNDSOCK   = 5001,
+    UDT_ECONNSOCK    = 5002,
+    UDT_EINVPARAM    = 5003,
+    UDT_EINVSOCK     = 5004,
     UDT_EUNBOUNDSOCK = 5005,
-    UDT_ENOLISTEN = 5006,
-    UDT_ERDVNOSERV = 5007,
-    UDT_ERDVUNBOUND = 5008,
-    UDT_ESTREAMILL = 5009,
-    UDT_EDGRAMILL = 5010,
-    UDT_EDUPLISTEN = 5011,
-    UDT_ELARGEMSG = 5012,
-    UDT_EINVPOLLID = 5013,
-    UDT_EASYNCFAIL = 6000,
-    UDT_EASYNCSND = 6001,
-    UDT_EASYNCRCV = 6002,
-    UDT_ETIMEOUT = 6003,
-    UDT_EPEERERR = 7000,
-    UDT_EUNKNOWN = -1
+    UDT_ENOLISTEN    = 5006,
+    UDT_ERDVNOSERV   = 5007,
+    UDT_ERDVUNBOUND  = 5008,
+    UDT_ESTREAMILL   = 5009,
+    UDT_EDGRAMILL    = 5010,
+    UDT_EDUPLISTEN   = 5011,
+    UDT_ELARGEMSG    = 5012,
+    UDT_EINVPOLLID   = 5013,
+    UDT_EASYNCFAIL   = 6000,
+    UDT_EASYNCSND    = 6001,
+    UDT_EASYNCRCV    = 6002,
+    UDT_ETIMEOUT     = 6003,
+    UDT_EPEERERR     = 7000,
+    UDT_EUNKNOWN     = -1
 };
 
 // UDT trace information
@@ -262,7 +262,7 @@ typedef struct UDT_CPerfMon_ {
 	int pktRecvACKTotal;                 // total number of received ACK packets
 	int pktSentNAKTotal;                 // total number of sent NAK packets
 	int pktRecvNAKTotal;                 // total number of received NAK packets
-	int64_t usSndDurationTotal;		     // total time duration when UDT is sending data (idle time exclusive)
+	int64_t usSndDurationTotal;		    // total time duration when UDT is sending data (idle time exclusive)
 
 	// local measurements
 	int64_t pktSent;                     // number of sent data packets, including retransmissions

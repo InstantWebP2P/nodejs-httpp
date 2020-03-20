@@ -180,7 +180,7 @@ struct CPerfMon
    int pktRecvACKTotal;                 // total number of received ACK packets
    int pktSentNAKTotal;                 // total number of sent NAK packets
    int pktRecvNAKTotal;                 // total number of received NAK packets
-   int64_t usSndDurationTotal;		// total time duration when UDT is sending data (idle time exclusive)
+   int64_t usSndDurationTotal;		    // total time duration when UDT is sending data (idle time exclusive)
 
    // local measurements
    int64_t pktSent;                     // number of sent data packets, including retransmissions
@@ -194,7 +194,7 @@ struct CPerfMon
    int pktRecvNAK;                      // number of received NAK packets
    double mbpsSendRate;                 // sending rate in Mb/s
    double mbpsRecvRate;                 // receiving rate in Mb/s
-   int64_t usSndDuration;		// busy sending time (i.e., idle time exclusive)
+   int64_t usSndDuration;		          // busy sending time (i.e., idle time exclusive)
 
    // instant measurements
    double usPktSndPeriod;               // packet sending period, in microseconds
