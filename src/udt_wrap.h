@@ -72,6 +72,9 @@ class UDTWrap : public StreamWrap {
   // bind socket in existing udp/fd
   static v8::Handle<v8::Value> Bindfd(const v8::Arguments& args);
 
+  // get udp/fd associated with UDT socket
+  static v8::Handle<v8::Value> Getudpfd(const v8::Arguments& args);
+
   // punch hole for p2p/stun session
   static v8::Handle<v8::Value> Punchhole(const v8::Arguments& args);
   static v8::Handle<v8::Value> Punchhole6(const v8::Arguments& args);

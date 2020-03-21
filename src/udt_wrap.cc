@@ -132,6 +132,7 @@ void UDTWrap::Initialize(Handle<Object> target) {
   NODE_SET_PROTOTYPE_METHOD(t, "punchhole", Punchhole);
   NODE_SET_PROTOTYPE_METHOD(t, "punchhole6", Punchhole6);
   NODE_SET_PROTOTYPE_METHOD(t, "getnetperf", GetNetPerf);
+  NODE_SET_PROTOTYPE_METHOD(t, "getudpfd", Getudpfd);
 
   udtConstructor = Persistent<Function>::New(t->GetFunction());
 
@@ -497,6 +498,14 @@ Handle<Value> UDTWrap::Bindfd(const Arguments& args) {
   return scope.Close(Integer::New(r));
 }
 
+// get udp/fd associated with UDT socket
+Handle<Value> UDTWrap::Getudpfd(const Arguments &args) {
+    HandleScope scope;
+
+    UNWRAP(UDTWrap)
+
+    return scope.Close(Integer::New(wrap->handle_.udpfd));
+}
 
 Handle<Value> UDTWrap::Listen(const Arguments& args) {
   HandleScope scope;

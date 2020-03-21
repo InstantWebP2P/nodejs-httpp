@@ -42,7 +42,6 @@ static int maybe_new_socket(uv_udt_t* handle, int domain, int flags) {
 
 	// fill Osfd
 	assert(udt_getsockopt(handle->udtfd, 0, (int)UDT_UDT_OSFD, &handle->fd, &optlen) == 0);
-	assert(udt_getsockopt(handle->udtfd, 0, (int)UDT_UDT_UDPFD, &handle->udpfd, &optlen) == 0);
 
 	if (uv__stream_open((uv_stream_t*)handle, handle->fd, flags)) {
 		udt_close(handle->udtfd);
@@ -62,6 +61,7 @@ static int uv__bind(
 {
 	int saved_errno;
 	int status;
+	int optlen;
 
 	saved_errno = errno;
 	status = -1;
@@ -81,6 +81,9 @@ static int uv__bind(
 		}
 	}
 	status = 0;
+
+    // fill UDP FD
+	assert(udt_getsockopt(udt->udtfd, 0, (int)UDT_UDT_UDPFD, &udt->udpfd, &optlen) == 0);
 
 out:
 	errno = saved_errno;
@@ -213,7 +216,6 @@ static int uv__bindfd(
 
 		// fill Osfd
 		assert(udt_getsockopt(udt->udtfd, 0, (int)UDT_UDT_OSFD, &udt->fd, &optlen) == 0);
-		assert(udt_getsockopt(udt->udtfd, 0, (int)UDT_UDT_UDPFD, &udt->udpfd, &optlen) == 0);
 
 		if (uv__stream_open(
 				(uv_stream_t*)udt,
@@ -238,6 +240,10 @@ static int uv__bindfd(
 		}
 	}
 	status = 0;
+
+    // fill UDP FD
+	assert(udt_getsockopt(udt->udtfd, 0, (int)UDT_UDT_UDPFD, &udt->udpfd, &optlen) == 0);
+	assert(udpfd == udt->udpfd);
 
 out:
 	errno = saved_errno;
