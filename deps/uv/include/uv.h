@@ -679,6 +679,9 @@ UV_EXTERN int uv_udt_getpeername(uv_udt_t* handle, struct sockaddr* name,
 /* binding udt socket on existing udp socket/fd */
 UV_EXTERN int uv_udt_bindfd(uv_udt_t* handle, uv_os_sock_t udpfd);
 
+/* retrieve udp socket/fd associated with udt socket */
+UV_EXTERN int uv_udt_udpfd(uv_udt_t *handle, uv_os_sock_t * udpfd);
+
 /*
  * uv_udt_connect, uv_udt_connect6
  * These functions establish IPv4 and IPv6 UDT connections. Provide an

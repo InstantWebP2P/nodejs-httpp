@@ -83,7 +83,7 @@ static int uv__bind(
 	status = 0;
 
     // fill UDP FD
-	assert(udt_getsockopt(udt->udtfd, 0, (int)UDT_UDT_UDPFD, &udt->udpfd, &optlen) == 0);
+	//assert(udt_getsockopt(udt->udtfd, 0, (int)UDT_UDT_UDPFD, &udt->udpfd, &optlen) == 0);
 
 out:
 	errno = saved_errno;
@@ -242,8 +242,8 @@ static int uv__bindfd(
 	status = 0;
 
     // fill UDP FD
-	assert(udt_getsockopt(udt->udtfd, 0, (int)UDT_UDT_UDPFD, &udt->udpfd, &optlen) == 0);
-	assert(udpfd == udt->udpfd);
+	//assert(udt_getsockopt(udt->udtfd, 0, (int)UDT_UDT_UDPFD, &udt->udpfd, &optlen) == 0);
+	//assert(udpfd == udt->udpfd);
 
 out:
 	errno = saved_errno;

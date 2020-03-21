@@ -33,6 +33,8 @@
 #include "ares/inet_net_pton.h"
 #include "ares/inet_ntop.h"
 
+#include "udtc.h"
+
 #define XX(uc, lc) case UV_##uc: return sizeof(uv_##lc##_t);
 
 size_t uv_handle_size(uv_handle_type type) {
@@ -247,6 +249,18 @@ int uv_udt_bindfd(uv_udt_t* handle, uv_os_sock_t udpfd) {
   }
 
   return uv__udt_bindfd(handle, udpfd);
+}
+
+
+int uv_udt_udpfd(uv_udt_t* handle, uv_os_sock_t * udpfd) {
+  int optlen; 
+  
+  if (handle->type != UV_UDT) {
+    uv__set_artificial_error(handle->loop, UV_EFAULT);
+    return -1;
+  }
+
+  return udt_getsockopt(handle->udtfd, 0, (int)UDT_UDT_UDPFD, udpfd, &optlen);
 }
 
 

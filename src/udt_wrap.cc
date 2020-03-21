@@ -500,11 +500,18 @@ Handle<Value> UDTWrap::Bindfd(const Arguments& args) {
 
 // get udp/fd associated with UDT socket
 Handle<Value> UDTWrap::Getudpfd(const Arguments &args) {
-    HandleScope scope;
+  HandleScope scope;
+  
+  UNWRAP(UDTWrap)
+  
+  uv_os_sock_t udpfd = -1;
 
-    UNWRAP(UDTWrap)
+  int r = uv_udt_udpfd(&wrap->handle_, &udpfd);
 
-    return scope.Close(Integer::New(wrap->handle_.udpfd));
+  // Error starting the udt.
+  if (r) SetErrno(uv_last_error(uv_default_loop()));
+
+  return scope.Close(Integer::New(udpfd));
 }
 
 Handle<Value> UDTWrap::Listen(const Arguments& args) {

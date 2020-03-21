@@ -343,7 +343,7 @@ static int uv__bind(uv_udt_t* handle,
 
   r = udt_bind(handle->udtfd, addr, addrsize);
   // fill UDP FD
-  assert(udt_getsockopt(handle->udtfd, 0, (int)UDT_UDT_UDPFD, &handle->udpfd, &optlen) == 0);
+  //assert(udt_getsockopt(handle->udtfd, 0, (int)UDT_UDT_UDPFD, &handle->udpfd, &optlen) == 0);
 
   if (r < 0) {
     err = uv_translate_udt_error();
@@ -451,8 +451,8 @@ static int uv__bindfd(
 
   r = udt_bind2(handle->udtfd, udpfd); 
   // fill UDP FD
-  assert(udt_getsockopt(handle->udtfd, 0, (int)UDT_UDT_UDPFD, &handle->udpfd, &optlen) == 0);
-  assert(udpfd == handle->udpfd);
+  //assert(udt_getsockopt(handle->udtfd, 0, (int)UDT_UDT_UDPFD, &handle->udpfd, &optlen) == 0);
+  //assert(udpfd == handle->udpfd);
 
   if (r < 0) {
     err = uv_translate_udt_error();
@@ -783,8 +783,8 @@ int uv_udt_accept(uv_udt_t* server, uv_udt_t* client) {
   client->udtfd = req->accept_udtfd;
   // fill Os fd, udp fd
   assert(udt_getsockopt(client->udtfd, 0, (int)UDT_UDT_OSFD, &req->accept_socket, &optlen) == 0);
-  assert(udt_getsockopt(client->udtfd, 0, (int)UDT_UDT_UDPFD, &req->accept_udt_udpfd, &optlen) == 0);
-  client->udpfd = req->accept_udt_udpfd;
+  //assert(udt_getsockopt(client->udtfd, 0, (int)UDT_UDT_UDPFD, &req->accept_udt_udpfd, &optlen) == 0);
+  //client->udpfd = req->accept_udt_udpfd;
 
   if (server->flags & UV_HANDLE_IPV6) {
     family = AF_INET6;
