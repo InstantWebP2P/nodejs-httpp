@@ -120,7 +120,7 @@ enum EPOLLOpt
 {
    // this values are defined same as linux epoll.h
    // so that if system values are used by mistake, they should have the same effect
-   UDT_EPOLL_IN = 0x1,
+   UDT_EPOLL_IN  = 0x1,
    UDT_EPOLL_OUT = 0x4,
    UDT_EPOLL_ERR = 0x8
 };
@@ -245,7 +245,7 @@ public:
    virtual void clear();
 
 private:
-   int m_iMajor;        // major exception categories
+   int m_iMajor;            // major exception categories
 
 // 0: correct condition
 // 1: network setup exception
@@ -255,11 +255,11 @@ private:
 // 5: method not supported
 // 6+: undefined error
 
-   int m_iMinor;		// for specific error reasons
-   int m_iErrno;		// errno returned by the system if there is any
+   int m_iMinor;		    // for specific error reasons
+   int m_iErrno;		    // errno returned by the system if there is any
    std::string m_strMsg;	// text error message
 
-   std::string m_strAPI;	// the name of UDT function that returns the error
+   std::string m_strAPI;    // the name of UDT function that returns the error
    std::string m_strDebug;	// debug information, set to the original place that causes the error
 
 public: // Error Code

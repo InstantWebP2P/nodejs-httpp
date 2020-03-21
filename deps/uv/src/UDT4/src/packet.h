@@ -68,7 +68,7 @@ public:
    int32_t& m_iMAC;                     // alias: message authentication code
    char*& m_pcData;                     // alias: data/control information
 
-   static const int m_iPktHdrSize;	// packet header size
+   static const int m_iPktHdrSize;      // packet header size
 
 public:
    CPacket();
@@ -131,32 +131,32 @@ public:
 
    int getType() const;
 
-	   // Functionality:
-	   //    Read the packet mac.
-	   // Parameters:
-	   //    None.
-	   // Returned value:
-	   //    packet mac 32-bit.
+      // Functionality:
+      //    Read the packet mac.
+      // Parameters:
+      //    None.
+      // Returned value:
+      //    packet mac 32-bit.
 
    uint32_t getMAC() const;
 
-	   // Functionality:
-	   //    Calculate and set the packet mac.
-	   // Parameters:
-	   //    None.
-	   // Returned value:
-	   //    packet mac 32-bit.
+      // Functionality:
+      //    Calculate and set the packet mac.
+      // Parameters:
+      //    None.
+      // Returned value:
+      //    packet mac 32-bit.
 
    int setMAC(const unsigned char* key, const int len);
 
-	   // Functionality:
-	   //    Calculate and check the packet mac.
-	   // Parameters:
-	   //    None.
-	   // Returned value:
-	   //    1 - pass, 0 - fail
+      // Functionality:
+      //    Calculate and check the packet mac.
+      // Parameters:
+      //    None.
+      // Returned value:
+      //    1 - pass, 0 - fail
 
-	int chkMAC(const unsigned char* key, const int len);
+   int chkMAC(const unsigned char* key, const int len);
 
       // Functionality:
       //    Read the extended packet type.
@@ -233,18 +233,18 @@ public:
    int deserialize(const char* buf, int size);
 
 public:
-   static const int m_iContentSize;	// Size of hand shake data
+   static const int m_iContentSize; // Size of hand shake data
 
 public:
-   int32_t m_iVersion;          // UDT version
-   int32_t m_iType;             // UDT socket type
-   int32_t m_iISN;              // random initial sequence number
-   int32_t m_iMSS;              // maximum segment size
-   int32_t m_iFlightFlagSize;   // flow control window size
-   int32_t m_iReqType;          // connection request type: 1: regular connection request, 0: rendezvous connection request, -1/-2: response
-   int32_t m_iID;               // socket ID
-   int32_t m_iCookie;		     // cookie
-   uint32_t m_piPeerIP[4];	     // The IP address that the peer's UDP port is bound to
+   int32_t m_iVersion;              // UDT version
+   int32_t m_iType;                 // UDT socket type
+   int32_t m_iISN;                  // random initial sequence number
+   int32_t m_iMSS;                  // maximum segment size
+   int32_t m_iFlightFlagSize;       // flow control window size
+   int32_t m_iReqType;              // connection request type: 1: regular connection request, 0: rendezvous connection request, -1/-2: response
+   int32_t m_iID;                   // socket ID
+   int32_t m_iCookie;		        // cookie
+   uint32_t m_piPeerIP[4];	        // The IP address that the peer's UDP port is bound to
 };
 
 

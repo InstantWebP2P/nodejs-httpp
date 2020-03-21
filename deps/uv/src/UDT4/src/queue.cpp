@@ -507,7 +507,7 @@ void CSndQueue::init(CChannel* c, CTimer* t)
       DWORD threadID;
       m_WorkerThread = CreateThread(NULL, 0, CSndQueue::worker, this, 0, &threadID);
       if (NULL == m_WorkerThread)
-    	throw CUDTException(3, 1);
+         throw CUDTException(3, 1);
       // adjust thread priority
       ///assert(SetThreadPriority(m_WorkerThread, THREAD_PRIORITY_BELOW_NORMAL/*THREAD_PRIORITY_ABOVE_NORMAL*/));
    #endif

@@ -161,15 +161,15 @@ UDT_API UDTSTATUS getsockstate(UDTSOCKET u);
 
 // UDT status
 enum UDT_UDTSTATUS {
-	UDT_INIT = 1,
-	UDT_OPENED,
-	UDT_LISTENING,
-	UDT_CONNECTING,
-	UDT_CONNECTED,
-	UDT_BROKEN,
-	UDT_CLOSING,
-	UDT_CLOSED,
-	UDT_NONEXIST
+   UDT_INIT = 1,
+   UDT_OPENED,
+   UDT_LISTENING,
+   UDT_CONNECTING,
+   UDT_CONNECTED,
+   UDT_BROKEN,
+   UDT_CLOSING,
+   UDT_CLOSED,
+   UDT_NONEXIST
 };
 
 // UDT option
@@ -205,9 +205,9 @@ enum UDT_UDTOpt
 
 // UDT CCC option
 enum UDT_CCCOpt {
-	UDT_CCC_UDT = 0,         // native UDT cc
-	UDT_CCC_TCP,             // TCP-like cc
-	UDT_CCC_BLAST,           // blast cc
+   UDT_CCC_UDT = 0,   // native UDT cc
+   UDT_CCC_TCP,       // TCP-like cc
+   UDT_CCC_BLAST,     // blast cc
 };
 
 // UDT error code
@@ -253,42 +253,42 @@ enum UDT_ERRNO {
 
 // UDT trace information
 typedef struct UDT_CPerfMon_ {
-	// global measurements
-	int64_t msTimeStamp;                 // time since the UDT entity is started, in milliseconds
-	int64_t pktSentTotal;                // total number of sent data packets, including retransmissions
-	int64_t pktRecvTotal;                // total number of received packets
-	int pktSndLossTotal;                 // total number of lost packets (sender side)
-	int pktRcvLossTotal;                 // total number of lost packets (receiver side)
-	int pktRetransTotal;                 // total number of retransmitted packets
-	int pktSentACKTotal;                 // total number of sent ACK packets
-	int pktRecvACKTotal;                 // total number of received ACK packets
-	int pktSentNAKTotal;                 // total number of sent NAK packets
-	int pktRecvNAKTotal;                 // total number of received NAK packets
-	int64_t usSndDurationTotal;		    // total time duration when UDT is sending data (idle time exclusive)
+   // global measurements
+   int64_t msTimeStamp;                 // time since the UDT entity is started, in milliseconds
+   int64_t pktSentTotal;                // total number of sent data packets, including retransmissions
+   int64_t pktRecvTotal;                // total number of received packets
+   int pktSndLossTotal;                 // total number of lost packets (sender side)
+   int pktRcvLossTotal;                 // total number of lost packets (receiver side)
+   int pktRetransTotal;                 // total number of retransmitted packets
+   int pktSentACKTotal;                 // total number of sent ACK packets
+   int pktRecvACKTotal;                 // total number of received ACK packets
+   int pktSentNAKTotal;                 // total number of sent NAK packets
+   int pktRecvNAKTotal;                 // total number of received NAK packets
+   int64_t usSndDurationTotal;		     // total time duration when UDT is sending data (idle time exclusive)
 
-	// local measurements
-	int64_t pktSent;                     // number of sent data packets, including retransmissions
-	int64_t pktRecv;                     // number of received packets
-	int pktSndLoss;                      // number of lost packets (sender side)
-	int pktRcvLoss;                      // number of lost packets (receiver side)
-	int pktRetrans;                      // number of retransmitted packets
-	int pktSentACK;                      // number of sent ACK packets
-	int pktRecvACK;                      // number of received ACK packets
-	int pktSentNAK;                      // number of sent NAK packets
-	int pktRecvNAK;                      // number of received NAK packets
-	double mbpsSendRate;                 // sending rate in Mb/s
-	double mbpsRecvRate;                 // receiving rate in Mb/s
-	int64_t usSndDuration;               // busy sending time (i.e., idle time exclusive)
+   // local measurements
+   int64_t pktSent;                     // number of sent data packets, including retransmissions
+   int64_t pktRecv;                     // number of received packets
+   int pktSndLoss;                      // number of lost packets (sender side)
+   int pktRcvLoss;                      // number of lost packets (receiver side)
+   int pktRetrans;                      // number of retransmitted packets
+   int pktSentACK;                      // number of sent ACK packets
+   int pktRecvACK;                      // number of received ACK packets
+   int pktSentNAK;                      // number of sent NAK packets
+   int pktRecvNAK;                      // number of received NAK packets
+   double mbpsSendRate;                 // sending rate in Mb/s
+   double mbpsRecvRate;                 // receiving rate in Mb/s
+   int64_t usSndDuration;               // busy sending time (i.e., idle time exclusive)
 
-	// instant measurements
-	double usPktSndPeriod;               // packet sending period, in microseconds
-	int pktFlowWindow;                   // flow window size, in number of packets
-	int pktCongestionWindow;             // congestion window size, in number of packets
-	int pktFlightSize;                   // number of packets on flight
-	double msRTT;                        // RTT, in milliseconds
-	double mbpsBandwidth;                // estimated bandwidth, in Mb/s
-	int byteAvailSndBuf;                 // available UDT sender buffer size
-	int byteAvailRcvBuf;                 // available UDT receiver buffer size
+   // instant measurements
+   double usPktSndPeriod;               // packet sending period, in microseconds
+   int pktFlowWindow;                   // flow window size, in number of packets
+   int pktCongestionWindow;             // congestion window size, in number of packets
+   int pktFlightSize;                   // number of packets on flight
+   double msRTT;                        // RTT, in milliseconds
+   double mbpsBandwidth;                // estimated bandwidth, in Mb/s
+   int byteAvailSndBuf;                 // available UDT sender buffer size
+   int byteAvailRcvBuf;                 // available UDT receiver buffer size
 } UDT_TRACEINFO;
 
 UDT_API extern const UDTSOCKET UDT_INVALID_SOCK;
@@ -339,11 +339,11 @@ UDT_API extern int udt_setccc(UDTSOCKET u, int ccc);
 // select and selectEX are DEPRECATED; please use epoll.
 enum UDT_EPOLLOpt
 {
-	// this values are defined same as linux epoll.h
-	// so that if system values are used by mistake, they should have the same effect
-	UDT_UDT_EPOLL_IN  = 0x1,
-	UDT_UDT_EPOLL_OUT = 0x4,
-	UDT_UDT_EPOLL_ERR = 0x8
+   // this values are defined same as linux epoll.h
+   // so that if system values are used by mistake, they should have the same effect
+   UDT_UDT_EPOLL_IN  = 0x1,
+   UDT_UDT_EPOLL_OUT = 0x4,
+   UDT_UDT_EPOLL_ERR = 0x8
 };
 
 UDT_API extern int udt_epoll_create();

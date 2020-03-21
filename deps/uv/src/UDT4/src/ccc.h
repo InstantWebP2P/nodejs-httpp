@@ -203,21 +203,21 @@ private:
    void setRTT(int rtt);
 
 protected:
-   const int32_t& m_iSYNInterval;	// UDT constant parameter, SYN
+   const int32_t& m_iSYNInterval;       // UDT constant parameter, SYN
 
    double m_dPktSndPeriod;              // Packet sending period, in microseconds
    double m_dCWndSize;                  // Congestion window size, in packets
 
-   int m_iBandwidth;			// estimated bandwidth, packets per second
+   int m_iBandwidth;                    // estimated bandwidth, packets per second
    double m_dMaxCWndSize;               // maximum cwnd size, in packets
 
-   int m_iMSS;				// Maximum Packet Size, including all packet headers
-   int32_t m_iSndCurrSeqNo;		// current maximum seq no sent out
-   int m_iRcvRate;			// packet arrive rate at receiver side, packets per second
-   int m_iRTT;				// current estimated RTT, microsecond
+   int m_iMSS;				            // Maximum Packet Size, including all packet headers
+   int32_t m_iSndCurrSeqNo;		        // current maximum seq no sent out
+   int m_iRcvRate;			            // packet arrive rate at receiver side, packets per second
+   int m_iRTT;				            // current estimated RTT, microsecond
 
-   char* m_pcParam;			// user defined parameter
-   int m_iPSize;			// size of m_pcParam
+   char* m_pcParam;			            // user defined parameter
+   int m_iPSize;			            // size of m_pcParam
 
 private:
    UDTSOCKET m_UDT;                     // The UDT entity that this congestion control algorithm is bound to
@@ -266,13 +266,13 @@ private:
    uint64_t m_LastRCTime;		// last rate increase time
    bool m_bSlowStart;			// if in slow start phase
    int32_t m_iLastAck;			// last ACKed seq no
-   bool m_bLoss;			// if loss happened since last rate increase
+   bool m_bLoss;			    // if loss happened since last rate increase
    int32_t m_iLastDecSeq;		// max pkt seq no sent out when last decrease happened
-   double m_dLastDecPeriod;		// value of pktsndperiod when last decrease happened
-   int m_iNAKCount;                     // NAK counter
-   int m_iDecRandom;                    // random threshold on decrease by number of loss events
-   int m_iAvgNAKNum;                    // average number of NAKs per congestion
-   int m_iDecCount;			// number of decreases in a congestion epoch
+   double m_dLastDecPeriod;	    // value of pktsndperiod when last decrease happened
+   int m_iNAKCount;             // NAK counter
+   int m_iDecRandom;            // random threshold on decrease by number of loss events
+   int m_iAvgNAKNum;            // average number of NAKs per congestion
+   int m_iDecCount;             // number of decreases in a congestion epoch
 };
 
 #endif

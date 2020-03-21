@@ -257,15 +257,15 @@ private:
 class CInfoBlock
 {
 public:
-   uint32_t m_piIP[4];		// IP address, machine read only, not human readable format
-   int m_iIPversion;		// IP version
-   uint64_t m_ullTimeStamp;	// last update time
-   int m_iRTT;			// RTT
-   int m_iBandwidth;		// estimated bandwidth
-   int m_iLossRate;		// average loss rate
-   int m_iReorderDistance;	// packet reordering distance
-   double m_dInterval;		// inter-packet time, congestion control
-   double m_dCWnd;		// congestion window size, congestion control
+   uint32_t m_piIP[4];		   // IP address, machine read only, not human readable format
+   int m_iIPversion;		   // IP version
+   uint64_t m_ullTimeStamp;	   // last update time
+   int m_iRTT;			       // RTT
+   int m_iBandwidth;		   // estimated bandwidth
+   int m_iLossRate;		       // average loss rate
+   int m_iReorderDistance;	   // packet reordering distance
+   double m_dInterval;		   // inter-packet time, congestion control
+   double m_dCWnd;		       // congestion window size, congestion control
 
 public:
    virtual ~CInfoBlock() {}

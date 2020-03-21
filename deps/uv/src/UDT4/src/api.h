@@ -256,7 +256,7 @@ private:
    pthread_mutex_t m_MultiplexerLock;
 
 private:
-   CCache<CInfoBlock>* m_pCache;			// UDT network information cache
+   CCache<CInfoBlock>* m_pCache;			        // UDT network information cache
 
 private:
    volatile bool m_bClosing;
@@ -264,8 +264,8 @@ private:
    pthread_cond_t m_GCStopCond;
 
    pthread_mutex_t m_InitLock;
-   int m_iInstanceCount;				// number of startup() called by application
-   bool m_bGCStatus;					// if the GC thread is working (true)
+   int m_iInstanceCount;				            // number of startup() called by application
+   bool m_bGCStatus;					            // if the GC thread is working (true)
 
    pthread_t m_GCThread;
    #ifndef WIN32
@@ -274,13 +274,13 @@ private:
       static DWORD WINAPI garbageCollect(LPVOID);
    #endif
 
-   std::map<UDTSOCKET, CUDTSocket*> m_ClosedSockets;   // temporarily store closed sockets
+   std::map<UDTSOCKET, CUDTSocket*> m_ClosedSockets; // temporarily store closed sockets
 
    void checkBrokenSockets();
    void removeSocket(const UDTSOCKET u);
 
 private:
-   CEPoll m_EPoll;                                     // handling epoll data structures and events
+   CEPoll m_EPoll;                                   // handling epoll data structures and events
 
 private:
    CUDTUnited(const CUDTUnited&);

@@ -406,14 +406,14 @@ private:
    pthread_t m_WorkerThread;
 
 private:
-   CSndUList* m_pSndUList;		// List of UDT instances for data sending
-   CChannel* m_pChannel;                // The UDP channel for data sending
-   CTimer* m_pTimer;			// Timing facility
+   CSndUList* m_pSndUList;    // List of UDT instances for data sending
+   CChannel* m_pChannel;      // The UDP channel for data sending
+   CTimer* m_pTimer;          // Timing facility
 
    pthread_mutex_t m_WindowLock;
    pthread_cond_t m_WindowCond;
 
-   volatile bool m_bClosing;		// closing the worker
+   volatile bool m_bClosing;  // closing the worker
    pthread_cond_t m_ExitCond;
 
 private:
@@ -466,16 +466,16 @@ private:
    pthread_t m_WorkerThread;
 
 private:
-   CUnitQueue m_UnitQueue;		// The received packet queue
+   CUnitQueue m_UnitQueue;    // The received packet queue
 
-   CRcvUList* m_pRcvUList;		// List of UDT instances that will read packets from the queue
-   CHash* m_pHash;			// Hash table for UDT socket looking up
-   CChannel* m_pChannel;		// UDP channel for receving packets
-   CTimer* m_pTimer;			// shared timer with the snd queue
+   CRcvUList* m_pRcvUList;    // List of UDT instances that will read packets from the queue
+   CHash* m_pHash;            // Hash table for UDT socket looking up
+   CChannel* m_pChannel;      // UDP channel for receving packets
+   CTimer* m_pTimer;          // shared timer with the snd queue
 
-   int m_iPayloadSize;                  // packet payload size
+   int m_iPayloadSize;        // packet payload size
 
-   volatile bool m_bClosing;            // closing the workder
+   volatile bool m_bClosing;  // closing the workder
    pthread_cond_t m_ExitCond;
 
 private:
@@ -499,7 +499,7 @@ private:
    std::vector<CUDT*> m_vNewEntry;                      // newly added entries, to be inserted
    pthread_mutex_t m_IDLock;
 
-   std::map<int32_t, std::queue<CPacket*> > m_mBuffer;	// temporary buffer for rendezvous connection request
+   std::map<int32_t, std::queue<CPacket*> > m_mBuffer;  // temporary buffer for rendezvous connection request
    pthread_mutex_t m_PassLock;
    pthread_cond_t m_PassCond;
 
@@ -515,13 +515,13 @@ struct CMultiplexer
    CChannel* m_pChannel;	// The UDP channel for sending and receiving
    CTimer* m_pTimer;		// The timer
 
-   int m_iPort;			// The UDP port number of this multiplexer
+   int m_iPort;             // The UDP port number of this multiplexer
    int m_iIPversion;		// IP version
-   int m_iMSS;			// Maximum Segment Size
-   int m_iRefCount;		// number of UDT instances that are associated with this multiplexer
-   bool m_bReusable;		// if this one can be shared with others
+   int m_iMSS;              // Maximum Segment Size
+   int m_iRefCount;         // number of UDT instances that are associated with this multiplexer
+   bool m_bReusable;        // if this one can be shared with others
 
-   int m_iID;			// multiplexer ID
+   int m_iID;               // multiplexer ID
 };
 
 #endif
