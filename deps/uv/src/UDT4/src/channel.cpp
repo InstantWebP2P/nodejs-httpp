@@ -315,12 +315,12 @@ int CChannel::recvfrom(sockaddr* addr, CPacket& packet) const
       res = (0 == res) ? size : -1;
    #endif
 
-   if (res <= 0)
+   //!!! if (res <= 0)
+   if (res < CPacket::m_iPktHdrSize)
    {
-      packet.setLength(-1);
-      return -1;
+       packet.setLength(-1);
+       return -1;
    }
-
    packet.setLength(res - CPacket::m_iPktHdrSize);
 
    // convert back into local host order

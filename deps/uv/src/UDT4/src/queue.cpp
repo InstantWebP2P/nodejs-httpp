@@ -1013,10 +1013,10 @@ void CRcvQueue::init(int qsize, int payload, int version, int hsize, CChannel* c
          ///printf("%s.%s.%d, no space...\n", __FILE__, __FUNCTION__, __LINE__);
          // no space, skip this packet
          CPacket temp;
-         temp.m_pcData = new char[self->m_iPayloadSize];
+         char temp_pc[self->m_iPayloadSize];
+         temp.m_pcData = temp_pc;
          temp.setLength(self->m_iPayloadSize);
          self->m_pChannel->recvfrom(addr, temp);
-         delete [] temp.m_pcData;
          goto TIMER_CHECK;
       }
 
@@ -1321,7 +1321,7 @@ void CRcvQueue::storePkt(int32_t id, CPacket* pkt)
    }
    else
    {
-      //avoid storing too many packets, in case of malfunction or attack
+      // avoid storing too many packets, in case of malfunction or attack
       if (i->second.size() > 16)
          return;
 
