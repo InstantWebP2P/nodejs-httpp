@@ -385,20 +385,31 @@ int32_t CPacket::chkMAC(const unsigned char *key, const int len)
 	uint32_t expect;
 
 
-	/*printf("pkt.type %d,chkMAC [0]-0x%x [4]-0x%x:",
+#if 0
+	printf("pkt.type %d,chkMAC [0]-0x%x [4]-0x%x:",
 	         getType(), m_nHeader[0], m_nHeader[4]);
 	for (int i=0; i<len; i++) {
 		printf("%02x ", key[i]);
 	}
-	printf("\n");*/
-   
+	printf("\n");
+ #endif
+
 	// check security flag
 	if (!(m_nHeader[0] & 0x40000000)) {
-		// bypass ACK,ACK-2 packet check for connection in early setup stage
-		if (getType() != 2 && getType() != 6)
-			return 0;  // fail
-		else
-			return -1; // bypass
+        // - for control packet, bypass ACK, ACK-2 packet check for connection in early setup stage
+        // - for data packet, bypass if secure bit not set
+        if (m_nHeader[0] & 0x80000000) {
+            int pkttp = getType();
+
+            if (pkttp == 2 || pkttp == 6) {
+                return -1; // bypass
+            } else {
+                return  0; // fail
+            }
+        } else {
+                // always bypass for data packet
+                return -1; // bypass
+        }
 	}
 
 	// save then clear MAC
