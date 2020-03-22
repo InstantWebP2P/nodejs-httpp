@@ -725,7 +725,7 @@ Handle<Value> UDTWrap::SetSocketSec(const Arguments& args) {
   int val;
   // network byte order
   for (int i=0; i<4; i++) {
-	val      = args[i+1]->Int32Value();
+	val        = args[i+1]->Int32Value();
 	key[i*4+3] = val;
 	key[i*4+2] = val >> 8;
 	key[i*4+1] = val >> 16;

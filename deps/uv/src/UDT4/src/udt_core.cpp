@@ -75,11 +75,11 @@ const int CUDT::ERROR = -1;
 const UDTSOCKET UDT::INVALID_SOCK = CUDT::INVALID_SOCK;
 const int UDT::ERROR = CUDT::ERROR;
 
-const int32_t CSeqNo::m_iSeqNoTH = 0x3FFFFFFF;
-const int32_t CSeqNo::m_iMaxSeqNo = 0x7FFFFFFF;
-const int32_t CAckNo::m_iMaxAckSeqNo = 0x7FFFFFFF;
-const int32_t CMsgNo::m_iMsgNoTH = 0xFFFFFFF;
-const int32_t CMsgNo::m_iMaxMsgNo = 0x1FFFFFFF;
+const int32_t CSeqNo::m_iSeqNoTH     = 0x1FFFFFFF;    // 0x3fffffff -> 0x1fffffff for MAC set/chk
+const int32_t CSeqNo::m_iMaxSeqNo    = 0x3FFFFFFF;    // 0x7fffffff -> 0x3fffffff for MAC set/chk
+const int32_t CAckNo::m_iMaxAckSeqNo = 0x3FFFFFFF;    // 0x7fffffff -> 0x3fffffff for MAC set/chk
+const int32_t CMsgNo::m_iMsgNoTH     =  0xFFFFFFF;
+const int32_t CMsgNo::m_iMaxMsgNo    = 0x1FFFFFFF;
 
 ///const int CUDT::m_iVersion = 4;
 const int CUDT::m_iVersion = 6; // support authentication on control packet
@@ -2464,23 +2464,23 @@ void CUDT::processCtrl(CPacket& ctrlpkt)
     // Check MAC in secure mode
 	if (m_pSecMod) {
 		if (!ctrlpkt.chkMAC(&m_pSecKey[0], 16)) {
+            #if 0
 			time_t rawtime;
 			time(&rawtime);
 
-			///printf("%s DDOS attack, ctrlpkt MAC check failed.pkt.type:%d ", ctime(&rawtime), ctrlpkt.getType());
+			printf("%s DDOS attack, ctrlpkt MAC check failed.pkt.type:%d ", ctime(&rawtime), ctrlpkt.getType());
 
 			// log attack
 			if (m_iIPversion == AF_INET) {
 				// IPv4
 				int ip = ntohl(((sockaddr_in *)m_pPeerAddr)->sin_addr.s_addr);
-				/*printf(" from ipv4: "
+				printf(" from ipv4: "
 						"%d.%d.%d.%d\n",
 						(ip>>24)&0xff, (ip>>16)&0xff, (ip>>8)&0xff, (ip>>0)&0xff);
-                                */
 			} else {
 				// IPv6
 				sockaddr_in6* a = (sockaddr_in6 *)m_pPeerAddr;
-				/*printf(" from ipv6: "
+				printf(" from ipv6: "
 						"%d.%d.%d.%d."
 						"%d.%d.%d.%d."
 						"%d.%d.%d.%d."
@@ -2489,8 +2489,8 @@ void CUDT::processCtrl(CPacket& ctrlpkt)
 						a->sin6_addr.s6_addr[11], a->sin6_addr.s6_addr[10], a->sin6_addr.s6_addr[9],a->sin6_addr.s6_addr[8],
 						a->sin6_addr.s6_addr[7], a->sin6_addr.s6_addr[6], a->sin6_addr.s6_addr[5],a->sin6_addr.s6_addr[4],
 						a->sin6_addr.s6_addr[3], a->sin6_addr.s6_addr[2], a->sin6_addr.s6_addr[1],a->sin6_addr.s6_addr[0]);
-                                */
 			}
+            #endif
 
 			return;
 		}
@@ -2912,6 +2912,11 @@ int CUDT::packData(CPacket& packet, uint64_t& ts)
    packet.m_iTimeStamp = int(CTimer::getTime() - m_StartTime);
    packet.m_iID = m_PeerID;
    packet.setLength(payload);
+   // Set MAC in secure mode
+   if (m_pSecMod > 1)
+   {
+       packet.setMAC(&m_pSecKey[0], 16);
+   }
 
    m_pCC->onPktSent(&packet);
    //m_pSndTimeWindow->onPktSent(packet.m_iTimeStamp);
@@ -2951,6 +2956,46 @@ int CUDT::packData(CPacket& packet, uint64_t& ts)
 int CUDT::processData(CUnit* unit)
 {
    CPacket& packet = unit->m_Packet;
+
+   // Check MAC in secure mode
+   if (m_pSecMod > 1)
+   {
+       if (!packet.chkMAC(&m_pSecKey[0], 16))
+       {
+           #if 0
+           time_t rawtime;
+           time(&rawtime);
+
+           printf("%s DDOS attack, ctrlpkt MAC check failed.pkt.type:%d ", ctime(&rawtime), ctrlpkt.getType());
+
+           // log attack
+           if (m_iIPversion == AF_INET)
+           {
+               // IPv4
+               int ip = ntohl(((sockaddr_in *)m_pPeerAddr)->sin_addr.s_addr);
+               printf(" from ipv4: "
+						"%d.%d.%d.%d\n",
+                        (ip>>24)&0xff, (ip>>16)&0xff, (ip>>8)&0xff, (ip>>0)&0xff);
+           }
+           else
+           {
+               // IPv6
+               sockaddr_in6 *a = (sockaddr_in6 *)m_pPeerAddr;
+               printf(" from ipv6: "
+						"%d.%d.%d.%d."
+						"%d.%d.%d.%d."
+						"%d.%d.%d.%d."
+						"%d.%d.%d.%d\n",
+						a->sin6_addr.s6_addr[15], a->sin6_addr.s6_addr[14], a->sin6_addr.s6_addr[13],a->sin6_addr.s6_addr[12],
+						a->sin6_addr.s6_addr[11], a->sin6_addr.s6_addr[10], a->sin6_addr.s6_addr[9],a->sin6_addr.s6_addr[8],
+						a->sin6_addr.s6_addr[7], a->sin6_addr.s6_addr[6], a->sin6_addr.s6_addr[5],a->sin6_addr.s6_addr[4],
+						a->sin6_addr.s6_addr[3], a->sin6_addr.s6_addr[2], a->sin6_addr.s6_addr[1],a->sin6_addr.s6_addr[0]);
+           }
+           #endif
+
+           return -1;
+       }
+   }
 
    // Just heard from the peer, reset the expiration count.
    m_iEXPCount = 1;
