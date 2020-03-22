@@ -14,6 +14,7 @@ HTTPP - Run HTTP over UDP and Bring Web in Peer or P2P styles.
 
 * Run http and https over udp, taking udp high data transfer performance
 * Configurable Congestion Control
+* Enhance UDT security by authenticating both control and data packet
 * Per-socket network performance monitor
 * Per-socket bandwidth limitation
 * Multiplex connections on single udp port, saving system resources
