@@ -36,7 +36,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 /*****************************************************************************
 written by
    Yunhong Gu, last updated 02/12/2011
-   Tom Zhou, 01/11/2013, support secure flag for authentication
+   Tom Zhou<iwebpp@gmail.com>, 01/11/2013, support secure flag for authentication
 *****************************************************************************/
 
 
@@ -396,14 +396,15 @@ int32_t CPacket::chkMAC(const unsigned char *key, const int len)
 
 	// check security flag
 	if (!(m_nHeader[0] & 0x40000000)) {
-        // - for control packet, bypass ACK, ACK-2 packet check for connection in early setup stage
+        // - for control packet, bypass Handshake for connection in early setup stage
         // - for data packet, bypass if secure bit not set
         if (m_nHeader[0] & 0x80000000) {
-            int pkttp = getType();
-
-            if (pkttp == 2 || pkttp == 6) {
+            if (getType() == 0)
+            {
                 return -1; // bypass
-            } else {
+            }
+            else
+            {
                 return  0; // fail
             }
         } else {

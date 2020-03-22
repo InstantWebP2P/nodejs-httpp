@@ -2408,10 +2408,10 @@ void CUDT::sendCtrl(int pkttype, void* lparam, void* rparam, int size)
    case 0: //000 - Handshake
       ctrlpkt.m_iID = m_PeerID;
       ctrlpkt.pack(pkttype, NULL, rparam, sizeof(CHandShake));
-      // Set MAC in secure mode
-      if (m_pSecMod) {
+      //!!! Set MAC in secure mode
+      /*if (m_pSecMod) {
      	 ctrlpkt.setMAC(&m_pSecKey[0], 16);
-      }
+      }*/
       m_pSndQueue->sendto(m_pPeerAddr, ctrlpkt);
 
       break;
@@ -3072,7 +3072,7 @@ int CUDT::listen(sockaddr* addr, CPacket& packet)
    // SYN cookie
    char clienthost[NI_MAXHOST];
    char clientport[NI_MAXSERV];
-   getnameinfo(addr, (AF_INET == m_iVersion) ? sizeof(sockaddr_in) : sizeof(sockaddr_in6), clienthost, sizeof(clienthost), clientport, sizeof(clientport), NI_NUMERICHOST|NI_NUMERICSERV);
+   getnameinfo(addr, (AF_INET == m_iIPversion) ? sizeof(sockaddr_in) : sizeof(sockaddr_in6), clienthost, sizeof(clienthost), clientport, sizeof(clientport), NI_NUMERICHOST | NI_NUMERICSERV);
    int64_t timestamp = (CTimer::getTime() - m_StartTime) / 60000000; // secret changes every one minute
    stringstream cookiestr;
    cookiestr << clienthost << ":" << clientport << ":" << timestamp;
