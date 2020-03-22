@@ -284,7 +284,7 @@ void CUDTCC::onLoss(const int32_t* losslist, int)
 
       // remove global synchronization using randomization
       srand(m_iLastDecSeq);
-      m_iDecRandom = (int)ceil(m_iAvgNAKNum * (double(rand()) / RAND_MAX));
+      m_iDecRandom = (int)ceil(m_iAvgNAKNum * (double(rand() / RAND_MAX)));
       if (m_iDecRandom < 1)
          m_iDecRandom = 1;
    }
