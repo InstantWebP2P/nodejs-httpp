@@ -145,7 +145,7 @@ m_ClosedSockets()
 {
    // Socket ID MUST start from a random value
    srand((unsigned int)CTimer::getTime());
-   m_SocketID = 1 + (int)((1 << 30) * (double(rand() / RAND_MAX)));
+   m_SocketID = 1 + (int)((1 << 30) * (double(rand()) / RAND_MAX));
 
    #ifndef WIN32
       pthread_mutex_init(&m_ControlLock, NULL);

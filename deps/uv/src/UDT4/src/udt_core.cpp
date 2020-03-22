@@ -948,7 +948,7 @@ void CUDT::connect(const sockaddr* serv_addr)
 
    // Random Initial Sequence Number
    srand((unsigned int)CTimer::getTime());
-   m_iISN = m_ConnReq.m_iISN = (int32_t)(CSeqNo::m_iMaxSeqNo * (double(rand() / RAND_MAX)));
+   m_iISN = m_ConnReq.m_iISN = (int32_t)(CSeqNo::m_iMaxSeqNo * (double(rand()) / RAND_MAX));
 
    m_iLastDecSeq = m_iISN - 1;
    m_iSndLastAck = m_iISN;
