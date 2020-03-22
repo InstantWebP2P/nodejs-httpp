@@ -147,23 +147,23 @@ public:
       // Returned value:
       //    packet mac 32-bit.
 
-   int setMAC(const unsigned char* key, const int len);
+   uint32_t setMAC(const unsigned char *key, const int len);
 
-      // Functionality:
-      //    Calculate and check the packet mac.
-      // Parameters:
-      //    None.
-      // Returned value:
-      //    1 - pass, 0 - fail
+   // Functionality:
+   //    Calculate and check the packet mac.
+   // Parameters:
+   //    None.
+   // Returned value:
+   //    1 - pass, 0 - fail, -1 - bypass
 
-   int chkMAC(const unsigned char* key, const int len);
+   int32_t chkMAC(const unsigned char *key, const int len);
 
-      // Functionality:
-      //    Read the extended packet type.
-      // Parameters:
-      //    None.
-      // Returned value:
-      //    extended packet type filed (0x000 ~ 0xFFF).
+   // Functionality:
+   //    Read the extended packet type.
+   // Parameters:
+   //    None.
+   // Returned value:
+   //    extended packet type filed (0x000 ~ 0xFFF).
 
    int getExtendedType() const;
 

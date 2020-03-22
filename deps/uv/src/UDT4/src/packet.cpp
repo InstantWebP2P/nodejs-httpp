@@ -68,7 +68,7 @@ written by
 //   bit 0:
 //      0: Data Packet
 //      1: Control Packet
-//   bit s: TBD...
+//   bit s: Secure bit, TBD...
 //      0: Not Secure Packet
 //      1: Secure Packet
 //   bit ff:
@@ -93,10 +93,10 @@ written by
 //   |                   Message Authentication Code                 |
 //   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 //
-//   bit s: TBD...
+//   bit s: Secure bit
 //      0: Not Secure Packet
 //      1: Secure Packet
-//   bit 1-15:
+//   bit 2-15: Type
 //      0: Protocol Connection Handshake
 //              Add. Info:    Undefined
 //              Control Info: Handshake information (see CHandShake)
@@ -339,7 +339,7 @@ uint32_t CPacket::getMAC() const
 }
 
 // calculating MAC using MD5
-int CPacket::setMAC(const unsigned char* key, const int len)
+uint32_t CPacket::setMAC(const unsigned char *key, const int len)
 {
 	md5_state_t state;
 	uint32_t digest[4];
@@ -362,10 +362,11 @@ int CPacket::setMAC(const unsigned char* key, const int len)
 	// round 1
 	md5_init_key(&state, key, len);
 	md5_append(&state, (const md5_byte_t *)m_PacketVector[0].iov_base, m_PacketVector[0].iov_len);
-	if (m_PacketVector[1].iov_base && m_PacketVector[1].iov_len) {
-		md5_append(&state, (const md5_byte_t *)m_PacketVector[1].iov_base, m_PacketVector[1].iov_len);
-	}
-	md5_finish(&state, (md5_byte_t *)digest);
+    // protect payload for control packet only
+    if ((m_nHeader[0] & 0x80000000) && m_PacketVector[1].iov_base && m_PacketVector[1].iov_len) {
+        md5_append(&state, (const md5_byte_t *)m_PacketVector[1].iov_base, m_PacketVector[1].iov_len);
+    }
+    md5_finish(&state, (md5_byte_t *)digest);
 
 	// round 2
 	md5_init_key(&state, key, len);
@@ -377,7 +378,7 @@ int CPacket::setMAC(const unsigned char* key, const int len)
 }
 
 // 1: pass, 0: fail, -1: bypass
-int CPacket::chkMAC(const unsigned char* key, const int len)
+int32_t CPacket::chkMAC(const unsigned char *key, const int len)
 {
 	md5_state_t state;
 	uint32_t digest[4];
@@ -407,10 +408,11 @@ int CPacket::chkMAC(const unsigned char* key, const int len)
 	// round 1
 	md5_init_key(&state, key, len);
 	md5_append(&state, (const md5_byte_t *)m_PacketVector[0].iov_base, m_PacketVector[0].iov_len);
-	if (m_PacketVector[1].iov_base && m_PacketVector[1].iov_len) {
-		md5_append(&state, (const md5_byte_t *)m_PacketVector[1].iov_base, m_PacketVector[1].iov_len);
-	}
-	md5_finish(&state, (md5_byte_t *)digest);
+    // check payload for control packet only
+    if ((m_nHeader[0] & 0x80000000) && (m_PacketVector[1].iov_base && m_PacketVector[1].iov_len)) {
+        md5_append(&state, (const md5_byte_t *)m_PacketVector[1].iov_base, m_PacketVector[1].iov_len);
+    }
+    md5_finish(&state, (md5_byte_t *)digest);
 
 	// round 2
 	md5_init_key(&state, key, len);
