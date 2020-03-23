@@ -75,9 +75,9 @@ const int CUDT::ERROR = -1;
 const UDTSOCKET UDT::INVALID_SOCK = CUDT::INVALID_SOCK;
 const int UDT::ERROR = CUDT::ERROR;
 
-const int32_t CSeqNo::m_iSeqNoTH     = 0x1FFFFFFF;    // 0x3fffffff -> 0x1fffffff for MAC set/chk
-const int32_t CSeqNo::m_iMaxSeqNo    = 0x3FFFFFFF;    // 0x7fffffff -> 0x3fffffff for MAC set/chk
-const int32_t CAckNo::m_iMaxAckSeqNo = 0x3FFFFFFF;    // 0x7fffffff -> 0x3fffffff for MAC set/chk
+const int32_t CSeqNo::m_iSeqNoTH     = 0x3FFFFFFF;
+const int32_t CSeqNo::m_iMaxSeqNo    = 0x7FFFFFFF;
+const int32_t CAckNo::m_iMaxAckSeqNo = 0x7FFFFFFF;
 const int32_t CMsgNo::m_iMsgNoTH     =  0xFFFFFFF;
 const int32_t CMsgNo::m_iMaxMsgNo    = 0x1FFFFFFF;
 
@@ -870,6 +870,11 @@ void CUDT::punchhole(const sockaddr* serv_addr, const int from, const int to)
    if (m_bConnecting || m_bConnected)
       throw CUDTException(5, 2, 0);
 
+
+   CPacket klpkt; //001 - Keep-alive
+   klpkt.m_iID = 0;
+   klpkt.pack(1);
+
    if (AF_INET == m_iIPversion) {
 	   // create temp address
 	   sockaddr_in temp_addr;
@@ -877,10 +882,6 @@ void CUDT::punchhole(const sockaddr* serv_addr, const int from, const int to)
 
 	   //////////////////////////////////////////
 	   // Send keep-alive packet to punch hole with port range [from, to]
-	   CPacket klpkt; //001 - Keep-alive
-	   klpkt.m_iID = 0;
-	   klpkt.pack(1);
-
 	   int refport = temp_addr.sin_port;
 	   for (int start = from; start <= to; start ++) {
 		   temp_addr.sin_port = refport + start;
@@ -894,10 +895,6 @@ void CUDT::punchhole(const sockaddr* serv_addr, const int from, const int to)
 
 	   //////////////////////////////////////////
 	   // Send keep-alive packet to punch hole with port range [from, to]
-	   CPacket klpkt; //001 - Keep-alive
-	   klpkt.m_iID = 0;
-	   klpkt.pack(1);
-
 	   int refport = temp_addr.sin6_port;
 	   for (int start = from; start <= to; start ++) {
 		   temp_addr.sin6_port = refport + start;
@@ -2408,10 +2405,6 @@ void CUDT::sendCtrl(int pkttype, void* lparam, void* rparam, int size)
    case 0: //000 - Handshake
       ctrlpkt.m_iID = m_PeerID;
       ctrlpkt.pack(pkttype, NULL, rparam, sizeof(CHandShake));
-      //!!! Set MAC in secure mode
-      /*if (m_pSecMod) {
-     	 ctrlpkt.setMAC(&m_pSecKey[0], 16);
-      }*/
       m_pSndQueue->sendto(m_pPeerAddr, ctrlpkt);
 
       break;
@@ -2912,11 +2905,6 @@ int CUDT::packData(CPacket& packet, uint64_t& ts)
    packet.m_iTimeStamp = int(CTimer::getTime() - m_StartTime);
    packet.m_iID = m_PeerID;
    packet.setLength(payload);
-   // Set MAC in secure mode
-   if (m_pSecMod > 1)
-   {
-       packet.setMAC(&m_pSecKey[0], 16);
-   }
 
    m_pCC->onPktSent(&packet);
    //m_pSndTimeWindow->onPktSent(packet.m_iTimeStamp);
@@ -2956,46 +2944,6 @@ int CUDT::packData(CPacket& packet, uint64_t& ts)
 int CUDT::processData(CUnit* unit)
 {
    CPacket& packet = unit->m_Packet;
-
-   // Check MAC in secure mode
-   if (m_pSecMod > 1)
-   {
-       if (!packet.chkMAC(&m_pSecKey[0], 16))
-       {
-           #if 0
-           time_t rawtime;
-           time(&rawtime);
-
-           printf("%s DDOS attack, ctrlpkt MAC check failed.pkt.type:%d ", ctime(&rawtime), ctrlpkt.getType());
-
-           // log attack
-           if (m_iIPversion == AF_INET)
-           {
-               // IPv4
-               int ip = ntohl(((sockaddr_in *)m_pPeerAddr)->sin_addr.s_addr);
-               printf(" from ipv4: "
-						"%d.%d.%d.%d\n",
-                        (ip>>24)&0xff, (ip>>16)&0xff, (ip>>8)&0xff, (ip>>0)&0xff);
-           }
-           else
-           {
-               // IPv6
-               sockaddr_in6 *a = (sockaddr_in6 *)m_pPeerAddr;
-               printf(" from ipv6: "
-						"%d.%d.%d.%d."
-						"%d.%d.%d.%d."
-						"%d.%d.%d.%d."
-						"%d.%d.%d.%d\n",
-						a->sin6_addr.s6_addr[15], a->sin6_addr.s6_addr[14], a->sin6_addr.s6_addr[13],a->sin6_addr.s6_addr[12],
-						a->sin6_addr.s6_addr[11], a->sin6_addr.s6_addr[10], a->sin6_addr.s6_addr[9],a->sin6_addr.s6_addr[8],
-						a->sin6_addr.s6_addr[7], a->sin6_addr.s6_addr[6], a->sin6_addr.s6_addr[5],a->sin6_addr.s6_addr[4],
-						a->sin6_addr.s6_addr[3], a->sin6_addr.s6_addr[2], a->sin6_addr.s6_addr[1],a->sin6_addr.s6_addr[0]);
-           }
-           #endif
-
-           return -1;
-       }
-   }
 
    // Just heard from the peer, reset the expiration count.
    m_iEXPCount = 1;

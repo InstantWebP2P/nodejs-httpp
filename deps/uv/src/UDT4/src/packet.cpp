@@ -54,7 +54,7 @@ written by
 //    0                   1                   2                   3
 //    0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
 //   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-//   |0|s|                      Sequence Number                      |
+//   |0|                        Sequence Number                      |
 //   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 //   |ff |o|                     Message Number                      |
 //   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
@@ -68,9 +68,6 @@ written by
 //   bit 0:
 //      0: Data Packet
 //      1: Control Packet
-//   bit s: Secure bit, TBD...
-//      0: Not Secure Packet
-//      1: Secure Packet
 //   bit ff:
 //      11: solo message packet
 //      10: first packet of a message
@@ -405,6 +402,7 @@ int32_t CPacket::chkMAC(const unsigned char *key, const int len)
             }
             else
             {
+                printf("unsecure ctrlpkt: %d\n", getType());
                 return  0; // fail
             }
         } else {
