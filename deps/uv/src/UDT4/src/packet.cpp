@@ -402,7 +402,7 @@ int32_t CPacket::chkMAC(const unsigned char *key, const int len)
             }
             else
             {
-                printf("unsecure ctrlpkt: %d\n", getType());
+                ///printf("unsecure ctrlpkt: %d\n", getType());
                 return  0; // fail
             }
         } else {
