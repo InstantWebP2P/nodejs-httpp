@@ -39,7 +39,6 @@ written by
    Tom Zhou<iwebpp@gmail.com>, 01/11/2013, support secure flag for authentication
 *****************************************************************************/
 
-
 //////////////////////////////////////////////////////////////////////////////
 //    0                   1                   2                   3
 //    0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
@@ -54,7 +53,7 @@ written by
 //    0                   1                   2                   3
 //    0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
 //   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-//   |0|                        Sequence Number                      |
+//   |0|s|                      Sequence Number                      |
 //   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 //   |ff |o|                     Message Number                      |
 //   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
@@ -68,6 +67,9 @@ written by
 //   bit 0:
 //      0: Data Packet
 //      1: Control Packet
+//   bit s: Secure bit
+//      0: Not Secure Packet
+//      1: Secure Packet with MAC on header only of datapkt
 //   bit ff:
 //      11: solo message packet
 //      10: first packet of a message
@@ -92,7 +94,7 @@ written by
 //
 //   bit s: Secure bit
 //      0: Not Secure Packet
-//      1: Secure Packet
+//      1: Secure Packet with MAC on ctrlpkt
 //   bit 2-15: Type
 //      0: Protocol Connection Handshake
 //              Add. Info:    Undefined
@@ -128,9 +130,9 @@ written by
 //              Add. Info:    Error code
 //              Control Info: None
 //      0x7FFF: Explained by bits 16 - 31
-//              
+//
 //   bit 16 - 31:
-//      This space is used for future expansion or user defined control packets. 
+//      This space is used for future expansion or user defined control packets.
 //
 //    0                   1                   2                   3
 //    0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
@@ -150,11 +152,10 @@ written by
 //      For any single loss or consectutive loss less than 2 packets, use
 //      the original sequence numbers in the field.
 
-
 #include <cstring>
 #include "md5.h"
 #include "packet.h"
-
+///#include <sys/time.h>
 
 const int CPacket::m_iPktHdrSize = 20; // 128-bit standard header + 32-bit MAC
 const int CHandShake::m_iContentSize = 48;
@@ -341,17 +342,18 @@ uint32_t CPacket::setMAC(const unsigned char *key, const int len)
 	md5_state_t state;
 	uint32_t digest[4];
 
+#if 0
+    struct timeval start, stop;
+    double secs = 0;
+    gettimeofday(&start, NULL);
 
-	/*printf("pkt.type %d,setMAC:", getType());
+    /*printf("pkt.type %d,setMAC:", getType());
 	for (int i=0; i<len; i++) {
 		printf("%02x ", key[i]);
 	}
 	printf("\n");*/
+#endif
 
-	// nothing to do again
-	if (m_nHeader[0] & 0x40000000) {
-        return m_nHeader[4];
-	}
 	// set security flag
 	m_nHeader[0] |= 0x40000000;
 	m_nHeader[4]  = 0x0;
@@ -371,7 +373,14 @@ uint32_t CPacket::setMAC(const unsigned char *key, const int len)
 	md5_finish(&state, (md5_byte_t *)digest);
 	m_nHeader[4] = digest[0] ^ digest[1] ^ digest[2] ^ digest[3];
 
-	return m_nHeader[4];
+#if 0
+    // time cost
+    gettimeofday(&stop, NULL);
+    secs = (double)(stop.tv_usec - start.tv_usec) / 1000000 + (double)(stop.tv_sec - start.tv_sec);
+    printf("setMAC time taken %f\n", secs);
+#endif
+
+    return m_nHeader[4];
 }
 
 // 1: pass, 0: fail, -1: bypass
@@ -381,14 +390,17 @@ int32_t CPacket::chkMAC(const unsigned char *key, const int len)
 	uint32_t digest[4];
 	uint32_t expect;
 
-
 #if 0
-	printf("pkt.type %d,chkMAC [0]-0x%x [4]-0x%x:",
+    struct timeval start, stop;
+    double secs = 0;
+    gettimeofday(&start, NULL);
+
+	/*printf("pkt.type %d,chkMAC [0]-0x%x [4]-0x%x:",
 	         getType(), m_nHeader[0], m_nHeader[4]);
 	for (int i=0; i<len; i++) {
 		printf("%02x ", key[i]);
 	}
-	printf("\n");
+	printf("\n");*/
  #endif
 
 	// check security flag
@@ -429,7 +441,17 @@ int32_t CPacket::chkMAC(const unsigned char *key, const int len)
 	md5_append(&state, (const md5_byte_t *)digest, sizeof(digest));
 	md5_finish(&state, (md5_byte_t *)digest);
 
-	return (expect == (digest[0] ^ digest[1] ^ digest[2] ^ digest[3])) ? 1 : 0;
+    // clear security flag
+    m_nHeader[0] &= ~ 0x40000000;
+
+#if 0
+    // time cost
+    gettimeofday(&stop, NULL);
+    secs = (double)(stop.tv_usec - start.tv_usec) / 1000000 + (double)(stop.tv_sec - start.tv_sec);
+    printf("chkMAC time taken %f\n", secs);
+#endif
+
+    return (expect == (digest[0] ^ digest[1] ^ digest[2] ^ digest[3])) ? 1 : 0;
 }
 
 int CPacket::getExtendedType() const
