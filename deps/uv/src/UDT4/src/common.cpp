@@ -114,7 +114,8 @@ void CTimer::rdtsc(uint64_t &x)
       asm ("mov %0=ar.itc" : "=r"(x) :: "memory");
    #elif defined(AMD64) || defined(amd64) || defined(X64) || defined(x64) || defined(x86_64)
       uint32_t lval, hval;
-      asm volatile ("rdtsc" : "=a" (lval), "=d" (hval));
+      ///asm volatile ("rdtsc" : "=a" (lval), "=d" (hval));
+      asm volatile ("rdtscp" : "=a" (lval), "=d" (hval));
       x = hval;
       x = (x << 32) | lval;
    #elif defined(WIN32)
@@ -205,7 +206,9 @@ uint64_t CTimer::readCPUFrequency()
               frequency = (uint64_t)mhz;
     	      ///printf("linux cpu MHz: %f, %lld\n", mhz, frequency);
           } else {
+              #ifdef DEBUG
               printf("Warning!!! /proc/cpuinfo cpu MHz unknown\n");
+              #endif
           }
       }
    #endif
@@ -216,6 +219,11 @@ uint64_t CTimer::readCPUFrequency()
       frequency = 1;
       m_bUseMicroSecond = true;
    }
+
+ #ifdef DEBUG
+   printf("CPU frequency: %lld/us\n", frequency);
+#endif
+
    return frequency;
 }
 
@@ -294,7 +302,7 @@ void CTimer::tick()
    #endif
 }
 
-uint64_t CTimer::getTime()
+uint64_t CTimer::getTime(bool Nano)
 {
    //For Cygwin and other systems without microsecond level resolution, uncomment the following three lines
    //uint64_t x;
@@ -302,11 +310,29 @@ uint64_t CTimer::getTime()
    //return x / s_ullCPUFrequency;
    //Specific fix may be necessary if rdtsc is not available either.
 
-   #ifndef WIN32
-      timeval t;
-      gettimeofday(&t, 0);
-      return t.tv_sec * 1000000ULL + t.tv_usec;
-   #else
+#ifndef WIN32
+
+#if defined(LINUX)
+   if (Nano) {
+       struct timespec t;
+       clock_gettime(CLOCK_MONOTONIC, &t);
+       return t.tv_sec * 1000000000ULL + t.tv_nsec;
+   } else {
+       timeval t;
+       gettimeofday(&t, 0);
+       return t.tv_sec * 1000000ULL    + t.tv_usec;
+   }
+#else
+   timeval t;
+   gettimeofday(&t, 0);
+   if (Nano) {
+       return t.tv_sec * 1000000000ULL + t.tv_usec * 1000ULL;
+   } else {
+       return t.tv_sec * 1000000ULL    + t.tv_usec;
+   }
+#endif
+
+#else
       LARGE_INTEGER ccf;
       HANDLE hCurThread = ::GetCurrentThread(); 
       DWORD_PTR dwOldMask = ::SetThreadAffinityMask(hCurThread, 1);
@@ -320,9 +346,13 @@ uint64_t CTimer::getTime()
          }
       }
 
-      SetThreadAffinityMask(hCurThread, dwOldMask); 
-      return GetTickCount() * 1000ULL;
-   #endif
+      SetThreadAffinityMask(hCurThread, dwOldMask);
+      if (Nano) {
+          return GetTickCount() * 1000000ULL;
+      } else {
+          return GetTickCount() * 1000ULL;
+      }
+#endif
 }
 
 void CTimer::triggerEvent()

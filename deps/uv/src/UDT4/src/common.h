@@ -128,20 +128,20 @@ public:
    static uint64_t getCPUFrequency();
 
       // Functionality:
-      //    check the current time, 64bit, in microseconds.
+      //    check the current time, 64bit, in micro/nano seconds.
       // Parameters:
-      //    None.
+      //    Nano - false for micro, true for nano
       // Returned value:
       //    current time in microseconds.
 
-   static uint64_t getTime();
+   static uint64_t getTime(bool Nano = false);
 
-      // Functionality:
-      //    trigger an event such as new connection, close, new data, etc. for "select" call.
-      // Parameters:
-      //    None.
-      // Returned value:
-      //    None.
+   // Functionality:
+   //    trigger an event such as new connection, close, new data, etc. for "select" call.
+   // Parameters:
+   //    None.
+   // Returned value:
+   //    None.
 
    static void triggerEvent();
 
@@ -165,6 +165,7 @@ public:
 
 private:
    uint64_t getTimeInMicroSec();
+   uint64_t getTimeInNanoSecs();
 
 private:
    uint64_t m_ullSchedTime;             // next schedulled time
