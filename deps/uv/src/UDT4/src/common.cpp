@@ -102,35 +102,35 @@ void CTimer::rdtsc(uint64_t &x)
       return;
    }
 
-   #if defined(IA32) || defined(ia32)
-      uint32_t lval, hval;
-      //asm volatile ("push %eax; push %ebx; push %ecx; push %edx");
-      //asm volatile ("xor %eax, %eax; cpuid");
-      asm volatile ("rdtsc" : "=a" (lval), "=d" (hval));
-      //asm volatile ("pop %edx; pop %ecx; pop %ebx; pop %eax");
-      x = hval;
-      x = (x << 32) | lval;
-   #elif defined(IA64) || defined(ia64)
-      asm ("mov %0=ar.itc" : "=r"(x) :: "memory");
-   #elif defined(AMD64) || defined(amd64) || defined(X64) || defined(x64) || defined(x86_64)
+#if defined(AMD64) || defined(amd64) || defined(X64) || defined(x64) || defined(x86_64)
       uint32_t lval, hval;
       ///asm volatile ("rdtsc" : "=a" (lval), "=d" (hval));
       asm volatile ("rdtscp" : "=a" (lval), "=d" (hval));
       x = hval;
       x = (x << 32) | lval;
-   #elif defined(WIN32)
+#elif defined(IA64) || defined(ia64)
+      asm ("mov %0=ar.itc" : "=r"(x) :: "memory");      
+#elif defined(IA32) || defined(ia32)
+      uint32_t lval, hval;
+      //asm volatile ("push %eax; push %ebx; push %ecx; push %edx");
+      //asm volatile ("xor %eax, %eax; cpuid");
+      asm volatile ("rdtsc": "=a"(lval), "=d"(hval));
+      //asm volatile ("pop %edx; pop %ecx; pop %ebx; pop %eax");
+      x = hval;
+      x = (x << 32) | lval;
+#elif defined(WIN32)
       //HANDLE hCurThread = ::GetCurrentThread(); 
       //DWORD_PTR dwOldMask = ::SetThreadAffinityMask(hCurThread, 1); 
       BOOL ret = QueryPerformanceCounter((LARGE_INTEGER *)&x);
       //SetThreadAffinityMask(hCurThread, dwOldMask);
       if (!ret)
          x = getTime() * s_ullCPUFrequency;
-   #elif defined(OSX)
+#elif defined(OSX)
       x = mach_absolute_time();
-   #else
-      // use system call to read time clock for other archs
-      x = getTime() * s_ullCPUFrequency;
-   #endif
+#else
+      // use system call to read time clock in Nanosecs for other archs
+      x = getTime(true) * s_ullCPUFrequency / 1000ULL;
+#endif
 }
 
 uint64_t CTimer::readCPUFrequency()
@@ -139,17 +139,23 @@ uint64_t CTimer::readCPUFrequency()
 
    #if defined(IA32) || defined(IA64) || defined(AMD64) || defined(X64) || defined(x86_64) ||\
        defined(ia32) || defined(ia64) || defined(amd64) || defined(x64)
-      uint64_t t1, t2;
-
+      uint64_t t1, t2, sum = 0, cnt = 0;
+      int retry = 5, rv = 0;
+      
+    while (retry-- > 0) {
       rdtsc(t1);
       timespec ts;
       ts.tv_sec = 0;
       ts.tv_nsec = 100000000;
-      nanosleep(&ts, NULL);
+      rv = nanosleep(&ts, NULL);
       rdtsc(t2);
-
+      if (rv == 0) {
+          cnt ++;
+          sum += t2 - t1;
+      } else continue;
+    }
       // CPU clocks per microsecond
-      frequency = (t2 - t1) / 100000;
+      frequency = sum / cnt / 100000;
    #elif defined(WIN32)
       int64_t ccf;
       if (QueryPerformanceFrequency((LARGE_INTEGER *)&ccf))
@@ -221,7 +227,7 @@ uint64_t CTimer::readCPUFrequency()
    }
 
  #ifdef DEBUG
-   printf("CPU frequency: %lld/us\n", frequency);
+   printf("CPU frequency: %lld MHz\n", frequency);
 #endif
 
    return frequency;
