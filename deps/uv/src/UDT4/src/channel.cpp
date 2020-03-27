@@ -94,12 +94,22 @@ void CChannel::open(const sockaddr* addr)
    // construct an socket
    m_iSocket = ::socket(m_iIPversion, SOCK_DGRAM, 0);
 
-   #ifdef WIN32
-      if (INVALID_SOCKET == m_iSocket)
-   #else
-      if (m_iSocket < 0)
-   #endif
-      throw CUDTException(1, 0, NET_ERROR);
+   // allow multiple process binding on same port for LB
+   int one = 1;
+#if defined(LINUX) || defined(OSX)
+   // Linux kernel < 3.9 only support SO_REUSEADDR
+   // TBD linux kernel version checking
+   ::setsockopt(m_iSocket, SOL_SOCKET, SO_REUSEPORT, &one, sizeof(one));
+#else
+   ::setsockopt(m_iSocket, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one));
+#endif
+
+#ifdef WIN32
+   if (INVALID_SOCKET == m_iSocket)
+#else
+   if (m_iSocket < 0)
+#endif
+       throw CUDTException(1, 0, NET_ERROR);
 
    if (NULL != addr)
    {
@@ -134,8 +144,18 @@ void CChannel::open(const sockaddr* addr)
 
 void CChannel::open(UDPSOCKET udpsock)
 {
-   m_iSocket = udpsock;
-   setUDPSockOpt();
+    // allow multiple process binding on same port for LB
+    int one = 1;
+#if defined(LINUX) || defined(OSX)
+    // Linux kernel < 3.9 only support SO_REUSEADDR
+    // TBD linux kernel version checking
+    ::setsockopt(udpsock, SOL_SOCKET, SO_REUSEPORT, &one, sizeof(one));
+#else
+    ::setsockopt(udpsock, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one));
+#endif
+
+    m_iSocket = udpsock;
+    setUDPSockOpt();
 }
 
 void CChannel::setUDPSockOpt()

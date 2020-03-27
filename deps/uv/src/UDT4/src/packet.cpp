@@ -155,7 +155,10 @@ written by
 #include <cstring>
 #include "md5.h"
 #include "packet.h"
-///#include <sys/time.h>
+
+#ifdef DEBUG
+#include <sys/time.h>
+#endif
 
 const int CPacket::m_iPktHdrSize = 20; // 128-bit standard header + 32-bit MAC
 const int CHandShake::m_iContentSize = 48;
@@ -342,7 +345,7 @@ uint32_t CPacket::setMAC(const unsigned char *key, const int len)
 	md5_state_t state;
 	uint32_t digest[4];
 
-#if 0
+#ifdef DEBUG
     struct timeval start, stop;
     double secs = 0;
     gettimeofday(&start, NULL);
@@ -373,11 +376,11 @@ uint32_t CPacket::setMAC(const unsigned char *key, const int len)
 	md5_finish(&state, (md5_byte_t *)digest);
 	m_nHeader[4] = digest[0] ^ digest[1] ^ digest[2] ^ digest[3];
 
-#if 0
+#ifdef DEBUG
     // time cost
     gettimeofday(&stop, NULL);
     secs = (double)(stop.tv_usec - start.tv_usec) / 1000000 + (double)(stop.tv_sec - start.tv_sec);
-    printf("setMAC time taken %f\n", secs);
+    printf("setMAC time taken %f\ns", secs);
 #endif
 
     return m_nHeader[4];
@@ -390,7 +393,7 @@ int32_t CPacket::chkMAC(const unsigned char *key, const int len)
 	uint32_t digest[4];
 	uint32_t expect;
 
-#if 0
+#ifdef DEBUG
     struct timeval start, stop;
     double secs = 0;
     gettimeofday(&start, NULL);
@@ -444,11 +447,11 @@ int32_t CPacket::chkMAC(const unsigned char *key, const int len)
     // clear security flag
     m_nHeader[0] &= ~ 0x40000000;
 
-#if 0
+#ifdef DEBUG
     // time cost
     gettimeofday(&stop, NULL);
     secs = (double)(stop.tv_usec - start.tv_usec) / 1000000 + (double)(stop.tv_sec - start.tv_sec);
-    printf("chkMAC time taken %f\n", secs);
+    printf("chkMAC time taken %f\ns", secs);
 #endif
 
     return (expect == (digest[0] ^ digest[1] ^ digest[2] ^ digest[3])) ? 1 : 0;
