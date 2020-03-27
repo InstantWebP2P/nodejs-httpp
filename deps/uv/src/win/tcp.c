@@ -93,6 +93,14 @@ static int uv_tcp_set_socket(uv_loop_t* loop, uv_tcp_t* handle,
     return -1;
   }
 
+  /* Set the socket to reuse address */
+  if (setsockopt(socket, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof yes) < 0)
+  {
+      uv__set_sys_error(loop, WSAGetLastError());
+      return -1;
+  }
+
+
   /* Associate it with the I/O completion port. */
   /* Use uv_handle_t pointer as completion key. */
   if (CreateIoCompletionPort((HANDLE)socket,

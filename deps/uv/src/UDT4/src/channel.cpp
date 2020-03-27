@@ -94,20 +94,30 @@ void CChannel::open(const sockaddr* addr)
    // construct an socket
    m_iSocket = ::socket(m_iIPversion, SOCK_DGRAM, 0);
 
+
    // allow multiple process binding on same port for LB
-   int one = 1;
-   int rev = 0;
 #if defined(LINUX)
    // Linux kernel < 3.9 only support SO_REUSEADDR
    // TBD linux kernel version checking
-   rev = ::setsockopt(m_iSocket, SOL_SOCKET, SO_REUSEPORT, &one, sizeof(one));
+   int yes = 1;
+   int rev = 0;
+   rev = ::setsockopt(m_iSocket, SOL_SOCKET, SO_REUSEPORT, &yes, sizeof(yes));
 #elif defined(OSX) || defined(BSD)
-   rev = ::setsockopt(m_iSocket, SOL_SOCKET, SO_REUSEPORT, &one, sizeof(one));
+   int yes = 1;
+   int rev = 0;
+   rev = ::setsockopt(m_iSocket, SOL_SOCKET, SO_REUSEPORT, &yes, sizeof(yes));
+#elif defined(WIN32)
+   DWORD yes = 1;
+   DWORD rev = 0;
+   rev = ::setsockopt(m_iSocket, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes));
 #else
-   rev = ::setsockopt(m_iSocket, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one));
+   int yes = 1;
+   int rev = 0;
+   rev = ::setsockopt(m_iSocket, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes));
 #endif
    if (rev < 0)
        throw CUDTException(1, 0, NET_ERROR);
+
 
 #ifdef WIN32
    if (INVALID_SOCKET == m_iSocket)
@@ -150,19 +160,28 @@ void CChannel::open(const sockaddr* addr)
 void CChannel::open(UDPSOCKET udpsock)
 {
     // allow multiple process binding on same port for LB
-    int one = 1;
-    int rev = 0;
 #if defined(LINUX)
     // Linux kernel < 3.9 only support SO_REUSEADDR
     // TBD linux kernel version checking
-    rev = ::setsockopt(udpsock, SOL_SOCKET, SO_REUSEPORT, &one, sizeof(one));
+    int yes = 1;
+    int rev = 0;
+    rev = ::setsockopt(udpsock, SOL_SOCKET, SO_REUSEPORT, &yes, sizeof(yes));
 #elif defined(OSX) || defined(BSD)
-    rev = ::setsockopt(udpsock, SOL_SOCKET, SO_REUSEPORT, &one, sizeof(one));
+    int yes = 1;
+    int rev = 0;
+    rev = ::setsockopt(udpsock, SOL_SOCKET, SO_REUSEPORT, &yes, sizeof(yes));
+#elif defined(WIN32)
+    DWORD yes = 1;
+    DWORD rev = 0;
+    rev = ::setsockopt(udpsock, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes));
 #else
-    rev = ::setsockopt(udpsock, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one));
+    int yes = 1;
+    int rev = 0;
+    rev = ::setsockopt(udpsock, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes));
 #endif
     if (rev < 0)
         throw CUDTException(1, 0, NET_ERROR);
+
 
     m_iSocket = udpsock;
     setUDPSockOpt();
