@@ -102,6 +102,8 @@ void CChannel::open(const sockaddr* addr)
    int yes = 1;
    int rev = 0;
    rev = ::setsockopt(m_iSocket, SOL_SOCKET, SO_REUSEPORT, &yes, sizeof(yes));
+   if (rev < 0)
+   rev = ::setsockopt(m_iSocket, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes));
 #elif defined(OSX) || defined(BSD)
    int yes = 1;
    int rev = 0;
@@ -166,6 +168,8 @@ void CChannel::open(UDPSOCKET udpsock)
     int yes = 1;
     int rev = 0;
     rev = ::setsockopt(udpsock, SOL_SOCKET, SO_REUSEPORT, &yes, sizeof(yes));
+    if (rev < 0)
+    rev = ::setsockopt(udpsock, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes));
 #elif defined(OSX) || defined(BSD)
     int yes = 1;
     int rev = 0;

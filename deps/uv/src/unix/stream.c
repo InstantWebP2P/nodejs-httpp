@@ -103,7 +103,16 @@ int uv__stream_open(uv_stream_t* stream, int fd, int flags) {
   if (stream->type == UV_TCP) {
     /* Reuse the port address if applicable. */
     yes = 1;
-#if defined(LINUX) || defined(OSX) || defined(BSD)
+#if defined(LINUX)
+    if (setsockopt(fd, SOL_SOCKET, SO_REUSEPORT, &yes, sizeof yes) == -1)
+    {
+        if (setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof yes) == -1)
+        {
+            uv__set_sys_error(stream->loop, errno);
+            return -1;
+        }
+    }
+#elif defined(OSX) || defined(BSD)
     if (setsockopt(fd, SOL_SOCKET, SO_REUSEPORT, &yes, sizeof yes) == -1)
     {
         uv__set_sys_error(stream->loop, errno);
