@@ -18,7 +18,6 @@ HTTPP - Run HTTP over UDP and Bring Web in Peer or P2P styles.
 * Configurable Congestion Control
 * Per-socket network performance monitor
 * Per-socket bandwidth limitation
-* Multiplex connections on single udp port, saving system resources
 * Extend client/central server style web service transparently
 * Easy to use API, reuse existing http/web and node.js technology
 * Support windows/linux/OSx, RaspberryPi, Android
