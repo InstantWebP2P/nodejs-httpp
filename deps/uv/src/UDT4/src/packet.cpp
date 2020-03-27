@@ -380,7 +380,7 @@ uint32_t CPacket::setMAC(const unsigned char *key, const int len)
     // time cost
     gettimeofday(&stop, NULL);
     secs = (double)(stop.tv_usec - start.tv_usec) / 1000000 + (double)(stop.tv_sec - start.tv_sec);
-    printf("setMAC time taken %f\ns", secs);
+    printf("setMAC time taken %fs\n", secs);
 #endif
 
     return m_nHeader[4];
@@ -451,7 +451,7 @@ int32_t CPacket::chkMAC(const unsigned char *key, const int len)
     // time cost
     gettimeofday(&stop, NULL);
     secs = (double)(stop.tv_usec - start.tv_usec) / 1000000 + (double)(stop.tv_sec - start.tv_sec);
-    printf("chkMAC time taken %f\ns", secs);
+    printf("chkMAC time taken %fs\n", secs);
 #endif
 
     return (expect == (digest[0] ^ digest[1] ^ digest[2] ^ digest[3])) ? 1 : 0;
