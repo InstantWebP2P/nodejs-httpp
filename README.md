@@ -25,10 +25,10 @@ HTTPP - Run HTTP over UDP and Bring Web in Peer or P2P styles.
 
 ### TODO
 
-* Support iOS, WP8
-* Make node-httpp as Node.js module instead of fork
+* Support iOS
 * Add more test cases
-* Improve documents, RFC draft
+* Improve documents
+* RFC protocol draft
 
 
 ### third-party source
