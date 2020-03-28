@@ -215,8 +215,19 @@ int udt_getsockname(UDTSOCKET u, struct sockaddr * name, int * namelen)
 int udt_getsockopt(UDTSOCKET u, int level, int optname, void * optval, int * optlen)
 {
     int rc;
-
-    rc = UDT::getsockopt(u, level, (UDT::SOCKOPT)optname, optval, optlen);
+    // process bool option
+    if ((optname == UDT_UDT_SNDSYN) || (optname == UDT_UDT_SNDSYN) || (optname == UDT_UDT_RENDEZVOUS) ||
+        (optname == UDT_REUSEADDR) || (optname == UDT_REUSEABLE))
+    {
+        bool flag = false;
+        rc = UDT::getsockopt(u, level, (UDT::SOCKOPT)optname, &flag, optlen);
+        *(int *)optval = flag ? 1 : 0;
+        *optlen = sizeof(int);
+    }
+    else 
+    {
+        rc = UDT::getsockopt(u, level, (UDT::SOCKOPT)optname, optval, optlen);
+    }
     if (rc == UDT::ERROR) {
         // error happen
         return -1;
@@ -230,13 +241,17 @@ int udt_setsockopt(UDTSOCKET u, int level, int optname, const void * optval, int
 	int rc;
 
 	// process bool option
-	if ((optname == UDT_UDT_SNDSYN) || (optname == UDT_UDT_SNDSYN) || (optname == UDT_UDT_RENDEZVOUS)) {
-		bool flag = (*(int *)optval) ? true : false;
+    if ((optname == UDT_UDT_SNDSYN) || (optname == UDT_UDT_SNDSYN) || (optname == UDT_UDT_RENDEZVOUS) ||
+        (optname == UDT_REUSEADDR) || (optname == UDT_REUSEABLE))
+    {
+        bool flag = (*(int *)optval) ? true : false;
 		rc = UDT::setsockopt(u, level, (UDT::SOCKOPT)optname, &flag, sizeof(flag));
-	} else {
-		rc = UDT::setsockopt(u, level, (UDT::SOCKOPT)optname, optval, optlen);
-	}
-	if (rc == UDT::ERROR) {
+    }
+    else
+    {
+        rc = UDT::setsockopt(u, level, (UDT::SOCKOPT)optname, optval, optlen);
+    }
+    if (rc == UDT::ERROR) {
 		// error happen
 		return -1;
 	} else {

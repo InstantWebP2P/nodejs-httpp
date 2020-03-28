@@ -263,6 +263,31 @@ int uv_udt_udpfd(uv_udt_t* handle, uv_os_sock_t * udpfd) {
   return udt_getsockopt(handle->udtfd, 0, (int)UDT_UDT_UDPFD, udpfd, &optlen);
 }
 
+int uv_udt_reuseaddr(uv_udt_t *handle, int32_t yes) {
+    int optval = yes;
+
+    if (handle->type != UV_UDT)
+    {
+        uv__set_artificial_error(handle->loop, UV_EFAULT);
+        return -1;
+    }
+
+    return udt_setsockopt(handle->udtfd, 0, (int)UDT_UDT_REUSEADDR, &optval, sizeof optval);
+}
+
+int uv_udt_reuseable(uv_udt_t *handle, int32_t yes)
+{
+    int optval = yes;
+
+    if (handle->type != UV_UDT)
+    {
+        uv__set_artificial_error(handle->loop, UV_EFAULT);
+        return -1;
+    }
+
+    return udt_setsockopt(handle->udtfd, 0, (int)UDT_UDT_REUSEABLE, &optval, sizeof optval);
+}
+
 
 int uv_udp_bind(uv_udp_t* handle, struct sockaddr_in addr,
     unsigned int flags) {

@@ -987,7 +987,7 @@ void CRcvQueue::init(int qsize, int payload, int version, int hsize, CChannel* c
    sockaddr* addr = (AF_INET == self->m_UnitQueue.m_iIPversion) ? (sockaddr*) new sockaddr_in : (sockaddr*) new sockaddr_in6;
    CUDT* u = NULL;
    int32_t id;
-   ///static int32_t hpcnt = 0;
+
 
    while (!self->m_bClosing)
    {
@@ -1035,7 +1035,11 @@ void CRcvQueue::init(int qsize, int payload, int version, int hsize, CChannel* c
     	 // Hole punching packet reuse keep-alive packet with id == 0
     	 // TBD...DOS defense
     	 if (unit->m_Packet.getFlag() && (unit->m_Packet.getType() == 1)) {
-             ///if ((hpcnt++ % 16) == 0) printf("Ignore hole punching packet...\n");
+             #ifdef DEBUG_DDOS
+             static int32_t hpcnt = 0;
+             if ((hpcnt++ % 16) == 0) printf("Ignore hole punching packet...\n");
+             #endif
+
              goto TIMER_CHECK;
     	 }
     	 ////////////////////////////////////////////////////////////
@@ -1073,8 +1077,10 @@ void CRcvQueue::init(int qsize, int payload, int version, int hsize, CChannel* c
             	// Process keep-alive packet in case peer's IP changed
             	// if cookie and IPversion matched, then update peer's sockaddr info
             	if (unit->m_Packet.getFlag() && (unit->m_Packet.getType() == 1)) {
-            		printf("Warning ip changed, keep-alive packet.m_iMsgNo: 0x%x, m_pCookie ^ u->m_iPeerISN: 0x%x\n",
+                    #ifdef DEBUG_DDOS
+                    printf("Warning ip changed, keep-alive packet.m_iMsgNo: 0x%x, m_pCookie ^ u->m_iPeerISN: 0x%x\n",
                            unit->m_Packet.m_iMsgNo, u->m_pCookie ^ u->m_iPeerISN);
+                    #endif
 
             		if ((addr->sa_family == u->m_iIPversion) &&
             			(unit->m_Packet.m_iMsgNo == (u->m_pCookie ^ u->m_iPeerISN)) &&
@@ -1103,7 +1109,9 @@ void CRcvQueue::init(int qsize, int payload, int version, int hsize, CChannel* c
             				// increase peer address changed count
             				u->m_pPeerChanged ++;
 
+                            #ifdef DEBUG_DDOS
             				printf("Warning peer IP changed\n");
+                            #endif
             			} else {
             				// send ctrlpkt to shutdown peer
             				CPacket _ctrlpkt;
@@ -1113,12 +1121,16 @@ void CRcvQueue::init(int qsize, int payload, int version, int hsize, CChannel* c
             					_ctrlpkt.setMAC(u->m_pSecKey, 16);
             				}
             				u->m_pSndQueue->sendto(addr, _ctrlpkt);
-
-            				printf("Warning shutdown peer\n");
+                            
+                            #ifdef DEBUG_DDOS
+                            printf("Warning shutdown peer\n");
+                            #endif
             			}
             		} else {
-            			static int _dos_crack_hit = 1;
+                        #ifdef DEBUG_DDOS
+                        static int _dos_crack_hit = 1;
             			printf("Warning DOS crack %d times\n", _dos_crack_hit ++);
+                        #endif
             		}
             	} else if (unit->m_Packet.getFlag() == 0) {
             		// TBD... recovery from data packet

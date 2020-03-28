@@ -304,6 +304,7 @@ private: // Options
    int m_iSndTimeOut;                           // sending timeout in milliseconds
    int m_iRcvTimeOut;                           // receiving timeout in milliseconds
    bool m_bReuseAddr;                           // reuse an exiting port or not, for UDP multiplexer
+   bool m_bReuseAble;                           // allow another UDT socket to use own UDP multiplexer
    int64_t m_llMaxBW;                           // maximum data transfer rate (threshold)
    int m_iQos;                                  // UDT socket qos/prioriry: 0 - normal, 1 - high priority
 

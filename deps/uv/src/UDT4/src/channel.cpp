@@ -137,7 +137,7 @@ void CChannel::open(const sockaddr* addr)
    }
    else
    {
-      //sendto or WSASendTo will also automatically bind the socket
+      // sendto or WSASendTo will also automatically bind the socket
       addrinfo hints;
       addrinfo* res;
 

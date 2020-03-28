@@ -682,6 +682,12 @@ UV_EXTERN int uv_udt_bindfd(uv_udt_t* handle, uv_os_sock_t udpfd);
 /* retrieve udp socket/fd associated with udt socket */
 UV_EXTERN int uv_udt_udpfd(uv_udt_t *handle, uv_os_sock_t * udpfd);
 
+/* set if REUSE existing ADDRESS created by previous udt socket */
+UV_EXTERN int uv_udt_reuseaddr(uv_udt_t *handle, int32_t yes);
+
+/* set if ADDRESS reusable for another udt socket */
+UV_EXTERN int uv_udt_reuseable(uv_udt_t *handle, int32_t yes);
+
 /*
  * uv_udt_connect, uv_udt_connect6
  * These functions establish IPv4 and IPv6 UDT connections. Provide an

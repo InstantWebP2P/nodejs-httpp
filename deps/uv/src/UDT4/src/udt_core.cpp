@@ -263,6 +263,7 @@ CUDT::CUDT()
    m_iSndTimeOut = -1;
    m_iRcvTimeOut = -1;
    m_bReuseAddr = true;
+   m_bReuseAble = true;
    m_llMaxBW = -1;
    m_iQos = 0;
 
@@ -325,7 +326,8 @@ CUDT::CUDT(const CUDT& ancestor)
    m_bRendezvous = ancestor.m_bRendezvous;
    m_iSndTimeOut = ancestor.m_iSndTimeOut;
    m_iRcvTimeOut = ancestor.m_iRcvTimeOut;
-   m_bReuseAddr = true;	// this must be true, because all accepted sockets shared the same port with the listener
+   m_bReuseAddr = true; // this must be true, because all accepted sockets shared the same port with the listener
+   m_bReuseAble = true;
    m_llMaxBW = ancestor.m_llMaxBW;
    m_iQos = ancestor.m_iQos;
 
@@ -607,6 +609,12 @@ void CUDT::setOpt(UDTOpt optName, const void* optval, int optlen)
 	  memcpy(m_pSecKey, optval, (optlen < sizeof(m_pSecKey)) ? optlen : sizeof(m_pSecKey));
       break;
 
+   case UDT_REUSEABLE:
+       if (m_bOpened)
+           throw CUDTException(5, 1, 0);
+       m_bReuseAble = *(bool *)optval;
+       break;
+
    default:
       throw CUDTException(5, 0, 0);
    }
@@ -762,6 +770,11 @@ void CUDT::getOpt(UDTOpt optName, void* optval, int& optlen)
       *(SYSSOCKET *)optval = s_UDTUnited.getUDPFD(m_SocketID);
       optlen = sizeof(SYSSOCKET);
       break;
+
+   case UDT_REUSEABLE:
+       *(bool *)optval = m_bReuseAble;
+       optlen = sizeof(bool);
+       break;
 
    default:
       throw CUDTException(5, 0, 0);

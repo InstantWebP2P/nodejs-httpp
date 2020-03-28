@@ -1589,7 +1589,7 @@ void CUDTUnited::updateMux(CUDTSocket* s, const sockaddr* addr, const UDPSOCKET*
       // find a reusable address
       for (map<int, CMultiplexer>::iterator i = m_mMultiplexer.begin(); i != m_mMultiplexer.end(); ++ i)
       {
-         if ((i->second.m_iIPversion == s->m_pUDT->m_iIPversion) && (i->second.m_iMSS == s->m_pUDT->m_iMSS) && i->second.m_bReusable)
+         if ((i->second.m_iIPversion == s->m_pUDT->m_iIPversion) && (i->second.m_iMSS == s->m_pUDT->m_iMSS) && i->second.m_bReuseAble)
          {
             if (i->second.m_iPort == port)
             {
@@ -1609,7 +1609,7 @@ void CUDTUnited::updateMux(CUDTSocket* s, const sockaddr* addr, const UDPSOCKET*
    m.m_iMSS = s->m_pUDT->m_iMSS;
    m.m_iIPversion = s->m_pUDT->m_iIPversion;
    m.m_iRefCount = 1;
-   m.m_bReusable = s->m_pUDT->m_bReuseAddr;
+   m.m_bReuseAble = s->m_pUDT->m_bReuseAble;
    m.m_iID = s->m_SocketID;
 
    m.m_pChannel = new CChannel(s->m_pUDT->m_iIPversion);

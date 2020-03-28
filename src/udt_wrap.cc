@@ -129,6 +129,8 @@ void UDTWrap::Initialize(Handle<Object> target) {
   NODE_SET_PROTOTYPE_METHOD(t, "setSocketMbw", SetSocketMbw);
   NODE_SET_PROTOTYPE_METHOD(t, "setSocketMbs", SetSocketMbs);
   NODE_SET_PROTOTYPE_METHOD(t, "setSocketSec", SetSocketSec);
+  NODE_SET_PROTOTYPE_METHOD(t, "setReuseAddr", SetReuseAddr);
+  NODE_SET_PROTOTYPE_METHOD(t, "setReuseAble", SetReuseAble);
   NODE_SET_PROTOTYPE_METHOD(t, "punchhole", Punchhole);
   NODE_SET_PROTOTYPE_METHOD(t, "punchhole6", Punchhole6);
   NODE_SET_PROTOTYPE_METHOD(t, "getnetperf", GetNetPerf);
@@ -739,6 +741,40 @@ Handle<Value> UDTWrap::SetSocketSec(const Arguments& args) {
   if (r) SetErrno(uv_last_error(uv_default_loop()));
 
   return scope.Close(Integer::New(r));
+}
+
+// set socket if REUSE ADDRESS
+Handle<Value> UDTWrap::SetReuseAddr(const Arguments &args)
+{
+    HandleScope scope;
+
+    UNWRAP(UDTWrap)
+
+    int yes = args[0]->Int32Value();
+
+    int r = uv_udt_reuseaddr(&wrap->handle_, yes);
+    // Error starting the udt.
+    if (r)
+        SetErrno(uv_last_error(uv_default_loop()));
+
+    return scope.Close(Integer::New(r));
+}
+
+// set socket if support REUSE ADDRESS
+Handle<Value> UDTWrap::SetReuseAble(const Arguments &args)
+{
+    HandleScope scope;
+
+    UNWRAP(UDTWrap)
+
+    int yes = args[0]->Int32Value();
+
+    int r = uv_udt_reuseable(&wrap->handle_, yes);
+    // Error starting the udt.
+    if (r)
+        SetErrno(uv_last_error(uv_default_loop()));
+
+    return scope.Close(Integer::New(r));
 }
 
 Handle<Value> UDTWrap::Punchhole(const Arguments& args) {

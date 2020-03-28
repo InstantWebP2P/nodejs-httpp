@@ -519,9 +519,9 @@ struct CMultiplexer
    int m_iIPversion;		// IP version
    int m_iMSS;              // Maximum Segment Size
    int m_iRefCount;         // number of UDT instances that are associated with this multiplexer
-   bool m_bReusable;        // if this one can be shared with others
+   bool m_bReuseAble;       // if this one can be shared with others
 
-   int m_iID;               // multiplexer ID
+   int m_iID;               // multiplexer ID, the first UDT ID to create it
 };
 
 #endif

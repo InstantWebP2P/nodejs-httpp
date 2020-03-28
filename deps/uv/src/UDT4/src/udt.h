@@ -131,39 +131,41 @@ enum UDTSTATUS {INIT = 1, OPENED, LISTENING, CONNECTING, CONNECTED, BROKEN, CLOS
 
 enum UDTOpt
 {
-   UDT_MSS = 0,    // the Maximum Transfer Unit
-   UDT_SNDSYN,     // if sending is blocking
-   UDT_RCVSYN,     // if receiving is blocking
-   UDT_CC,         // custom congestion control algorithm
-   UDT_FC,         // Flight flag size (window size)
-   UDT_SNDBUF,     // maximum buffer in sending queue
-   UDT_RCVBUF,     // UDT receiving buffer size
-   UDT_LINGER,     // waiting for unsent data when closing
-   UDP_SNDBUF,     // UDP sending buffer size
-   UDP_RCVBUF,     // UDP receiving buffer size
-   UDT_MAXMSG,     // maximum datagram message size
-   UDT_MSGTTL,     // time-to-live of a datagram message
-   UDT_RENDEZVOUS, // rendezvous connection mode
-   UDT_SNDTIMEO,   // send() timeout
-   UDT_RCVTIMEO,   // recv() timeout
-   UDT_REUSEADDR,  // reuse an existing port or create a new one
-   UDT_MAXBW,      // maximum bandwidth (bytes per second) that the connection can use
-   UDT_STATE,      // current socket state, see UDTSTATUS, read only
-   UDT_EVENT,      // current available events associated with the socket
-   UDT_SNDDATA,    // size of data in the sending buffer
-   UDT_RCVDATA,    // size of data available for recv
-   UDT_OSFD,       // OS fd associated with the UDT socket, read only.
-                   // it's mainly used to hook UDT event to another event loop,
-                   // for example, integrate UDT socket event mechanism to epoll.
-                   // notes: OSFD just notify some event happened, please use getting UDT_EVENT option
-                   // to retrieve the real read/write/error event state.
-                   // to enable this function, please add -DEVPIPE_OSFD in compile flag.
-                   // to get this option, please pass os-specific socket definitions, for example,
-                   // in Linux pass int, while in windows pass SOCKET.
-   UDT_QOS,        // UDT socket Qos/priority
-   UDT_SECMOD,     // socket security mode: 0 - no secure, 1 - authentication control packet, 2 - authentication both control and data packet
-   UDT_SECKEY,     // symmetric key
-   UDT_UDPFD       // UDP fd associated with the UDT socket, read only.
+    UDT_MSS = 0,    // the Maximum Transfer Unit
+    UDT_SNDSYN,     // if sending is blocking
+    UDT_RCVSYN,     // if receiving is blocking
+    UDT_CC,         // custom congestion control algorithm
+    UDT_FC,         // Flight flag size (window size)
+    UDT_SNDBUF,     // maximum buffer in sending queue
+    UDT_RCVBUF,     // UDT receiving buffer size
+    UDT_LINGER,     // waiting for unsent data when closing
+    UDP_SNDBUF,     // UDP sending buffer size
+    UDP_RCVBUF,     // UDP receiving buffer size
+    UDT_MAXMSG,     // maximum datagram message size
+    UDT_MSGTTL,     // time-to-live of a datagram message
+    UDT_RENDEZVOUS, // rendezvous connection mode
+    UDT_SNDTIMEO,   // send() timeout
+    UDT_RCVTIMEO,   // recv() timeout
+    UDT_REUSEADDR,  // reuse an existing port or create a new one
+    UDT_MAXBW,      // maximum bandwidth (bytes per second) that the connection can use
+    UDT_STATE,      // current socket state, see UDTSTATUS, read only
+    UDT_EVENT,      // current available events associated with the socket
+    UDT_SNDDATA,    // size of data in the sending buffer
+    UDT_RCVDATA,    // size of data available for recv
+    UDT_OSFD,       // OS fd associated with the UDT socket, read only.
+                    // it's mainly used to hook UDT event to another event loop,
+                    // for example, integrate UDT socket event mechanism to epoll.
+                    // notes: OSFD just notify some event happened, please use getting UDT_EVENT option
+                    // to retrieve the real read/write/error event state.
+                    // to enable this function, please add -DEVPIPE_OSFD in compile flag.
+                    // to get this option, please pass os-specific socket definitions, for example,
+                    // in Linux pass int, while in windows pass SOCKET
+    UDT_QOS,        // UDT socket Qos/priority
+    UDT_SECMOD,     // socket security mode: 0 - no secure, 1 - authentication control packet, 2 - authentication both control and data packet
+    UDT_SECKEY,     // symmetric key
+    UDT_UDPFD,      // UDP fd associated with the UDT socket, read only
+    UDT_REUSEABLE,  // set if ADDRESS reusable for other UDT socket
+    UDT_OPT_MAX
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -195,7 +197,7 @@ struct CPerfMon
    int pktRecvNAK;                      // number of received NAK packets
    double mbpsSendRate;                 // sending rate in Mb/s
    double mbpsRecvRate;                 // receiving rate in Mb/s
-   int64_t usSndDuration;		          // busy sending time (i.e., idle time exclusive)
+   int64_t usSndDuration;		        // busy sending time (i.e., idle time exclusive)
 
    // instant measurements
    double usPktSndPeriod;               // packet sending period, in microseconds

@@ -69,6 +69,12 @@ class UDTWrap : public StreamWrap {
   // set socket security mode
   static v8::Handle<v8::Value> SetSocketSec(const v8::Arguments& args);
 
+  // set socket if REUSE ADDRESS
+  static v8::Handle<v8::Value> SetReuseAddr(const v8::Arguments &args);
+
+  // set socket if support REUSE ADDRESS
+  static v8::Handle<v8::Value> SetReuseAble(const v8::Arguments &args);
+
   // bind socket in existing udp/fd
   static v8::Handle<v8::Value> Bindfd(const v8::Arguments& args);
 
