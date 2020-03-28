@@ -2,7 +2,7 @@
 
 # building
 ./appbld make distclean
-./appbld ./configure --prefix=/appins
+./appbld ./configure --gdb --debug --prefix=/appins
 ./appbld make -j 6 
 ./appbld make install
 
