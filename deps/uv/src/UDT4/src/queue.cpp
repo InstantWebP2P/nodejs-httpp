@@ -109,9 +109,9 @@ int CUnitQueue::init(int size, int mss, int version)
       tempu[i].m_iFlag = 0;
       tempu[i].m_Packet.m_pcData = tempb + i * mss;
    }
-   tempq->m_pUnit = tempu;
+   tempq->m_pUnit   = tempu;
    tempq->m_pBuffer = tempb;
-   tempq->m_iSize = size;
+   tempq->m_iSize   = size;
 
    m_pQEntry = m_pCurrQueue = m_pLastQueue = tempq;
    m_pQEntry->m_pNext = m_pQEntry;
@@ -173,12 +173,12 @@ int CUnitQueue::increase()
       tempu[i].m_iFlag = 0;
       tempu[i].m_Packet.m_pcData = tempb + i * m_iMSS;
    }
-   tempq->m_pUnit = tempu;
+   tempq->m_pUnit   = tempu;
    tempq->m_pBuffer = tempb;
-   tempq->m_iSize = size;
+   tempq->m_iSize   = size;
 
    m_pLastQueue->m_pNext = tempq;
-   m_pLastQueue = tempq;
+   m_pLastQueue          = tempq;
    m_pLastQueue->m_pNext = m_pQEntry;
 
    m_iSize += size;
@@ -1180,9 +1180,8 @@ void CRcvQueue::init(int qsize, int payload, int version, int hsize, CChannel* c
             }
         }
 
-    TIMER_CHECK:
+TIMER_CHECK:
         // take care of the timing event for all UDT sockets
-
         uint64_t currtime;
         CTimer::rdtsc(currtime);
 

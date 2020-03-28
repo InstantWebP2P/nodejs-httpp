@@ -54,8 +54,8 @@ class CUDT;
 
 struct CUnit
 {
-   CPacket m_Packet;		// packet
-   int m_iFlag;			// 0: free, 1: occupied, 2: msg read but not freed (out-of-order), 3: msg dropped
+   CPacket m_Packet;    // packet
+   int m_iFlag;         // 0: free, 1: occupied, 2: msg read but not freed (out-of-order), 3: msg dropped
 };
 
 class CUnitQueue
@@ -112,21 +112,21 @@ private:
    {
       CUnit* m_pUnit;		// unit queue
       char* m_pBuffer;		// data buffer
-      int m_iSize;		// size of each queue
+      int m_iSize;          // size of each queue
 
       CQEntry* m_pNext;
    }
-   *m_pQEntry,			// pointer to the first unit queue
-   *m_pCurrQueue,		// pointer to the current available queue
-   *m_pLastQueue;		// pointer to the last unit queue
+   *m_pQEntry,              // pointer to the first unit queue
+   *m_pCurrQueue,           // pointer to the current available queue
+   *m_pLastQueue;           // pointer to the last unit queue
 
-   CUnit* m_pAvailUnit;         // recent available unit
+   CUnit* m_pAvailUnit;     // recent available unit
 
-   int m_iSize;			// total size of the unit queue, in number of packets
-   int m_iCount;		// total number of valid packets in the queue
+   int m_iSize;             // total size of the unit queue, in number of packets
+   int m_iCount;            // total number of valid packets in the queue
 
-   int m_iMSS;			// unit buffer size
-   int m_iIPversion;		// IP version
+   int m_iMSS;              // unit buffer size
+   int m_iIPversion;        // IP version
 
 private:
    CUnitQueue(const CUnitQueue&);
@@ -135,10 +135,10 @@ private:
 
 struct CSNode
 {
-   CUDT* m_pUDT;		// Pointer to the instance of CUDT socket
-   uint64_t m_llTimeStamp;      // Time Stamp
+   CUDT* m_pUDT;		    // Pointer to the instance of CUDT socket
+   uint64_t m_llTimeStamp;  // Time Stamp
 
-   int m_iHeapLoc;		// location on the heap, -1 means not on the heap
+   int m_iHeapLoc;          // location on the heap, -1 means not on the heap
 };
 
 class CSndUList
@@ -267,10 +267,10 @@ public:
    void update(const CUDT* u);
 
 public:
-   CRNode* m_pUList;		// the head node
+   CRNode* m_pUList;    // the head node
 
 private:
-   CRNode* m_pLast;		// the last node
+   CRNode* m_pLast;     // the last node
 
 private:
    CRcvUList(const CRcvUList&);
@@ -325,10 +325,10 @@ public:
 private:
    struct CBucket
    {
-      int32_t m_iID;		// Socket ID
+      int32_t m_iID;	// Socket ID
       CUDT* m_pUDT;		// Socket instance
 
-      CBucket* m_pNext;		// next bucket
+      CBucket* m_pNext;	// next bucket
    } **m_pBucket;		// list of buckets (the hash table)
 
    int m_iHashSize;		// size of hash table
@@ -354,13 +354,13 @@ public:
 private:
    struct CRL
    {
-      UDTSOCKET m_iID;			// UDT socket ID (self)
-      CUDT* m_pUDT;			// UDT instance
-      int m_iIPversion;                 // IP version
+      UDTSOCKET m_iID;              // UDT socket ID (self)
+      CUDT* m_pUDT;                 // UDT instance
+      int m_iIPversion;             // IP version
       sockaddr* m_pPeerAddr;		// UDT sonnection peer address
       uint64_t m_ullTTL;			// the time that this request expires
    };
-   std::list<CRL> m_lRendezvousID;      // The sockets currently in rendezvous mode
+   std::list<CRL> m_lRendezvousID;  // The sockets currently in rendezvous mode
 
    pthread_mutex_t m_RIDVectorLock;
 };
