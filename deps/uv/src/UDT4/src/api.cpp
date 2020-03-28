@@ -235,6 +235,11 @@ int CUDTUnited::startup()
       pthread_mutex_init(&m_GCStopLock, NULL);
       pthread_cond_init(&m_GCStopCond, NULL);
       pthread_create(&m_GCThread, NULL, garbageCollect, this);
+
+    #ifndef OSX
+      pthread_setname_np(m_GCThread, "UDT.GC");
+    #endif
+
    #else
       m_GCStopLock = CreateMutex(NULL, false, NULL);
       m_GCStopCond = CreateEvent(NULL, false, false, NULL);
@@ -242,6 +247,8 @@ int CUDTUnited::startup()
       m_GCThread = CreateThread(NULL, 0, garbageCollect, this, 0, &ThreadID);
       // adjust thread priority
       ///assert(SetThreadPriority(m_GCThread, THREAD_PRIORITY_ABOVE_NORMAL));
+
+      SetThreadName(threadID, "UDT.GC");
    #endif
 
       ///////////////////////////////////
@@ -1586,7 +1593,7 @@ void CUDTUnited::updateMux(CUDTSocket* s, const sockaddr* addr, const UDPSOCKET*
    {
       int port = (AF_INET == s->m_pUDT->m_iIPversion) ? ntohs(((sockaddr_in*)addr)->sin_port) : ntohs(((sockaddr_in6*)addr)->sin6_port);
 
-      // find a reusable address
+      // find a reusable Mux
       for (map<int, CMultiplexer>::iterator i = m_mMultiplexer.begin(); i != m_mMultiplexer.end(); ++ i)
       {
          if ((i->second.m_iIPversion == s->m_pUDT->m_iIPversion) && (i->second.m_iMSS == s->m_pUDT->m_iMSS) && i->second.m_bReuseAble)
@@ -1594,10 +1601,10 @@ void CUDTUnited::updateMux(CUDTSocket* s, const sockaddr* addr, const UDPSOCKET*
             if (i->second.m_iPort == port)
             {
                // reuse the existing multiplexer
-               ++ i->second.m_iRefCount;
+                                     ++ i->second.m_iRefCount;
                s->m_pUDT->m_pSndQueue = i->second.m_pSndQueue;
                s->m_pUDT->m_pRcvQueue = i->second.m_pRcvQueue;
-               s->m_iMuxID = i->second.m_iID;
+               s->m_iMuxID            = i->second.m_iID;
                return;
             }
          }
@@ -1606,11 +1613,11 @@ void CUDTUnited::updateMux(CUDTSocket* s, const sockaddr* addr, const UDPSOCKET*
 
    // a new multiplexer is needed
    CMultiplexer m;
-   m.m_iMSS = s->m_pUDT->m_iMSS;
+   m.m_iMSS       = s->m_pUDT->m_iMSS;
    m.m_iIPversion = s->m_pUDT->m_iIPversion;
-   m.m_iRefCount = 1;
+   m.m_iRefCount  = 1;
    m.m_bReuseAble = s->m_pUDT->m_bReuseAble;
-   m.m_iID = s->m_SocketID;
+   m.m_iID        = s->m_SocketID;
 
    m.m_pChannel = new CChannel(s->m_pUDT->m_iIPversion);
    m.m_pChannel->setSndBufSize(s->m_pUDT->m_iUDPSndBufSize);
@@ -1644,9 +1651,9 @@ void CUDTUnited::updateMux(CUDTSocket* s, const sockaddr* addr, const UDPSOCKET*
 
    m_mMultiplexer[m.m_iID] = m;
 
-   s->m_pUDT->m_pSndQueue = m.m_pSndQueue;
-   s->m_pUDT->m_pRcvQueue = m.m_pRcvQueue;
-   s->m_iMuxID = m.m_iID;
+   s->m_pUDT->m_pSndQueue  = m.m_pSndQueue;
+   s->m_pUDT->m_pRcvQueue  = m.m_pRcvQueue;
+   s->m_iMuxID             = m.m_iID;
 }
 
 void CUDTUnited::updateMux(CUDTSocket* s, const CUDTSocket* ls)
@@ -1658,18 +1665,16 @@ void CUDTUnited::updateMux(CUDTSocket* s, const CUDTSocket* ls)
 
    int port = (AF_INET == ls->m_iIPversion) ? ntohs(((sockaddr_in*)ls->m_pSelfAddr)->sin_port) : ntohs(((sockaddr_in6*)ls->m_pSelfAddr)->sin6_port);
 
-   // find the listener's address
-   for (map<int, CMultiplexer>::iterator i = m_mMultiplexer.begin(); i != m_mMultiplexer.end(); ++ i)
-   {
-      if (i->second.m_iPort == port)
-      {
-         // reuse the existing multiplexer
-         ++ i->second.m_iRefCount;
-         s->m_pUDT->m_pSndQueue = i->second.m_pSndQueue;
-         s->m_pUDT->m_pRcvQueue = i->second.m_pRcvQueue;
-         s->m_iMuxID = i->second.m_iID;
-         return;
-      }
+   // find the listener's Mux by ID
+   map<int, CMultiplexer>::iterator me = m_mMultiplexer.find(ls->m_iMuxID);
+   if (me != m_mMultiplexer.end()) {
+       // reuse the existing multiplexer
+                             ++ me->second.m_iRefCount;
+       s->m_pUDT->m_pSndQueue = me->second.m_pSndQueue;
+       s->m_pUDT->m_pRcvQueue = me->second.m_pRcvQueue;
+       s->m_iMuxID            = me->second.m_iID;
+   } else {
+       throw CUDTException(5, 6, 0);
    }
 }
 
@@ -1679,81 +1684,85 @@ void CUDTUnited::updateMux(CUDTSocket* s, const CUDTSocket* ls)
    DWORD WINAPI CUDTUnited::garbageCollect(LPVOID p)
 #endif
 {
-   CUDTUnited* self = (CUDTUnited*)p;
+#ifdef OSX
+    pthread_setname_np("UDT.GC");
+#endif
 
-   CGuard gcguard(self->m_GCStopLock);
+    CUDTUnited *self = (CUDTUnited *)p;
 
-   while (!self->m_bClosing)
-   {
-      self->checkBrokenSockets();
+    CGuard gcguard(self->m_GCStopLock);
 
-      #ifdef WIN32
-         self->checkTLSValue();
-      #endif
+    while (!self->m_bClosing)
+    {
+        self->checkBrokenSockets();
 
-      #ifndef WIN32
-         timeval now;
-         timespec timeout;
-         gettimeofday(&now, 0);
-         timeout.tv_sec = now.tv_sec + 1; // TBD... 1s->3s to adapt low speed network
-         timeout.tv_nsec = now.tv_usec * 1000;
+#ifdef WIN32
+        self->checkTLSValue();
+#endif
 
-         pthread_cond_timedwait(&self->m_GCStopCond, &self->m_GCStopLock, &timeout);
-      #else
-         WaitForSingleObject(self->m_GCStopCond, 1000); // TBD... 1s->3s to adapt low speed network
-      #endif
-   }
+#ifndef WIN32
+        timeval now;
+        timespec timeout;
+        gettimeofday(&now, 0);
+        timeout.tv_sec = now.tv_sec + 1; // TBD... 1s->3s to adapt low speed network
+        timeout.tv_nsec = now.tv_usec * 1000;
 
-   // remove all sockets and multiplexers
-   ///printf("%s.%s.%d\n", __FILE__, __FUNCTION__, __LINE__);
-   CGuard::enterCS(self->m_ControlLock);
-   ///printf("%s.%s.%d\n", __FILE__, __FUNCTION__, __LINE__);
-   for (map<UDTSOCKET, CUDTSocket*>::iterator i = self->m_Sockets.begin(); i != self->m_Sockets.end(); ++ i)
-   {
-      i->second->m_pUDT->m_bBroken = true;
-      i->second->m_pUDT->close();
-      i->second->m_Status = CLOSED;
-      i->second->m_TimeStamp = CTimer::getTime();
-      self->m_ClosedSockets[i->first] = i->second;
+        pthread_cond_timedwait(&self->m_GCStopCond, &self->m_GCStopLock, &timeout);
+#else
+        WaitForSingleObject(self->m_GCStopCond, 1000); // TBD... 1s->3s to adapt low speed network
+#endif
+    }
 
-      // remove from listener's queue
-      map<UDTSOCKET, CUDTSocket*>::iterator ls = self->m_Sockets.find(i->second->m_ListenSocket);
-      if (ls == self->m_Sockets.end())
-      {
-         ls = self->m_ClosedSockets.find(i->second->m_ListenSocket);
-         if (ls == self->m_ClosedSockets.end())
-            continue;
-      }
+    // remove all sockets and multiplexers
+    ///printf("%s.%s.%d\n", __FILE__, __FUNCTION__, __LINE__);
+    CGuard::enterCS(self->m_ControlLock);
+    ///printf("%s.%s.%d\n", __FILE__, __FUNCTION__, __LINE__);
+    for (map<UDTSOCKET, CUDTSocket *>::iterator i = self->m_Sockets.begin(); i != self->m_Sockets.end(); ++i)
+    {
+        i->second->m_pUDT->m_bBroken = true;
+        i->second->m_pUDT->close();
+        i->second->m_Status = CLOSED;
+        i->second->m_TimeStamp = CTimer::getTime();
+        self->m_ClosedSockets[i->first] = i->second;
 
-      CGuard::enterCS(ls->second->m_AcceptLock);
-      ls->second->m_pQueuedSockets->erase(i->second->m_SocketID);
-      ls->second->m_pAcceptSockets->erase(i->second->m_SocketID);
-      CGuard::leaveCS(ls->second->m_AcceptLock);
-   }
-   self->m_Sockets.clear();
+        // remove from listener's queue
+        map<UDTSOCKET, CUDTSocket *>::iterator ls = self->m_Sockets.find(i->second->m_ListenSocket);
+        if (ls == self->m_Sockets.end())
+        {
+            ls = self->m_ClosedSockets.find(i->second->m_ListenSocket);
+            if (ls == self->m_ClosedSockets.end())
+                continue;
+        }
 
-   for (map<UDTSOCKET, CUDTSocket*>::iterator j = self->m_ClosedSockets.begin(); j != self->m_ClosedSockets.end(); ++ j)
-   {
-      j->second->m_TimeStamp = 0;
-   }
-   ///printf("%s.%s.%d\n", __FILE__, __FUNCTION__, __LINE__);
-   CGuard::leaveCS(self->m_ControlLock);
+        CGuard::enterCS(ls->second->m_AcceptLock);
+        ls->second->m_pQueuedSockets->erase(i->second->m_SocketID);
+        ls->second->m_pAcceptSockets->erase(i->second->m_SocketID);
+        CGuard::leaveCS(ls->second->m_AcceptLock);
+    }
+    self->m_Sockets.clear();
 
-   while (true)
-   {
-      self->checkBrokenSockets();
-      ///printf("%s.%s.%d\n", __FILE__, __FUNCTION__, __LINE__);
-      CGuard::enterCS(self->m_ControlLock);
-      ///printf("%s.%s.%d\n", __FILE__, __FUNCTION__, __LINE__);
-      bool empty = self->m_ClosedSockets.empty();
-      CGuard::leaveCS(self->m_ControlLock);
-      ///printf("%s.%s.%d\n", __FILE__, __FUNCTION__, __LINE__);
+    for (map<UDTSOCKET, CUDTSocket *>::iterator j = self->m_ClosedSockets.begin(); j != self->m_ClosedSockets.end(); ++j)
+    {
+        j->second->m_TimeStamp = 0;
+    }
+    ///printf("%s.%s.%d\n", __FILE__, __FUNCTION__, __LINE__);
+    CGuard::leaveCS(self->m_ControlLock);
 
-      if (empty)
-         break;
+    while (true)
+    {
+        self->checkBrokenSockets();
+        ///printf("%s.%s.%d\n", __FILE__, __FUNCTION__, __LINE__);
+        CGuard::enterCS(self->m_ControlLock);
+        ///printf("%s.%s.%d\n", __FILE__, __FUNCTION__, __LINE__);
+        bool empty = self->m_ClosedSockets.empty();
+        CGuard::leaveCS(self->m_ControlLock);
+        ///printf("%s.%s.%d\n", __FILE__, __FUNCTION__, __LINE__);
 
-      CTimer::sleep();
-   }
+        if (empty)
+            break;
+
+        CTimer::sleep();
+    }
 
    #ifndef WIN32
       return NULL;

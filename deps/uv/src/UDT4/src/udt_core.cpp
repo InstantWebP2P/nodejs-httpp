@@ -262,8 +262,8 @@ CUDT::CUDT()
    m_bRendezvous = false;
    m_iSndTimeOut = -1;
    m_iRcvTimeOut = -1;
-   m_bReuseAddr = true;
-   m_bReuseAble = true;
+   m_bReuseAddr = false; // always create new Mux in default for connect socket
+   m_bReuseAble = true;  // alwasy allow Mux reusable and sharable
    m_llMaxBW = -1;
    m_iQos = 0;
 
@@ -327,7 +327,7 @@ CUDT::CUDT(const CUDT& ancestor)
    m_iSndTimeOut = ancestor.m_iSndTimeOut;
    m_iRcvTimeOut = ancestor.m_iRcvTimeOut;
    m_bReuseAddr = true; // this must be true, because all accepted sockets shared the same port with the listener
-   m_bReuseAble = true;
+   m_bReuseAble = true; // this must be true, because all accepted sockets shared the same port with the listener
    m_llMaxBW = ancestor.m_llMaxBW;
    m_iQos = ancestor.m_iQos;
 

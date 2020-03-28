@@ -496,21 +496,27 @@ void CSndQueue::init(CChannel* c, CTimer* t)
    m_pSndUList->m_pWindowLock = &m_WindowLock;
    m_pSndUList->m_pWindowCond = &m_WindowCond;
    m_pSndUList->m_pTimer = m_pTimer;
+   
+#ifndef WIN32
+    if (0 != pthread_create(&m_WorkerThread, NULL, CSndQueue::worker, this))
+    {
+        m_WorkerThread = 0;
+        throw CUDTException(3, 1);
+    }
 
-   #ifndef WIN32
-      if (0 != pthread_create(&m_WorkerThread, NULL, CSndQueue::worker, this))
-      {
-         m_WorkerThread = 0;
-         throw CUDTException(3, 1);
-      }
-   #else
-      DWORD threadID;
-      m_WorkerThread = CreateThread(NULL, 0, CSndQueue::worker, this, 0, &threadID);
-      if (NULL == m_WorkerThread)
-         throw CUDTException(3, 1);
-      // adjust thread priority
-      ///assert(SetThreadPriority(m_WorkerThread, THREAD_PRIORITY_BELOW_NORMAL/*THREAD_PRIORITY_ABOVE_NORMAL*/));
-   #endif
+#ifndef OSX
+    pthread_setname_np(m_WorkerThread, "UDT.CSndQueue");
+#endif
+
+#else
+   DWORD threadID;
+   m_WorkerThread = CreateThread(NULL, 0, CSndQueue::worker, this, 0, &threadID);
+   if (NULL == m_WorkerThread)
+       throw CUDTException(3, 1);
+       // adjust thread priority
+       ///assert(SetThreadPriority(m_WorkerThread, THREAD_PRIORITY_BELOW_NORMAL/*THREAD_PRIORITY_ABOVE_NORMAL*/));
+   SetThreadName(threadID, "UDT.CSndQueue");
+#endif
 }
 
 #ifndef WIN32
@@ -519,6 +525,10 @@ void CSndQueue::init(CChannel* c, CTimer* t)
    DWORD WINAPI CSndQueue::worker(LPVOID param)
 #endif
 {
+#ifdef OSX
+    pthread_setname_np("UDT.CSndQueue");
+#endif
+
    CSndQueue* self = (CSndQueue*)param;
 
    while (!self->m_bClosing)
@@ -960,20 +970,26 @@ void CRcvQueue::init(int qsize, int payload, int version, int hsize, CChannel* c
    m_pRcvUList = new CRcvUList;
    m_pRendezvousQueue = new CRendezvousQueue;
 
-   #ifndef WIN32
-      if (0 != pthread_create(&m_WorkerThread, NULL, CRcvQueue::worker, this))
-      {
-         m_WorkerThread = 0;
-         throw CUDTException(3, 1);
-      }
-   #else
-      DWORD threadID;
-      m_WorkerThread = CreateThread(NULL, 0, CRcvQueue::worker, this, 0, &threadID);
-      if (NULL == m_WorkerThread)
+#ifndef WIN32
+    if (0 != pthread_create(&m_WorkerThread, NULL, CRcvQueue::worker, this))
+    {
+        m_WorkerThread = 0;
         throw CUDTException(3, 1);
-      // adjust thread priority
-      ///assert(SetThreadPriority(m_WorkerThread, THREAD_PRIORITY_BELOW_NORMAL/*THREAD_PRIORITY_ABOVE_NORMAL*/));
-   #endif
+    }
+
+#ifndef OSX
+    pthread_setname_np(m_WorkerThread, "UDT.CRcvQueue");
+#endif
+
+#else
+    DWORD threadID;
+    m_WorkerThread = CreateThread(NULL, 0, CRcvQueue::worker, this, 0, &threadID);
+    if (NULL == m_WorkerThread)
+        throw CUDTException(3, 1);
+    // adjust thread priority
+    ///assert(SetThreadPriority(m_WorkerThread, THREAD_PRIORITY_BELOW_NORMAL/*THREAD_PRIORITY_ABOVE_NORMAL*/));
+    SetThreadName(threadID, "UDT.CRcvQueue");
+#endif
 }
 
 #ifndef WIN32
@@ -982,214 +998,231 @@ void CRcvQueue::init(int qsize, int payload, int version, int hsize, CChannel* c
    DWORD WINAPI CRcvQueue::worker(LPVOID param)
 #endif
 {
-   CRcvQueue* self = (CRcvQueue*)param;
+#ifdef OSX
+    pthread_setname_np("UDT.CRcvQueue");
+#endif
 
-   sockaddr* addr = (AF_INET == self->m_UnitQueue.m_iIPversion) ? (sockaddr*) new sockaddr_in : (sockaddr*) new sockaddr_in6;
-   CUDT* u = NULL;
-   int32_t id;
+    CRcvQueue *self = (CRcvQueue *)param;
 
+    sockaddr *addr = (AF_INET == self->m_UnitQueue.m_iIPversion) ? (sockaddr *)new sockaddr_in : (sockaddr *)new sockaddr_in6;
+    CUDT *u = NULL;
+    int32_t id;
 
-   while (!self->m_bClosing)
-   {
-      #ifdef NO_BUSY_WAITING
-         self->m_pTimer->tick();
-      #endif
+    while (!self->m_bClosing)
+    {
+#ifdef NO_BUSY_WAITING
+        self->m_pTimer->tick();
+#endif
 
-      // check waiting list, if new socket, insert it to the list
-      while (self->ifNewEntry())
-      {
-         CUDT* ne = self->getNewEntry();
-         if (NULL != ne)
-         {
-            self->m_pRcvUList->insert(ne);
-            self->m_pHash->insert(ne->m_SocketID, ne);
-         }
-      }
-      
-      // find next available slot for incoming packet
-      CUnit* unit = self->m_UnitQueue.getNextAvailUnit();
-      if (NULL == unit)
-      {
-         ///printf("%s.%s.%d, no space...\n", __FILE__, __FUNCTION__, __LINE__);
-         // no space, skip this packet
-         CPacket temp;
-         char temp_pc[self->m_iPayloadSize];
-         temp.m_pcData = temp_pc;
-         temp.setLength(self->m_iPayloadSize);
-         self->m_pChannel->recvfrom(addr, temp);
-         goto TIMER_CHECK;
-      }
-
-      unit->m_Packet.setLength(self->m_iPayloadSize);
-
-      // reading next incoming packet, recvfrom returns -1 is nothing has been received
-      if (self->m_pChannel->recvfrom(addr, unit->m_Packet) < 0)
-         goto TIMER_CHECK;
-
-      id = unit->m_Packet.m_iID;
-
-      // ID 0 is for connection request, which should be passed to the listening socket or rendezvous sockets
-      if (0 == id)
-      {
-    	 ////////////////////////////////////////////////////////////
-    	 // Hole punching packet reuse keep-alive packet with id == 0
-    	 // TBD...DOS defense
-    	 if (unit->m_Packet.getFlag() && (unit->m_Packet.getType() == 1)) {
-             #ifdef DEBUG_DDOS
-             static int32_t hpcnt = 0;
-             if ((hpcnt++ % 16) == 0) printf("Ignore hole punching packet...\n");
-             #endif
-
-             goto TIMER_CHECK;
-    	 }
-    	 ////////////////////////////////////////////////////////////
-
-         if (NULL != self->m_pListener)
-            self->m_pListener->listen(addr, unit->m_Packet);
-         else if (NULL != (u = self->m_pRendezvousQueue->retrieve(addr, id)))
-         {
-            // asynchronous connect: call connect here
-            // otherwise wait for the UDT socket to retrieve this packet
-            if (!u->m_bSynRecving)
-               u->connect(unit->m_Packet);
-            else
-               self->storePkt(id, unit->m_Packet.clone());
-         }
-      }
-      else if (id > 0)
-      {
-         if (NULL != (u = self->m_pHash->lookup(id)))
-         {
-            if (CIPAddress::ipcmp(addr, u->m_pPeerAddr, u->m_iIPversion))
+        // check waiting list, if new socket, insert it to the list
+        while (self->ifNewEntry())
+        {
+            CUDT *ne = self->getNewEntry();
+            if (NULL != ne)
             {
-               if (u->m_bConnected && !u->m_bBroken && !u->m_bClosing)
-               {
-                  if (0 == unit->m_Packet.getFlag())
-                     u->processData(unit);
-                  else
-                     u->processCtrl(unit->m_Packet);
-
-                  u->checkTimers();
-                  self->m_pRcvUList->update(u);
-               }
-            } else {
-            	////////////////////////////////////////////////////////////////////////////////////////////
-            	// Process keep-alive packet in case peer's IP changed
-            	// if cookie and IPversion matched, then update peer's sockaddr info
-            	if (unit->m_Packet.getFlag() && (unit->m_Packet.getType() == 1)) {
-                    #ifdef DEBUG_DDOS
-                    printf("Warning ip changed, keep-alive packet.m_iMsgNo: 0x%x, m_pCookie ^ u->m_iPeerISN: 0x%x\n",
-                           unit->m_Packet.m_iMsgNo, u->m_pCookie ^ u->m_iPeerISN);
-                    #endif
-
-            		if ((addr->sa_family == u->m_iIPversion) &&
-            			(unit->m_Packet.m_iMsgNo == (u->m_pCookie ^ u->m_iPeerISN)) &&
-            			(u->m_pSecMod ? unit->m_Packet.chkMAC(u->m_pSecKey, 16) : 1)) { // check MAC on keep-alive packet
-            			// assuming at least every 3 minutes IP changed,
-            			// so to keep 3 hours connection alive defines magic number 68.
-            			if (u->m_pPeerChanged <= 68) {
-            				// record peer/server address
-
-            				// CUDT entry
-            				delete u->m_pPeerAddr;
-            				u->m_pPeerAddr = (AF_INET == u->m_iIPversion) ? (sockaddr*)new sockaddr_in : (sockaddr*)new sockaddr_in6;
-            				memcpy(u->m_pPeerAddr, addr, (AF_INET == u->m_iIPversion) ? sizeof(sockaddr_in) : sizeof(sockaddr_in6));
-
-            				// CUDTSocket entry
-            				delete u->m_pCUDTSocket->m_pPeerAddr;
-            				u->m_pCUDTSocket->m_pPeerAddr = (AF_INET == u->m_iIPversion) ? (sockaddr*)new sockaddr_in : (sockaddr*)new sockaddr_in6;
-            				memcpy(u->m_pCUDTSocket->m_pPeerAddr, addr, (AF_INET == u->m_iIPversion) ? sizeof(sockaddr_in) : sizeof(sockaddr_in6));
-
-            				// send keep-alive packet
-            				u->sendCtrl(1);
-
-            				// process control
-            				u->processCtrl(unit->m_Packet);
-
-            				// increase peer address changed count
-            				u->m_pPeerChanged ++;
-
-                            #ifdef DEBUG_DDOS
-            				printf("Warning peer IP changed\n");
-                            #endif
-            			} else {
-            				// send ctrlpkt to shutdown peer
-            				CPacket _ctrlpkt;
-            				_ctrlpkt.m_iID = u->m_PeerID;
-            				_ctrlpkt.pack(5);
-            				if (u->m_pSecMod) {
-            					_ctrlpkt.setMAC(u->m_pSecKey, 16);
-            				}
-            				u->m_pSndQueue->sendto(addr, _ctrlpkt);
-                            
-                            #ifdef DEBUG_DDOS
-                            printf("Warning shutdown peer\n");
-                            #endif
-            			}
-            		} else {
-                        #ifdef DEBUG_DDOS
-                        static int _dos_crack_hit = 1;
-            			printf("Warning DOS crack %d times\n", _dos_crack_hit ++);
-                        #endif
-            		}
-            	} else if (unit->m_Packet.getFlag() == 0) {
-            		// TBD... recovery from data packet
-            	}
-            	///////////////////////////////////////////////////////////////////
+                self->m_pRcvUList->insert(ne);
+                self->m_pHash->insert(ne->m_SocketID, ne);
             }
-         }
-         else if (NULL != (u = self->m_pRendezvousQueue->retrieve(addr, id)))
-         {
-            if (!u->m_bSynRecving)
-               u->connect(unit->m_Packet);
+        }
+
+        // find next available slot for incoming packet
+        CUnit *unit = self->m_UnitQueue.getNextAvailUnit();
+        if (NULL == unit)
+        {
+            ///printf("%s.%s.%d, no space...\n", __FILE__, __FUNCTION__, __LINE__);
+            // no space, skip this packet
+            CPacket temp;
+            char temp_pc[self->m_iPayloadSize];
+            temp.m_pcData = temp_pc;
+            temp.setLength(self->m_iPayloadSize);
+            self->m_pChannel->recvfrom(addr, temp);
+            goto TIMER_CHECK;
+        }
+
+        unit->m_Packet.setLength(self->m_iPayloadSize);
+
+        // reading next incoming packet, recvfrom returns -1 is nothing has been received
+        if (self->m_pChannel->recvfrom(addr, unit->m_Packet) < 0)
+            goto TIMER_CHECK;
+
+        id = unit->m_Packet.m_iID;
+
+        // ID 0 is for connection request, which should be passed to the listening socket or rendezvous sockets
+        if (0 == id)
+        {
+            ////////////////////////////////////////////////////////////
+            // Hole punching packet reuse keep-alive packet with id == 0
+            // TBD...DOS defense
+            if (unit->m_Packet.getFlag() && (unit->m_Packet.getType() == 1))
+            {
+#ifdef DEBUG_DDOS
+                static int32_t hpcnt = 0;
+                if ((hpcnt++ % 16) == 0)
+                    printf("Ignore hole punching packet...\n");
+#endif
+
+                goto TIMER_CHECK;
+            }
+            ////////////////////////////////////////////////////////////
+
+            if (NULL != self->m_pListener)
+                self->m_pListener->listen(addr, unit->m_Packet);
+            else if (NULL != (u = self->m_pRendezvousQueue->retrieve(addr, id)))
+            {
+                // asynchronous connect: call connect here
+                // otherwise wait for the UDT socket to retrieve this packet
+                if (!u->m_bSynRecving)
+                    u->connect(unit->m_Packet);
+                else
+                    self->storePkt(id, unit->m_Packet.clone());
+            }
+        }
+        else if (id > 0)
+        {
+            if (NULL != (u = self->m_pHash->lookup(id)))
+            {
+                if (CIPAddress::ipcmp(addr, u->m_pPeerAddr, u->m_iIPversion))
+                {
+                    if (u->m_bConnected && !u->m_bBroken && !u->m_bClosing)
+                    {
+                        if (0 == unit->m_Packet.getFlag())
+                            u->processData(unit);
+                        else
+                            u->processCtrl(unit->m_Packet);
+
+                        u->checkTimers();
+                        self->m_pRcvUList->update(u);
+                    }
+                }
+                else
+                {
+                    ////////////////////////////////////////////////////////////////////////////////////////////
+                    // Process keep-alive packet in case peer's IP changed
+                    // if cookie and IPversion matched, then update peer's sockaddr info
+                    if (unit->m_Packet.getFlag() && (unit->m_Packet.getType() == 1))
+                    {
+#ifdef DEBUG_DDOS
+                        printf("Warning ip changed, keep-alive packet.m_iMsgNo: 0x%x, m_pCookie ^ u->m_iPeerISN: 0x%x\n",
+                               unit->m_Packet.m_iMsgNo, u->m_pCookie ^ u->m_iPeerISN);
+#endif
+
+                        if ((addr->sa_family == u->m_iIPversion) &&
+                            (unit->m_Packet.m_iMsgNo == (u->m_pCookie ^ u->m_iPeerISN)) &&
+                            (u->m_pSecMod ? unit->m_Packet.chkMAC(u->m_pSecKey, 16) : 1))
+                        { // check MAC on keep-alive packet
+                            // assuming at least every 3 minutes IP changed,
+                            // so to keep 3 hours connection alive defines magic number 68.
+                            if (u->m_pPeerChanged <= 68)
+                            {
+                                // record peer/server address
+
+                                // CUDT entry
+                                delete u->m_pPeerAddr;
+                                u->m_pPeerAddr = (AF_INET == u->m_iIPversion) ? (sockaddr *)new sockaddr_in : (sockaddr *)new sockaddr_in6;
+                                memcpy(u->m_pPeerAddr, addr, (AF_INET == u->m_iIPversion) ? sizeof(sockaddr_in) : sizeof(sockaddr_in6));
+
+                                // CUDTSocket entry
+                                delete u->m_pCUDTSocket->m_pPeerAddr;
+                                u->m_pCUDTSocket->m_pPeerAddr = (AF_INET == u->m_iIPversion) ? (sockaddr *)new sockaddr_in : (sockaddr *)new sockaddr_in6;
+                                memcpy(u->m_pCUDTSocket->m_pPeerAddr, addr, (AF_INET == u->m_iIPversion) ? sizeof(sockaddr_in) : sizeof(sockaddr_in6));
+
+                                // send keep-alive packet
+                                u->sendCtrl(1);
+
+                                // process control
+                                u->processCtrl(unit->m_Packet);
+
+                                // increase peer address changed count
+                                u->m_pPeerChanged++;
+
+#ifdef DEBUG_DDOS
+                                printf("Warning peer IP changed\n");
+#endif
+                            }
+                            else
+                            {
+                                // send ctrlpkt to shutdown peer
+                                CPacket _ctrlpkt;
+                                _ctrlpkt.m_iID = u->m_PeerID;
+                                _ctrlpkt.pack(5);
+                                if (u->m_pSecMod)
+                                {
+                                    _ctrlpkt.setMAC(u->m_pSecKey, 16);
+                                }
+                                u->m_pSndQueue->sendto(addr, _ctrlpkt);
+
+#ifdef DEBUG_DDOS
+                                printf("Warning shutdown peer\n");
+#endif
+                            }
+                        }
+                        else
+                        {
+#ifdef DEBUG_DDOS
+                            static int _dos_crack_hit = 1;
+                            printf("Warning DOS crack %d times\n", _dos_crack_hit++);
+#endif
+                        }
+                    }
+                    else if (unit->m_Packet.getFlag() == 0)
+                    {
+                        // TBD... recovery from data packet
+                    }
+                    ///////////////////////////////////////////////////////////////////
+                }
+            }
+            else if (NULL != (u = self->m_pRendezvousQueue->retrieve(addr, id)))
+            {
+                if (!u->m_bSynRecving)
+                    u->connect(unit->m_Packet);
+                else
+                    self->storePkt(id, unit->m_Packet.clone());
+            }
+        }
+
+    TIMER_CHECK:
+        // take care of the timing event for all UDT sockets
+
+        uint64_t currtime;
+        CTimer::rdtsc(currtime);
+
+        CRNode *ul = self->m_pRcvUList->m_pUList;
+        uint64_t ctime = currtime - 100000 * CTimer::getCPUFrequency();
+        while ((NULL != ul) && (ul->m_llTimeStamp < ctime))
+        {
+            CUDT *u = ul->m_pUDT;
+
+            if (u->m_bConnected && !u->m_bBroken && !u->m_bClosing)
+            {
+                u->checkTimers();
+                self->m_pRcvUList->update(u);
+            }
             else
-               self->storePkt(id, unit->m_Packet.clone());
-         }
-      }
+            {
+                // the socket must be removed from Hash table first, then RcvUList
+                self->m_pHash->remove(u->m_SocketID);
+                self->m_pRcvUList->remove(u);
+                u->m_pRNode->m_bOnList = false;
+            }
 
-TIMER_CHECK:
-      // take care of the timing event for all UDT sockets
+            ul = self->m_pRcvUList->m_pUList;
+        }
 
-      uint64_t currtime;
-      CTimer::rdtsc(currtime);
+        // Check connection requests status for all sockets in the RendezvousQueue.
+        self->m_pRendezvousQueue->updateConnStatus();
+    }
 
-      CRNode* ul = self->m_pRcvUList->m_pUList;
-      uint64_t ctime = currtime - 100000 * CTimer::getCPUFrequency();
-      while ((NULL != ul) && (ul->m_llTimeStamp < ctime))
-      {
-         CUDT* u = ul->m_pUDT;
+    if (AF_INET == self->m_UnitQueue.m_iIPversion)
+        delete (sockaddr_in *)addr;
+    else
+        delete (sockaddr_in6 *)addr;
 
-         if (u->m_bConnected && !u->m_bBroken && !u->m_bClosing)
-         {
-            u->checkTimers();
-            self->m_pRcvUList->update(u);
-         }
-         else
-         {
-            // the socket must be removed from Hash table first, then RcvUList
-            self->m_pHash->remove(u->m_SocketID);
-            self->m_pRcvUList->remove(u);
-            u->m_pRNode->m_bOnList = false;
-         }
-
-         ul = self->m_pRcvUList->m_pUList;
-      }
-
-      // Check connection requests status for all sockets in the RendezvousQueue.
-      self->m_pRendezvousQueue->updateConnStatus();
-   }
-
-   if (AF_INET == self->m_UnitQueue.m_iIPversion)
-      delete (sockaddr_in*)addr;
-   else
-      delete (sockaddr_in6*)addr;
-
-   #ifndef WIN32
-      return NULL;
-   #else
-      SetEvent(self->m_ExitCond);
-      return 0;
-   #endif
+#ifndef WIN32
+    return NULL;
+#else
+    SetEvent(self->m_ExitCond);
+    return 0;
+#endif
 }
 
 int CRcvQueue::recvfrom(int32_t id, CPacket& packet)
