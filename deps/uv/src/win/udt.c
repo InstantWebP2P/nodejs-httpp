@@ -284,7 +284,9 @@ void uv_udt_endgame(uv_loop_t* loop, uv_udt_t* handle) {
 static int uv__bind(uv_udt_t* handle,
                     int family,
                     struct sockaddr* addr,
-                    int addrsize) {
+                    int addrsize,
+                    int reuseaddr,
+                    int reuseable) {
   DWORD err;
   int r;
   SOCKET sock;
@@ -339,6 +341,18 @@ static int uv__bind(uv_udt_t* handle,
        return -1;
     }
     ///////////////////////////////////////////////////////////////////////////////////////////////
+
+    // check if REUSE ADDR ///////////
+    if (reuseaddr >= 0)
+    {
+        udt_setsockopt(handle->udtfd, 0, (int)UDT_UDT_REUSEADDR, &reuseaddr, sizeof reuseaddr);
+    }
+    // check if allow REUSE ADDR
+    if (reuseable >= 0)
+    {
+        udt_setsockopt(handle->udtfd, 0, (int)UDT_UDT_REUSEABLE, &reuseable, sizeof reuseable);
+    }
+    ///////////////////////////////////
   }
 
   r = udt_bind(handle->udtfd, addr, addrsize);
@@ -363,25 +377,29 @@ static int uv__bind(uv_udt_t* handle,
 }
 
 
-int uv__udt_bind(uv_udt_t* handle, struct sockaddr_in addr) {
+int uv__udt_bind(uv_udt_t* handle, struct sockaddr_in addr, int reuseaddr, int reuseable) {
   return uv__bind(handle,
                   AF_INET,
                   (struct sockaddr*)&addr,
-                  sizeof(struct sockaddr_in));
+                  sizeof(struct sockaddr_in),
+                  reuseaddr, reuseable);
 }
 
 
-int uv__udt_bind6(uv_udt_t* handle, struct sockaddr_in6 addr) {
+int uv__udt_bind6(uv_udt_t* handle, struct sockaddr_in6 addr, int reuseaddr, int reuseable) {
   return uv__bind(handle,
                   AF_INET6,
                   (struct sockaddr*)&addr,
-                  sizeof(struct sockaddr_in6));
+                  sizeof(struct sockaddr_in6),
+                  reuseaddr, reuseable);
 }
 
 
 static int uv__bindfd(
     	uv_udt_t* handle,
-        SOCKET udpfd) {
+        SOCKET udpfd,
+        int reuseaddr,
+        int reuseable) {
   DWORD err;
   int r;
   SOCKET sock;
@@ -447,6 +465,18 @@ static int uv__bindfd(
        return -1;
     }
     ///////////////////////////////////////////////////////////////////////////////////////////////
+
+    // check if REUSE ADDR ///////////
+    if (reuseaddr >= 0)
+    {
+        udt_setsockopt(handle->udtfd, 0, (int)UDT_UDT_REUSEADDR, &reuseaddr, sizeof reuseaddr);
+    }
+    // check if allow REUSE ADDR
+    if (reuseable >= 0)
+    {
+        udt_setsockopt(handle->udtfd, 0, (int)UDT_UDT_REUSEABLE, &reuseable, sizeof reuseable);
+    }
+    ///////////////////////////////////
   }
 
   r = udt_bind2(handle->udtfd, udpfd); 

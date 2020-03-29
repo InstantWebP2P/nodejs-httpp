@@ -447,8 +447,17 @@ Handle<Value> UDTWrap::Bind(const Arguments& args) {
   String::AsciiValue ip_address(args[0]);
   int port = args[1]->Int32Value();
 
+  int reuseaddr = -1;
+  if (args.Length() > 2) {
+      reuseaddr = args[2]->Int32Value();
+  }
+  int reuseable = -1;
+  if (args.Length() > 3) {
+      reuseable = args[3]->Int32Value();
+  }
+
   struct sockaddr_in address = uv_ip4_addr(*ip_address, port);
-  int r = uv_udt_bind(&wrap->handle_, address);
+  int r = uv_udt_bind(&wrap->handle_, address, reuseaddr, reuseable);
 
   // Error starting the udt.
   if (r) SetErrno(uv_last_error(uv_default_loop()));
@@ -465,8 +474,19 @@ Handle<Value> UDTWrap::Bind6(const Arguments& args) {
   String::AsciiValue ip6_address(args[0]);
   int port = args[1]->Int32Value();
 
+  int reuseaddr = -1;
+  if (args.Length() > 2)
+  {
+      reuseaddr = args[2]->Int32Value();
+  }
+  int reuseable = -1;
+  if (args.Length() > 3)
+  {
+      reuseable = args[3]->Int32Value();
+  }
+
   struct sockaddr_in6 address = uv_ip6_addr(*ip6_address, port);
-  int r = uv_udt_bind6(&wrap->handle_, address);
+  int r = uv_udt_bind6(&wrap->handle_, address, reuseaddr, reuseable);
 
   // Error starting the udt.
   if (r) SetErrno(uv_last_error(uv_default_loop()));
@@ -492,7 +512,18 @@ Handle<Value> UDTWrap::Bindfd(const Arguments& args) {
   }
 #endif
 
-  int r = uv_udt_bindfd(&wrap->handle_, (uv_os_sock_t)udpfd);
+  int reuseaddr = -1;
+  if (args.Length() > 1)
+  {
+      reuseaddr = args[1]->Int32Value();
+  }
+  int reuseable = -1;
+  if (args.Length() > 2)
+  {
+      reuseable = args[2]->Int32Value();
+  }
+
+  int r = uv_udt_bindfd(&wrap->handle_, (uv_os_sock_t)udpfd, reuseaddr, reuseable);
 
   // Error starting the udt.
   if (r) SetErrno(uv_last_error(uv_default_loop()));

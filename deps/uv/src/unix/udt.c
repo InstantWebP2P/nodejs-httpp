@@ -57,7 +57,9 @@ static int uv__bind(
 		uv_udt_t* udt,
 		int domain,
 		struct sockaddr* addr,
-		int addrsize)
+		int addrsize,
+        int reuseaddr,
+        int reuseable)
 {
 	int saved_errno;
 	int status;
@@ -70,6 +72,16 @@ static int uv__bind(
 	    return -1;
 
 	assert(udt->fd > 0);
+
+    // check if REUSE ADDR ///////////
+    if (reuseaddr >= 0) {
+        udt_setsockopt(udt->udtfd, 0, (int)UDT_UDT_REUSEADDR, &reuseaddr, sizeof reuseaddr);
+    }
+    // check if allow REUSE ADDR
+    if (reuseable >= 0) {
+        udt_setsockopt(udt->udtfd, 0, (int)UDT_UDT_REUSEABLE, &reuseable, sizeof reuseable);
+    }
+    ///////////////////////////////////
 
 	udt->delayed_error = 0;
 	if (udt_bind(udt->udtfd, addr, addrsize) < 0) {
@@ -168,26 +180,30 @@ static int uv__connect(uv_connect_t* req,
 }
 
 
-int uv__udt_bind(uv_udt_t* handle, struct sockaddr_in addr) {
+int uv__udt_bind(uv_udt_t* handle, struct sockaddr_in addr, int reuseaddr, int reuseable) {
 	return uv__bind(handle,
 			AF_INET,
 			(struct sockaddr*)&addr,
-			sizeof(struct sockaddr_in));
+			sizeof(struct sockaddr_in),
+            reuseaddr, reuseable);
 }
 
 
-int uv__udt_bind6(uv_udt_t* handle, struct sockaddr_in6 addr) {
+int uv__udt_bind6(uv_udt_t* handle, struct sockaddr_in6 addr, int reuseaddr, int reuseable) {
 	return uv__bind(handle,
 			AF_INET6,
 			(struct sockaddr*)&addr,
-			sizeof(struct sockaddr_in6));
+			sizeof(struct sockaddr_in6),
+            reuseaddr, reuseable);
 }
 
 
 // binding on existing udp socket/fd ///////////////////////////////////////////
 static int uv__bindfd(
     	uv_udt_t* udt,
-        int udpfd)
+        int udpfd,
+        int reuseaddr,
+        int reuseable)
 {
 	int saved_errno;
 	int status;
@@ -217,7 +233,19 @@ static int uv__bindfd(
 		// fill Osfd
 		assert(udt_getsockopt(udt->udtfd, 0, (int)UDT_UDT_OSFD, &udt->fd, &optlen) == 0);
 
-		if (uv__stream_open(
+        // check if REUSE ADDR ///////////
+        if (reuseaddr >= 0)
+        {
+            udt_setsockopt(udt->udtfd, 0, (int)UDT_UDT_REUSEADDR, &reuseaddr, sizeof reuseaddr);
+        }
+        // check if allow REUSE ADDR
+        if (reuseable >= 0)
+        {
+            udt_setsockopt(udt->udtfd, 0, (int)UDT_UDT_REUSEABLE, &reuseable, sizeof reuseable);
+        }
+        ///////////////////////////////////
+
+        if (uv__stream_open(
 				(uv_stream_t*)udt,
 				udt->fd,
 				UV_READABLE | UV_WRITABLE)) {
@@ -230,7 +258,7 @@ static int uv__bindfd(
 
 	assert(udt->fd > 0);
 
-	udt->delayed_error = 0;
+    udt->delayed_error = 0;
 	if (udt_bind2(udt->udtfd, udpfd) == -1) {
 		if (udt_getlasterror_code() == UDT_EBOUNDSOCK) {
 			udt->delayed_error = EADDRINUSE;
@@ -250,8 +278,8 @@ out:
 	return status;
 }
 
-int uv__udt_bindfd(uv_udt_t* handle, uv_os_sock_t udpfd) {
-    return uv__bindfd(handle, udpfd);
+int uv__udt_bindfd(uv_udt_t* handle, uv_os_sock_t udpfd, int reuseaddr, int reuseable) {
+    return uv__bindfd(handle, udpfd, reuseaddr, reuseable);
 }
 /////////////////////////////////////////////////////////////////////////////////
 

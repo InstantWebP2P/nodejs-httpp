@@ -262,8 +262,8 @@ CUDT::CUDT()
    m_bRendezvous = false;
    m_iSndTimeOut = -1;
    m_iRcvTimeOut = -1;
-   m_bReuseAddr = false; // always create new Mux in default for connect socket
-   m_bReuseAble = true;  // alwasy allow Mux reusable and sharable
+   m_bReuseAddr = true; // always reuse existing Mux in default for connect socket
+   m_bReuseAble = true; // alwasy allow Mux reusable and sharable
    m_llMaxBW = -1;
    m_iQos = 0;
 
@@ -592,9 +592,19 @@ void CUDT::setOpt(UDTOpt optName, const void* optval, int optlen)
       break;
 
    case UDT_REUSEADDR:
+
+   #ifdef DEBUG
+      ///printf("reuseaddr: %d\n", *(bool *)optval);
+   #endif
+
       if (m_bOpened)
          throw CUDTException(5, 1, 0);
       m_bReuseAddr = *(bool*)optval;
+
+#ifdef DEBUG
+      ///printf("reuseaddr: %d done \n", *(bool *)optval);
+#endif
+
       break;
 
    case UDT_MAXBW:
@@ -610,9 +620,19 @@ void CUDT::setOpt(UDTOpt optName, const void* optval, int optlen)
       break;
 
    case UDT_REUSEABLE:
+
+   #ifdef DEBUG
+      ///printf("reuseable: %d\n", *(bool *)optval);
+   #endif
+
        if (m_bOpened)
            throw CUDTException(5, 1, 0);
        m_bReuseAble = *(bool *)optval;
+
+   #ifdef DEBUG
+      ///printf("reuseable: %d\n", *(bool *)optval);
+   #endif
+
        break;
 
    default:

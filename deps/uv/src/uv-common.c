@@ -222,33 +222,33 @@ int uv_tcp_bind6(uv_tcp_t* handle, struct sockaddr_in6 addr) {
 }
 
 
-int uv_udt_bind(uv_udt_t* handle, struct sockaddr_in addr) {
+int uv_udt_bind(uv_udt_t* handle, struct sockaddr_in addr, int reuseaddr, int reuseable) {
   if (handle->type != UV_UDT || addr.sin_family != AF_INET) {
     uv__set_artificial_error(handle->loop, UV_EFAULT);
     return -1;
   }
 
-  return uv__udt_bind(handle, addr);
+  return uv__udt_bind(handle, addr, reuseaddr, reuseable);
 }
 
 
-int uv_udt_bind6(uv_udt_t* handle, struct sockaddr_in6 addr) {
+int uv_udt_bind6(uv_udt_t* handle, struct sockaddr_in6 addr, int reuseaddr, int reuseable) {
   if (handle->type != UV_UDT || addr.sin6_family != AF_INET6) {
     uv__set_artificial_error(handle->loop, UV_EFAULT);
     return -1;
   }
 
-  return uv__udt_bind6(handle, addr);
+  return uv__udt_bind6(handle, addr, reuseaddr, reuseable);
 }
 
 
-int uv_udt_bindfd(uv_udt_t* handle, uv_os_sock_t udpfd) {
+int uv_udt_bindfd(uv_udt_t* handle, uv_os_sock_t udpfd, int reuseaddr, int reusable) {
   if (handle->type != UV_UDT) {
     uv__set_artificial_error(handle->loop, UV_EFAULT);
     return -1;
   }
 
-  return uv__udt_bindfd(handle, udpfd);
+  return uv__udt_bindfd(handle, udpfd, reuseaddr, reusable);
 }
 
 
@@ -266,11 +266,19 @@ int uv_udt_udpfd(uv_udt_t* handle, uv_os_sock_t * udpfd) {
 int uv_udt_reuseaddr(uv_udt_t *handle, int32_t yes) {
     int optval = yes;
 
+#ifdef DEBUG
+    printf("UDT id: %d, set REUSEADDR: %d\n", handle->udtfd, yes);
+#endif
+
     if (handle->type != UV_UDT)
     {
         uv__set_artificial_error(handle->loop, UV_EFAULT);
         return -1;
     }
+
+#ifdef DEBUG
+    printf("UDT id: %d, set REUSEADDR: %d done\n", handle->udtfd, yes);
+#endif
 
     return udt_setsockopt(handle->udtfd, 0, (int)UDT_UDT_REUSEADDR, &optval, sizeof optval);
 }

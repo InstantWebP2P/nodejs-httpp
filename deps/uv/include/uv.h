@@ -669,15 +669,15 @@ UV_EXTERN int uv_udt_setmbs(uv_udt_t* handle, int32_t mfc, int32_t mudt, int32_t
 /* set UDT socket security mode */
 UV_EXTERN int uv_udt_setsec(uv_udt_t* handle, int32_t mode, unsigned char keybuf[], int32_t keylen);
 
-UV_EXTERN int uv_udt_bind(uv_udt_t* handle, struct sockaddr_in);
-UV_EXTERN int uv_udt_bind6(uv_udt_t* handle, struct sockaddr_in6);
+UV_EXTERN int uv_udt_bind(uv_udt_t *handle, struct sockaddr_in, int reuseaddr, int reuseable);
+UV_EXTERN int uv_udt_bind6(uv_udt_t *handle, struct sockaddr_in6, int reuseaddr, int reuseable);
 UV_EXTERN int uv_udt_getsockname(uv_udt_t* handle, struct sockaddr* name,
     int* namelen);
 UV_EXTERN int uv_udt_getpeername(uv_udt_t* handle, struct sockaddr* name,
     int* namelen);
 
 /* binding udt socket on existing udp socket/fd */
-UV_EXTERN int uv_udt_bindfd(uv_udt_t* handle, uv_os_sock_t udpfd);
+UV_EXTERN int uv_udt_bindfd(uv_udt_t* handle, uv_os_sock_t udpfd, int reuseaddr, int reuseable);
 
 /* retrieve udp socket/fd associated with udt socket */
 UV_EXTERN int uv_udt_udpfd(uv_udt_t *handle, uv_os_sock_t * udpfd);
