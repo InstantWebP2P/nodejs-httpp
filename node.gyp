@@ -52,6 +52,7 @@
       'lib/util.js',
       'lib/vm.js',
       'lib/zlib.js',
+      'lib/ipaddrs.js', // for IPv6 parse copied from https://github.com/whitequark/ipaddr.js/blob/v1.0.3/lib/ipaddr.js
     ],
   },
 
