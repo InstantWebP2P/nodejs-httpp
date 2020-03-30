@@ -1055,7 +1055,7 @@ void CRcvQueue::init(int qsize, int payload, int version, int hsize, CChannel* c
             // TBD...DOS defense
             if (unit->m_Packet.getFlag() && (unit->m_Packet.getType() == 1))
             {
-#ifdef DEBUG_DDOS
+#ifdef DEBUG
                 static int32_t hpcnt = 0;
                 if ((hpcnt++ % 16) == 0)
                     printf("Ignore hole punching packet...\n");

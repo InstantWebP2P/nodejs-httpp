@@ -915,28 +915,32 @@ void CUDT::punchhole(const sockaddr* serv_addr, const int from, const int to)
 	   // create temp address
 	   sockaddr_in temp_addr;
 	   memcpy(&temp_addr, serv_addr, sizeof(sockaddr_in));
-
-	   //////////////////////////////////////////
-	   // Send keep-alive packet to punch hole with port range [from, to]
-	   int refport = temp_addr.sin_port;
+       
+       // Send keep-alive packet to punch hole with port range [from, to]
+       int refport = temp_addr.sin_port;
 	   for (int start = from; start <= to; start ++) {
 		   temp_addr.sin_port = refport + start;
 		   m_pSndQueue->sendto((const sockaddr *)&temp_addr, klpkt);
 	   }
-	   //////////////////////////////////////////
+
+#ifdef DEBUG
+       printf("punch hole 4\n");
+#endif
    } else {
 	   // create temp address
 	   sockaddr_in6 temp_addr;
 	   memcpy(&temp_addr, serv_addr, sizeof(sockaddr_in6));
-
-	   //////////////////////////////////////////
+	   
 	   // Send keep-alive packet to punch hole with port range [from, to]
 	   int refport = temp_addr.sin6_port;
 	   for (int start = from; start <= to; start ++) {
 		   temp_addr.sin6_port = refport + start;
 		   m_pSndQueue->sendto((const sockaddr *)&temp_addr, klpkt);
 	   }
-	   //////////////////////////////////////////
+
+#ifdef DEBUG
+       printf("punch hole 6\n");
+#endif
    }
 }
 

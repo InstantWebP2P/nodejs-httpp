@@ -156,7 +156,7 @@ written by
 #include "md5.h"
 #include "packet.h"
 
-#ifdef DEBUG
+#ifdef DEBUG_TIMING
 #include <sys/time.h>
 #endif
 
@@ -345,7 +345,7 @@ uint32_t CPacket::setMAC(const unsigned char *key, const int len)
 	md5_state_t state;
 	uint32_t digest[4];
 
-#ifdef DEBUG
+#ifdef DEBUG_TIMING
     struct timeval start, stop;
     double secs = 0;
     gettimeofday(&start, NULL);
@@ -376,7 +376,7 @@ uint32_t CPacket::setMAC(const unsigned char *key, const int len)
 	md5_finish(&state, (md5_byte_t *)digest);
 	m_nHeader[4] = digest[0] ^ digest[1] ^ digest[2] ^ digest[3];
 
-#ifdef DEBUG
+#ifdef DEBUG_TIMING
     // time cost
     gettimeofday(&stop, NULL);
     secs = (double)(stop.tv_usec - start.tv_usec) / 1000000 + (double)(stop.tv_sec - start.tv_sec);
@@ -393,7 +393,7 @@ int32_t CPacket::chkMAC(const unsigned char *key, const int len)
 	uint32_t digest[4];
 	uint32_t expect;
 
-#ifdef DEBUG
+#ifdef DEBUG_TIMING
     struct timeval start, stop;
     double secs = 0;
     gettimeofday(&start, NULL);
@@ -447,7 +447,7 @@ int32_t CPacket::chkMAC(const unsigned char *key, const int len)
     // clear security flag
     m_nHeader[0] &= ~ 0x40000000;
 
-#ifdef DEBUG
+#ifdef DEBUG_TIMING
     // time cost
     gettimeofday(&stop, NULL);
     secs = (double)(stop.tv_usec - start.tv_usec) / 1000000 + (double)(stop.tv_sec - start.tv_sec);

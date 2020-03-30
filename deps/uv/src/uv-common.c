@@ -253,12 +253,13 @@ int uv_udt_bindfd(uv_udt_t* handle, uv_os_sock_t udpfd, int reuseaddr, int reusa
 
 
 int uv_udt_udpfd(uv_udt_t* handle, uv_os_sock_t * udpfd) {
-  int optlen; 
-  
-  if (handle->type != UV_UDT) {
-    uv__set_artificial_error(handle->loop, UV_EFAULT);
-    return -1;
-  }
+  int optlen;
+
+  if (handle->type != UV_UDT || handle->udtfd == -1)
+  {
+      uv__set_artificial_error(handle->loop, UV_EFAULT);
+      return -1;
+  } 
 
   return udt_getsockopt(handle->udtfd, 0, (int)UDT_UDT_UDPFD, udpfd, &optlen);
 }
@@ -266,19 +267,11 @@ int uv_udt_udpfd(uv_udt_t* handle, uv_os_sock_t * udpfd) {
 int uv_udt_reuseaddr(uv_udt_t *handle, int32_t yes) {
     int optval = yes;
 
-#ifdef DEBUG
-    printf("UDT id: %d, set REUSEADDR: %d\n", handle->udtfd, yes);
-#endif
-
-    if (handle->type != UV_UDT)
+    if (handle->type != UV_UDT || handle->udtfd == -1)
     {
         uv__set_artificial_error(handle->loop, UV_EFAULT);
         return -1;
     }
-
-#ifdef DEBUG
-    printf("UDT id: %d, set REUSEADDR: %d done\n", handle->udtfd, yes);
-#endif
 
     return udt_setsockopt(handle->udtfd, 0, (int)UDT_UDT_REUSEADDR, &optval, sizeof optval);
 }
@@ -287,7 +280,7 @@ int uv_udt_reuseable(uv_udt_t *handle, int32_t yes)
 {
     int optval = yes;
 
-    if (handle->type != UV_UDT)
+    if (handle->type != UV_UDT || handle->udtfd == -1)
     {
         uv__set_artificial_error(handle->loop, UV_EFAULT);
         return -1;
