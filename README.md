@@ -13,7 +13,7 @@ HTTPP - Run HTTP over UDP and Bring Web in Peer or P2P styles.
 ### Features
 
 * Run HTTP and HTTPS over UDP, taking UDP high performance
-* Support multi-process UDT server by utilizing multi-cores' CPU
+* Support multi-process/thread UDT server by utilizing multi-cores' CPU
 * Enhance UDT security by authenticating both control and data packet
 * Configurable Congestion Control
 * Per-socket network performance monitor
