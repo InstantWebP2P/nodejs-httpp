@@ -46,6 +46,7 @@ written by
    #include <cstring>
    #include <cstdio>
    #include <cerrno>
+   #include <sys/socket.h>
 #else
    #include <winsock2.h>
    #include <ws2tcpip.h>
@@ -104,14 +105,26 @@ void CChannel::open(const sockaddr* addr)
    rev = ::setsockopt(m_iSocket, SOL_SOCKET, SO_REUSEPORT, &yes, sizeof(yes));
    if (rev < 0)
    rev = ::setsockopt(m_iSocket, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes));
+
+   // disable UDP checksum
+   int rc = setsockopt(m_iSocket, SOL_SOCKET, SO_NO_CHECK, (void*)&yes, sizeof yes);
+   if (rc != 0) { perror("setsockopt:SO_NO_CHECK"); }
 #elif defined(OSX) || defined(BSD)
    int yes = 1;
    int rev = 0;
    rev = ::setsockopt(m_iSocket, SOL_SOCKET, SO_REUSEPORT, &yes, sizeof(yes));
+
+   // disable UDP checksum
+   int rc = setsockopt(m_iSocket, IPPROTO_UDP, UDP_NOCKSUM, (void*)&yes, sizeof yes);
+   if (rc != 0) { perror("setsockopt:UDP_NOCKSUM"); }
 #elif defined(WIN32)
    DWORD yes = 1;
    DWORD rev = 0;
    rev = ::setsockopt(m_iSocket, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes));
+
+   // disable UDP checksum
+   int rc = setsockopt(m_iSocket, IPPROTO_UDP, UDP_NOCHECKSUM, (void*)&yes, sizeof yes);
+   if (rc != 0) { perror("setsockopt:UDP_NOCHECKSUM"); }
 #else
    int yes = 1;
    int rev = 0;
@@ -170,14 +183,26 @@ void CChannel::open(UDPSOCKET udpsock)
     rev = ::setsockopt(udpsock, SOL_SOCKET, SO_REUSEPORT, &yes, sizeof(yes));
     if (rev < 0)
     rev = ::setsockopt(udpsock, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes));
+
+   // disable UDP checksum
+   int rc = setsockopt(udpsock, SOL_SOCKET, SO_NO_CHECK, (void*)&yes, sizeof yes);
+   if (rc != 0) { perror("setsockopt:UDP_NOCKSUM"); }
 #elif defined(OSX) || defined(BSD)
     int yes = 1;
     int rev = 0;
     rev = ::setsockopt(udpsock, SOL_SOCKET, SO_REUSEPORT, &yes, sizeof(yes));
+
+   // disable UDP checksum
+   int rc = setsockopt(udpsock, IPPROTO_UDP, UDP_NOCKSUM, (void*)&yes, sizeof yes);
+   if (rc != 0) { perror("setsockopt:UDP_NOCKSUM"); }
 #elif defined(WIN32)
     DWORD yes = 1;
     DWORD rev = 0;
     rev = ::setsockopt(udpsock, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes));
+
+   // disable UDP checksum
+   int rc = setsockopt(udpsock, IPPROTO_UDP, UDP_NOCHECKSUM, (void*)&yes, sizeof yes);
+   if (rc != 0) { perror("setsockopt:UDP_NOCHECKSUM"); }
 #else
     int yes = 1;
     int rev = 0;
