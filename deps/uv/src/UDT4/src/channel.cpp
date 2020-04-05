@@ -46,7 +46,13 @@ written by
    #include <cstring>
    #include <cstdio>
    #include <cerrno>
+
+#if defined(LINUX)
    #include <sys/socket.h>
+#elif defined (BSD) || defined (OSX)
+   #include <netinet/udp.h>
+#endif
+
 #else
    #include <winsock2.h>
    #include <ws2tcpip.h>
