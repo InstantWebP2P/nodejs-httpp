@@ -6,7 +6,11 @@ const bench = common.createBenchmark(main, {
   n: [100000],
   method: ['trace', 'isTraceCategoryEnabled']
 }, {
-  flags: ['--expose-internals', '--trace-event-categories', 'foo']
+  flags: [
+    '--expose-internals',
+    '--no-warnings',
+    '--trace-event-categories', 'foo',
+  ]
 });
 
 const {
@@ -37,7 +41,6 @@ function main({ n, method }) {
   } = common.binding('trace_events');
 
   switch (method) {
-    case '':
     case 'trace':
       doTrace(n, trace);
       break;

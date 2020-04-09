@@ -51,6 +51,7 @@
       'lib/domain.js',
       'lib/events.js',
       'lib/fs.js',
+      'lib/fs/promises.js',
       'lib/http.js',
       'lib/http2.js',
       'lib/_http_agent.js',
@@ -140,6 +141,7 @@
       'lib/internal/fs/watchers.js',
       'lib/internal/http.js',
       'lib/internal/heap_utils.js',
+      'lib/internal/histogram.js',
       'lib/internal/idna.js',
       'lib/internal/inspector_async_hook.js',
       'lib/internal/js_stream_socket.js',
@@ -249,6 +251,11 @@
     'node_mksnapshot_exec': '<(PRODUCT_DIR)/<(EXECUTABLE_PREFIX)node_mksnapshot<(EXECUTABLE_SUFFIX)',
     'mkcodecache_exec': '<(PRODUCT_DIR)/<(EXECUTABLE_PREFIX)mkcodecache<(EXECUTABLE_SUFFIX)',
     'conditions': [
+      ['GENERATOR == "ninja"', {
+        'node_text_start_object_path': 'src/large_pages/node_text_start.node_text_start.o'
+      }, {
+        'node_text_start_object_path': 'node_text_start/src/large_pages/node_text_start.o'
+      }],
       [ 'node_shared=="true"', {
         'node_target_type%': 'shared_library',
         'conditions': [
@@ -313,10 +320,25 @@
 
   'targets': [
     {
+      'target_name': 'node_text_start',
+      'type': 'none',
+      'conditions': [
+        [ 'OS in "linux freebsd" and '
+          'target_arch=="x64"', {
+          'type': 'static_library',
+          'sources': [
+            'src/large_pages/node_text_start.S'
+          ]
+        }],
+      ]
+    },
+    {
       'target_name': '<(node_core_target_name)',
       'type': 'executable',
 
       'defines': [
+        'NODE_ARCH="<(target_arch)"',
+        'NODE_PLATFORM="<(OS)"',
         'NODE_WANT_INTERNALS=1',
       ],
 
@@ -404,13 +426,6 @@
             'OTHER_LDFLAGS': [ '-Wl,-rpath,@loader_path', ],
           },
         }],
-        [ 'node_report=="true"', {
-          'defines': [
-            'NODE_REPORT',
-            'NODE_ARCH="<(target_arch)"',
-            'NODE_PLATFORM="<(OS)"',
-          ],
-        }],
         ['OS=="win"', {
           'libraries': [
             'Dbghelp.lib',
@@ -497,6 +512,13 @@
             'src/node_snapshot_stub.cc'
           ],
         }],
+        [ 'OS in "linux freebsd" and '
+          'target_arch=="x64"', {
+          'dependencies': [ 'node_text_start' ],
+          'ldflags+': [
+            '<(obj_dir)/<(node_text_start_object_path)'
+          ]
+        }],
       ],
     }, # node_core_target_name
     {
@@ -523,7 +545,6 @@
         'src/api/exceptions.cc',
         'src/api/hooks.cc',
         'src/api/utils.cc',
-
         'src/async_wrap.cc',
         'src/cares_wrap.cc',
         'src/connect_wrap.cc',
@@ -533,12 +554,14 @@
         'src/fs_event_wrap.cc',
         'src/handle_wrap.cc',
         'src/heap_utils.cc',
+        'src/histogram.cc',
         'src/js_native_api.h',
         'src/js_native_api_types.h',
         'src/js_native_api_v8.cc',
         'src/js_native_api_v8.h',
         'src/js_native_api_v8_internals.h',
         'src/js_stream.cc',
+        'src/json_utils.cc',
         'src/module_wrap.cc',
         'src/node.cc',
         'src/node_api.cc',
@@ -569,7 +592,11 @@
         'src/node_process_events.cc',
         'src/node_process_methods.cc',
         'src/node_process_object.cc',
+        'src/node_report.cc',
+        'src/node_report_module.cc',
+        'src/node_report_utils.cc',
         'src/node_serdes.cc',
+        'src/node_sockaddr.cc',
         'src/node_stat_watcher.cc',
         'src/node_symbols.cc',
         'src/node_task_queue.cc',
@@ -619,6 +646,9 @@
         'src/histogram.h',
         'src/histogram-inl.h',
         'src/js_stream.h',
+        'src/json_utils.h',
+        'src/large_pages/node_large_page.cc',
+        'src/large_pages/node_large_page.h',
         'src/memory_tracker.h',
         'src/memory_tracker-inl.h',
         'src/module_wrap.h',
@@ -634,6 +664,8 @@
         'src/node_errors.h',
         'src/node_file.h',
         'src/node_file-inl.h',
+        'src/node_http_common.h',
+        'src/node_http_common-inl.h',
         'src/node_http2.h',
         'src/node_http2_state.h',
         'src/node_i18n.h',
@@ -653,8 +685,11 @@
         'src/node_perf_common.h',
         'src/node_platform.h',
         'src/node_process.h',
+        'src/node_report.h',
         'src/node_revert.h',
         'src/node_root_certs.h',
+        'src/node_sockaddr.h',
+        'src/node_sockaddr-inl.h',
         'src/node_stat_watcher.h',
         'src/node_union_bytes.h',
         'src/node_url.h',
@@ -747,6 +782,7 @@
           'libraries': [
             'Dbghelp',
             'Psapi',
+            'Ws2_32',
           ],
         }],
         [ 'node_use_etw=="true"', {
@@ -818,9 +854,11 @@
         [ 'node_use_openssl=="true"', {
           'sources': [
             'src/node_crypto.cc',
+            'src/node_crypto_common.cc',
             'src/node_crypto_bio.cc',
             'src/node_crypto_clienthello.cc',
             'src/node_crypto.h',
+            'src/node_crypto_common.h',
             'src/node_crypto_bio.h',
             'src/node_crypto_clienthello.h',
             'src/node_crypto_clienthello-inl.h',
@@ -829,31 +867,10 @@
             'src/tls_wrap.h'
           ],
         }],
-        [ 'node_report=="true"', {
-          'sources': [
-            'src/node_report.cc',
-            'src/node_report_module.cc',
-            'src/node_report_utils.cc',
-          ],
-          'defines': [
-            'NODE_REPORT',
-            'NODE_ARCH="<(target_arch)"',
-            'NODE_PLATFORM="<(OS)"',
-          ],
-          'conditions': [
-            ['OS=="win"', {
-              'libraries': [ 'Ws2_32' ],
-            }],
-          ],
-        }],
         [ 'OS in "linux freebsd mac" and '
           'target_arch=="x64" and '
           'node_target_type=="executable"', {
           'defines': [ 'NODE_ENABLE_LARGE_CODE_PAGES=1' ],
-          'sources': [
-            'src/large_pages/node_large_page.cc',
-            'src/large_pages/node_large_page.h'
-          ],
         }],
         [ 'use_openssl_def==1', {
           # TODO(bnoordhuis) Make all platforms export the same list of symbols.
@@ -1106,7 +1123,11 @@
         'test/cctest',
       ],
 
-      'defines': [ 'NODE_WANT_INTERNALS=1' ],
+      'defines': [
+        'NODE_ARCH="<(target_arch)"',
+        'NODE_PLATFORM="<(OS)"',
+        'NODE_WANT_INTERNALS=1',
+      ],
 
       'sources': [
         'src/node_snapshot_stub.cc',
@@ -1123,6 +1144,8 @@
         'test/cctest/test_linked_binding.cc',
         'test/cctest/test_per_process.cc',
         'test/cctest/test_platform.cc',
+        'test/cctest/test_json_utils.cc',
+        'test/cctest/test_sockaddr.cc',
         'test/cctest/test_traced_value.cc',
         'test/cctest/test_util.cc',
         'test/cctest/test_url.cc',
@@ -1159,21 +1182,6 @@
             'OTHER_LDFLAGS': [ '-Wl,-rpath,@loader_path', ],
           },
         }],
-        [ 'node_report=="true"', {
-          'sources': [
-            'test/cctest/test_report_util.cc',
-          ],
-          'defines': [
-            'NODE_REPORT',
-            'NODE_ARCH="<(target_arch)"',
-            'NODE_PLATFORM="<(OS)"',
-          ],
-          'conditions': [
-            ['OS=="win"', {
-              'libraries': [ 'Ws2_32' ],
-            }],
-          ],
-        }],
         ['OS=="win"', {
           'libraries': [
             'Dbghelp.lib',
@@ -1183,6 +1191,62 @@
         }],
       ],
     }, # cctest
+
+    {
+      'target_name': 'embedtest',
+      'type': 'executable',
+
+      'dependencies': [
+        '<(node_lib_target_name)',
+        'deps/histogram/histogram.gyp:histogram',
+        'deps/uvwasi/uvwasi.gyp:uvwasi',
+        'node_dtrace_header',
+        'node_dtrace_ustack',
+        'node_dtrace_provider',
+      ],
+
+      'includes': [
+        'node.gypi'
+      ],
+
+      'include_dirs': [
+        'src',
+        'tools/msvs/genfiles',
+        'deps/v8/include',
+        'deps/cares/include',
+        'deps/uv/include',
+        'deps/uvwasi/include',
+        'test/embedding',
+      ],
+
+      'sources': [
+        'src/node_snapshot_stub.cc',
+        'src/node_code_cache_stub.cc',
+        'test/embedding/embedtest.cc',
+      ],
+
+      'conditions': [
+        ['OS=="solaris"', {
+          'ldflags': [ '-I<(SHARED_INTERMEDIATE_DIR)' ]
+        }],
+        # Skip cctest while building shared lib node for Windows
+        [ 'OS=="win" and node_shared=="true"', {
+          'type': 'none',
+        }],
+        [ 'node_shared=="true"', {
+          'xcode_settings': {
+            'OTHER_LDFLAGS': [ '-Wl,-rpath,@loader_path', ],
+          },
+        }],
+        ['OS=="win"', {
+          'libraries': [
+            'Dbghelp.lib',
+            'winmm.lib',
+            'Ws2_32.lib',
+          ],
+        }],
+      ],
+    }, # embedtest
 
     # TODO(joyeecheung): do not depend on node_lib,
     # instead create a smaller static library node_lib_base that does
@@ -1225,6 +1289,16 @@
       ],
 
       'conditions': [
+        [ 'node_use_openssl=="true"', {
+          'defines': [
+            'HAVE_OPENSSL=1',
+          ],
+        }],
+        ['v8_enable_inspector==1', {
+          'defines': [
+            'HAVE_INSPECTOR=1',
+          ],
+        }],
         ['OS=="win"', {
           'libraries': [
             'dbghelp.lib',
@@ -1269,6 +1343,16 @@
       ],
 
       'conditions': [
+        [ 'node_use_openssl=="true"', {
+          'defines': [
+            'HAVE_OPENSSL=1',
+          ],
+        }],
+        ['v8_enable_inspector==1', {
+          'defines': [
+            'HAVE_INSPECTOR=1',
+          ],
+        }],
         ['OS=="win"', {
           'libraries': [
             'Dbghelp.lib',

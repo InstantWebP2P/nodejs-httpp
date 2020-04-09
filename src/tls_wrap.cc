@@ -43,12 +43,14 @@ using v8::Exception;
 using v8::Function;
 using v8::FunctionCallbackInfo;
 using v8::FunctionTemplate;
+using v8::HandleScope;
 using v8::Integer;
 using v8::Isolate;
 using v8::Local;
 using v8::Maybe;
 using v8::MaybeLocal;
 using v8::Object;
+using v8::PropertyAttribute;
 using v8::ReadOnly;
 using v8::Signature;
 using v8::String;
@@ -587,6 +589,7 @@ void TLSWrap::ClearIn() {
   AllocatedBuffer data = std::move(pending_cleartext_input_);
   crypto::MarkPopErrorOnReturn mark_pop_error_on_return;
 
+  crypto::NodeBIO::FromBIO(enc_out_)->set_allocate_tls_hint(data.size());
   int written = SSL_write(ssl_.get(), data.data(), data.size());
   Debug(this, "Writing %zu bytes, written = %d", data.size(), written);
   CHECK(written == -1 || written == static_cast<int>(data.size()));
@@ -701,8 +704,15 @@ int TLSWrap::DoWrite(WriteWrap* w,
 
   size_t length = 0;
   size_t i;
-  for (i = 0; i < count; i++)
+  size_t nonempty_i = 0;
+  size_t nonempty_count = 0;
+  for (i = 0; i < count; i++) {
     length += bufs[i].len;
+    if (bufs[i].len > 0) {
+      nonempty_i = i;
+      nonempty_count += 1;
+    }
+  }
 
   // We want to trigger a Write() on the underlying stream to drive the stream
   // system, but don't want to encrypt empty buffers into a TLS frame, so see
@@ -747,20 +757,34 @@ int TLSWrap::DoWrite(WriteWrap* w,
   crypto::MarkPopErrorOnReturn mark_pop_error_on_return;
 
   int written = 0;
-  if (count != 1) {
+
+  // It is common for zero length buffers to be written,
+  // don't copy data if there there is one buffer with data
+  // and one or more zero length buffers.
+  // _http_outgoing.js writes a zero length buffer in
+  // in OutgoingMessage.prototype.end.  If there was a large amount
+  // of data supplied to end() there is no sense allocating
+  // and copying it when it could just be used.
+
+  if (nonempty_count != 1) {
     data = env()->AllocateManaged(length);
     size_t offset = 0;
     for (i = 0; i < count; i++) {
       memcpy(data.data() + offset, bufs[i].base, bufs[i].len);
       offset += bufs[i].len;
     }
+
+    crypto::NodeBIO::FromBIO(enc_out_)->set_allocate_tls_hint(length);
     written = SSL_write(ssl_.get(), data.data(), length);
   } else {
     // Only one buffer: try to write directly, only store if it fails
-    written = SSL_write(ssl_.get(), bufs[0].base, bufs[0].len);
+    uv_buf_t* buf = &bufs[nonempty_i];
+    crypto::NodeBIO::FromBIO(enc_out_)->set_allocate_tls_hint(buf->len);
+    written = SSL_write(ssl_.get(), buf->base, buf->len);
+
     if (written == -1) {
       data = env()->AllocateManaged(length);
-      memcpy(data.data(), bufs[0].base, bufs[0].len);
+      memcpy(data.data(), buf->base, buf->len);
     }
   }
 
@@ -1247,13 +1271,12 @@ void TLSWrap::Initialize(Local<Object> target,
   Local<String> tlsWrapString =
       FIXED_ONE_BYTE_STRING(env->isolate(), "TLSWrap");
   t->SetClassName(tlsWrapString);
-  t->InstanceTemplate()
-    ->SetInternalFieldCount(StreamBase::kStreamBaseFieldCount);
+  t->InstanceTemplate()->SetInternalFieldCount(StreamBase::kInternalFieldCount);
 
   Local<FunctionTemplate> get_write_queue_size =
       FunctionTemplate::New(env->isolate(),
                             GetWriteQueueSize,
-                            env->as_callback_data(),
+                            env->current_callback_data(),
                             Signature::New(env->isolate(), t));
   t->PrototypeTemplate()->SetAccessorProperty(
       env->write_queue_size_string(),

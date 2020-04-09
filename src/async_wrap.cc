@@ -176,6 +176,10 @@ void AsyncWrap::EmitAfter(Environment* env, double async_id) {
 
 class PromiseWrap : public AsyncWrap {
  public:
+  enum InternalFields {
+    kIsChainedPromiseField = AsyncWrap::kInternalFieldCount,
+    kInternalFieldCount
+  };
   PromiseWrap(Environment* env, Local<Object> object, bool silent)
       : AsyncWrap(env, object, PROVIDER_PROMISE, kInvalidAsyncId, silent) {
     MakeWeak();
@@ -184,9 +188,6 @@ class PromiseWrap : public AsyncWrap {
   SET_NO_MEMORY_INFO()
   SET_MEMORY_INFO_NAME(PromiseWrap)
   SET_SELF_SIZE(PromiseWrap)
-
-  static constexpr int kIsChainedPromiseField = 1;
-  static constexpr int kInternalFieldCount = 2;
 
   static PromiseWrap* New(Environment* env,
                           Local<Promise> promise,
@@ -214,15 +215,16 @@ PromiseWrap* PromiseWrap::New(Environment* env,
 void PromiseWrap::getIsChainedPromise(Local<String> property,
                                       const PropertyCallbackInfo<Value>& info) {
   info.GetReturnValue().Set(
-    info.Holder()->GetInternalField(kIsChainedPromiseField));
+      info.Holder()->GetInternalField(PromiseWrap::kIsChainedPromiseField));
 }
 
 static PromiseWrap* extractPromiseWrap(Local<Promise> promise) {
-  Local<Value> resource_object_value = promise->GetInternalField(0);
-  if (resource_object_value->IsObject()) {
-    return Unwrap<PromiseWrap>(resource_object_value.As<Object>());
-  }
-  return nullptr;
+  // This check is imperfect. If the internal field is set, it should
+  // be an object. If it's not, we just ignore it. Ideally v8 would
+  // have had GetInternalField returning a MaybeLocal but this works
+  // for now.
+  Local<Value> obj = promise->GetInternalField(0);
+  return obj->IsObject() ? Unwrap<PromiseWrap>(obj.As<Object>()) : nullptr;
 }
 
 static void PromiseHook(PromiseHookType type, Local<Promise> promise,
@@ -348,6 +350,10 @@ class DestroyParam {
   Global<Object> propBag;
 };
 
+static void DestroyParamCleanupHook(void* ptr) {
+  delete static_cast<DestroyParam*>(ptr);
+}
+
 void AsyncWrap::WeakCallback(const WeakCallbackInfo<DestroyParam>& info) {
   HandleScope scope(info.GetIsolate());
 
@@ -355,6 +361,8 @@ void AsyncWrap::WeakCallback(const WeakCallbackInfo<DestroyParam>& info) {
   Local<Object> prop_bag = PersistentToLocal::Default(info.GetIsolate(),
                                                       p->propBag);
   Local<Value> val;
+
+  p->env->RemoveCleanupHook(DestroyParamCleanupHook, p.get());
 
   if (!prop_bag->Get(p->env->context(), p->env->destroyed_string())
         .ToLocal(&val)) {
@@ -380,6 +388,7 @@ static void RegisterDestroyHook(const FunctionCallbackInfo<Value>& args) {
   p->target.Reset(isolate, args[0].As<Object>());
   p->propBag.Reset(isolate, args[2].As<Object>());
   p->target.SetWeak(p, AsyncWrap::WeakCallback, WeakCallbackType::kParameter);
+  p->env->AddCleanupHook(DestroyParamCleanupHook, p);
 }
 
 void AsyncWrap::GetAsyncId(const FunctionCallbackInfo<Value>& args) {
@@ -560,7 +569,7 @@ void AsyncWrap::Initialize(Local<Object> target,
     function_template->SetClassName(class_name);
     function_template->Inherit(AsyncWrap::GetConstructorTemplate(env));
     auto instance_template = function_template->InstanceTemplate();
-    instance_template->SetInternalFieldCount(1);
+    instance_template->SetInternalFieldCount(AsyncWrap::kInternalFieldCount);
     auto function =
         function_template->GetFunction(env->context()).ToLocalChecked();
     target->Set(env->context(), class_name, function).Check();
@@ -585,7 +594,7 @@ AsyncWrap::AsyncWrap(Environment* env,
   provider_type_ = provider;
 
   // Use AsyncReset() call to execute the init() callbacks.
-  AsyncReset(execution_async_id, silent);
+  AsyncReset(object, execution_async_id, silent);
   init_hook_ran_ = true;
 }
 
@@ -649,10 +658,6 @@ void AsyncWrap::EmitDestroy(Environment* env, double async_id) {
   }
 
   env->destroy_async_id_list()->push_back(async_id);
-}
-
-void AsyncWrap::AsyncReset(double execution_async_id, bool silent) {
-  AsyncReset(object(), execution_async_id, silent);
 }
 
 // Generalized call for both the constructor and for handles that are pooled
@@ -747,7 +752,7 @@ MaybeLocal<Value> AsyncWrap::MakeCallback(const Local<Function> cb,
   ProviderType provider = provider_type();
   async_context context { get_async_id(), get_trigger_async_id() };
   MaybeLocal<Value> ret = InternalMakeCallback(
-      env(), object(), cb, argc, argv, context);
+      env(), GetResource(), object(), cb, argc, argv, context);
 
   // This is a static call with cached values because the `this` object may
   // no longer be alive at this point.

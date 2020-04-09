@@ -44,6 +44,9 @@ However, the deprecation identifier will not be modified.
 ### DEP0001: `http.OutgoingMessage.prototype.flush`
 <!-- YAML
 changes:
+  - version: REPLACEME
+    pr-url: https://github.com/nodejs/node/pull/31164
+    description: End-of-Life.
   - version:
     - v4.8.6
     - v6.12.0
@@ -54,9 +57,9 @@ changes:
     description: Runtime deprecation.
 -->
 
-Type: Runtime
+Type: End-of-Life
 
-The `OutgoingMessage.prototype.flush()` method is deprecated. Use
+`OutgoingMessage.prototype.flush()` has been removed. Use
 `OutgoingMessage.prototype.flushHeaders()` instead.
 
 <a id="DEP0002"></a>
@@ -2614,6 +2617,40 @@ async function openAndClose() {
 }
 ```
 
+<a id="DEP0138"></a>
+### DEP0138: `process.mainModule`
+<!-- YAML
+changes:
+  - version: REPLACEME
+    pr-url: https://github.com/nodejs/node/pull/32232
+    description: Documentation-only deprecation.
+-->
+
+Type: Documentation-only
+
+[`process.mainModule`][] is a CommonJS-only feature while `process` global
+object is shared with non-CommonJS environment. Its use within ECMAScript
+modules is unsupported.
+
+It is deprecated in favor of [`require.main`][], because it serves the same
+purpose and is only available on CommonJS environment.
+
+<a id="DEP0139"></a>
+### DEP0139: `process.umask()` with no arguments
+<!-- YAML
+changes:
+  - version: REPLACEME
+    pr-url: https://github.com/nodejs/node/pull/32499
+    description: Runtime deprecation.
+-->
+
+Type: Runtime
+
+Calling `process.umask()` with no arguments causes the process-wide umask to be
+written twice. This introduces a race condition between threads, and is a
+potential security vulnerability. There is no safe, cross-platform alternative
+API.
+
 [`--pending-deprecation`]: cli.html#cli_pending_deprecation
 [`--throw-deprecation`]: cli.html#cli_throw_deprecation
 [`Buffer.allocUnsafeSlow(size)`]: buffer.html#buffer_class_method_buffer_allocunsafeslow_size
@@ -2671,8 +2708,10 @@ async function openAndClose() {
 [`os.networkInterfaces()`]: os.html#os_os_networkinterfaces
 [`os.tmpdir()`]: os.html#os_os_tmpdir
 [`process.env`]: process.html#process_process_env
+[`process.mainModule`]: process.html#process_process_mainmodule
 [`punycode`]: punycode.html
 [`require.extensions`]: modules.html#modules_require_extensions
+[`require.main`]: modules.html#modules_accessing_the_main_module
 [`request.socket`]: http.html#http_request_socket
 [`request.connection`]: http.html#http_request_connection
 [`response.socket`]: http.html#http_response_socket

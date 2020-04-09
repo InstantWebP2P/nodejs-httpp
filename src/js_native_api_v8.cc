@@ -740,6 +740,7 @@ const char* error_messages[] = {nullptr,
                                 "A date was expected",
                                 "An arraybuffer was expected",
                                 "A detachable arraybuffer was expected",
+                                "Main thread would deadlock",
 };
 
 napi_status napi_get_last_error_info(napi_env env,
@@ -751,7 +752,7 @@ napi_status napi_get_last_error_info(napi_env env,
   // message in the `napi_status` enum each time a new error message is added.
   // We don't have a napi_status_last as this would result in an ABI
   // change each time a message was added.
-  const int last_status = napi_detachable_arraybuffer_expected;
+  const int last_status = napi_would_deadlock;
 
   static_assert(
       NAPI_ARRAYSIZE(error_messages) == last_status + 1,
@@ -2720,9 +2721,6 @@ napi_status napi_create_external_arraybuffer(napi_env env,
                                        nullptr);
   v8::Local<v8::ArrayBuffer> buffer =
       v8::ArrayBuffer::New(isolate, std::move(backing));
-  // TODO(thangktran): drop this check when V8 is pumped to 8.0 .
-  if (!buffer->IsExternal())
-    buffer->Externalize(buffer->GetBackingStore());
   v8::Maybe<bool> marked = env->mark_arraybuffer_as_untransferable(buffer);
   CHECK_MAYBE_NOTHING(env, marked, napi_generic_failure);
 
@@ -3184,9 +3182,6 @@ napi_status napi_detach_arraybuffer(napi_env env, napi_value arraybuffer) {
       env, value->IsArrayBuffer(), napi_arraybuffer_expected);
 
   v8::Local<v8::ArrayBuffer> it = value.As<v8::ArrayBuffer>();
-  // TODO(addaleax): Remove the first condition once we have V8 8.0.
-  RETURN_STATUS_IF_FALSE(
-      env, it->IsExternal(), napi_detachable_arraybuffer_expected);
   RETURN_STATUS_IF_FALSE(
       env, it->IsDetachable(), napi_detachable_arraybuffer_expected);
 

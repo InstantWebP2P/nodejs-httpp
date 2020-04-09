@@ -14,7 +14,9 @@ async function tests() {
   {
     const AsyncIteratorPrototype = Object.getPrototypeOf(
       Object.getPrototypeOf(async function* () {}).prototype);
-    const rs = new Readable({});
+    const rs = new Readable({
+      read() {}
+    });
     assert.strictEqual(
       Object.getPrototypeOf(Object.getPrototypeOf(rs[Symbol.asyncIterator]())),
       AsyncIteratorPrototype);
@@ -354,6 +356,22 @@ async function tests() {
   }
 
   {
+    console.log('destroyed will not deadlock');
+    const readable = new Readable();
+    readable.destroy();
+    process.nextTick(async () => {
+      readable.on('close', common.mustNotCall());
+      let received = 0;
+      for await (const k of readable) {
+        // Just make linting pass. This should never run.
+        assert.strictEqual(k, 'hello');
+        received++;
+      }
+      assert.strictEqual(received, 0);
+    });
+  }
+
+  {
     console.log('push async');
     const max = 42;
     let readed = 0;
@@ -566,6 +584,23 @@ async function tests() {
       }
       assert.strictEqual(e, err);
     })()]);
+  }
+
+  {
+    const _err = new Error('asd');
+    const r = new Readable({
+      read() {
+      },
+      destroy(err, callback) {
+        setTimeout(() => callback(_err), 1);
+      }
+    });
+
+    r.destroy();
+    const it = r[Symbol.asyncIterator]();
+    it.next().catch(common.mustCall((err) => {
+      assert.strictEqual(err, _err);
+    }));
   }
 }
 

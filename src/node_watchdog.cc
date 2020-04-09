@@ -34,6 +34,7 @@ namespace node {
 using v8::Context;
 using v8::FunctionCallbackInfo;
 using v8::FunctionTemplate;
+using v8::Local;
 using v8::Object;
 using v8::Value;
 
@@ -121,7 +122,8 @@ SignalPropagation SigintWatchdog::HandleSigint() {
 
 void TraceSigintWatchdog::Init(Environment* env, Local<Object> target) {
   Local<FunctionTemplate> constructor = env->NewFunctionTemplate(New);
-  constructor->InstanceTemplate()->SetInternalFieldCount(1);
+  constructor->InstanceTemplate()->SetInternalFieldCount(
+      TraceSigintWatchdog::kInternalFieldCount);
   Local<v8::String> js_sigint_watch_dog =
       FIXED_ONE_BYTE_STRING(env->isolate(), "TraceSigintWatchdog");
   constructor->SetClassName(js_sigint_watch_dog);

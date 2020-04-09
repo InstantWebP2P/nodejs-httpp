@@ -17,18 +17,23 @@ namespace node {
 
 using v8::Array;
 using v8::ArrayBuffer;
+using v8::ConstructorBehavior;
 using v8::Context;
 using v8::DontDelete;
 using v8::DontEnum;
 using v8::External;
 using v8::Function;
 using v8::FunctionCallbackInfo;
+using v8::FunctionTemplate;
 using v8::HandleScope;
 using v8::Integer;
 using v8::Local;
 using v8::MaybeLocal;
 using v8::Object;
+using v8::PropertyAttribute;
 using v8::ReadOnly;
+using v8::SideEffectType;
+using v8::Signature;
 using v8::String;
 using v8::Value;
 
@@ -340,7 +345,8 @@ MaybeLocal<Value> StreamBase::CallJSOnreadMethod(ssize_t nread,
 
   AsyncWrap* wrap = GetAsyncWrap();
   CHECK_NOT_NULL(wrap);
-  Local<Value> onread = wrap->object()->GetInternalField(kOnReadFunctionField);
+  Local<Value> onread = wrap->object()->GetInternalField(
+      StreamBase::kOnReadFunctionField);
   CHECK(onread->IsFunction());
   return wrap->MakeCallback(onread.As<Function>(), arraysize(argv), argv);
 }
@@ -369,8 +375,8 @@ void StreamBase::AddMethod(Environment* env,
   Local<FunctionTemplate> templ =
       env->NewFunctionTemplate(stream_method,
                                signature,
-                               v8::ConstructorBehavior::kThrow,
-                               v8::SideEffectType::kHasNoSideEffect);
+                               ConstructorBehavior::kThrow,
+                               SideEffectType::kHasNoSideEffect);
   t->PrototypeTemplate()->SetAccessorProperty(
       string, templ, Local<FunctionTemplate>(), attributes);
 }
@@ -409,8 +415,11 @@ void StreamBase::AddMethods(Environment* env, Local<FunctionTemplate> t) {
                               True(env->isolate()));
   t->PrototypeTemplate()->SetAccessor(
       FIXED_ONE_BYTE_STRING(env->isolate(), "onread"),
-      BaseObject::InternalFieldGet<kOnReadFunctionField>,
-      BaseObject::InternalFieldSet<kOnReadFunctionField, &Value::IsFunction>);
+      BaseObject::InternalFieldGet<
+          StreamBase::kOnReadFunctionField>,
+      BaseObject::InternalFieldSet<
+          StreamBase::kOnReadFunctionField,
+          &Value::IsFunction>);
 }
 
 void StreamBase::GetFD(const FunctionCallbackInfo<Value>& args) {
@@ -508,12 +517,20 @@ uv_buf_t CustomBufferJSListener::OnStreamAlloc(size_t suggested_size) {
 
 void CustomBufferJSListener::OnStreamRead(ssize_t nread, const uv_buf_t& buf) {
   CHECK_NOT_NULL(stream_);
-  CHECK_EQ(buf.base, buffer_.base);
 
   StreamBase* stream = static_cast<StreamBase*>(stream_);
   Environment* env = stream->stream_env();
   HandleScope handle_scope(env->isolate());
   Context::Scope context_scope(env->context());
+
+  // To deal with the case where POLLHUP is received and UV_EOF is returned, as
+  // libuv returns an empty buffer (on unices only).
+  if (nread == UV_EOF && buf.base == nullptr) {
+    stream->CallJSOnreadMethod(nread, Local<ArrayBuffer>());
+    return;
+  }
+
+  CHECK_EQ(buf.base, buffer_.base);
 
   MaybeLocal<Value> ret = stream->CallJSOnreadMethod(nread,
                              Local<ArrayBuffer>(),
@@ -563,5 +580,52 @@ void ReportWritesToJSStreamListener::OnStreamAfterShutdown(
   OnStreamAfterReqFinished(req_wrap, status);
 }
 
+void ShutdownWrap::OnDone(int status) {
+  stream()->EmitAfterShutdown(this, status);
+  Dispose();
+}
+
+void WriteWrap::OnDone(int status) {
+  stream()->EmitAfterWrite(this, status);
+  Dispose();
+}
+
+StreamListener::~StreamListener() {
+  if (stream_ != nullptr)
+    stream_->RemoveStreamListener(this);
+}
+
+void StreamListener::OnStreamAfterShutdown(ShutdownWrap* w, int status) {
+  CHECK_NOT_NULL(previous_listener_);
+  previous_listener_->OnStreamAfterShutdown(w, status);
+}
+
+void StreamListener::OnStreamAfterWrite(WriteWrap* w, int status) {
+  CHECK_NOT_NULL(previous_listener_);
+  previous_listener_->OnStreamAfterWrite(w, status);
+}
+
+StreamResource::~StreamResource() {
+  while (listener_ != nullptr) {
+    StreamListener* listener = listener_;
+    listener->OnStreamDestroy();
+    // Remove the listener if it didn’t remove itself. This makes the logic
+    // in `OnStreamDestroy()` implementations easier, because they
+    // may call generic cleanup functions which can just remove the
+    // listener unconditionally.
+    if (listener == listener_)
+      RemoveStreamListener(listener_);
+  }
+}
+
+ShutdownWrap* StreamBase::CreateShutdownWrap(
+    Local<Object> object) {
+  return new SimpleShutdownWrap<AsyncWrap>(this, object);
+}
+
+WriteWrap* StreamBase::CreateWriteWrap(
+    Local<Object> object) {
+  return new SimpleWriteWrap<AsyncWrap>(this, object);
+}
 
 }  // namespace node

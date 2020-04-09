@@ -457,6 +457,28 @@ const errorTests = [
       /'thefourtheye'/
     ]
   },
+  // Check for wrapped objects.
+  {
+    send: '{ a: 1 }.a', // ({ a: 1 }.a);
+    expect: '1'
+  },
+  {
+    send: '{ a: 1 }.a;', // { a: 1 }.a;
+    expect: [
+      kSource,
+      kArrow,
+      '',
+      /^Uncaught SyntaxError: /
+    ]
+  },
+  {
+    send: '{ a: 1 }["a"] === 1', // ({ a: 1 }['a'] === 1);
+    expect: 'true'
+  },
+  {
+    send: '{ a: 1 }["a"] === 1;', // { a: 1 }; ['a'] === 1;
+    expect: 'false'
+  },
   // Empty lines in the REPL should be allowed
   {
     send: '\n\r\n\r\n',
@@ -538,7 +560,7 @@ const errorTests = [
     expect: '... ... ... undefined'
   },
   // REPL should get a normal require() function, not one that allows
-  // access to internal modules without the --expose_internals flag.
+  // access to internal modules without the --expose-internals flag.
   {
     send: 'require("internal/repl")',
     expect: [
@@ -861,7 +883,7 @@ function event(ee, expected) {
       const data = inspect(expected, { compact: false });
       const msg = `The REPL did not reply as expected for:\n\n${data}`;
       reject(new Error(msg));
-    }, common.platformTimeout(500));
+    }, common.platformTimeout(1000));
     ee.once('data', common.mustCall((...args) => {
       clearTimeout(timeout);
       resolve(...args);

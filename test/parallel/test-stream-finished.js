@@ -181,7 +181,7 @@ const { promisify } = require('util');
   const streamLike = new EE();
   streamLike.readableEnded = true;
   streamLike.readable = true;
-  finished(streamLike, common.mustCall);
+  finished(streamLike, common.mustCall());
   streamLike.emit('close');
 }
 
@@ -312,7 +312,6 @@ testClosed((opts) => new Writable({ write() {}, ...opts }));
   }));
 }
 
-
 {
   const r = new Readable({
     autoDestroy: false
@@ -331,4 +330,25 @@ testClosed((opts) => new Writable({ write() {}, ...opts }));
   rs.on('end', common.mustCall(() => {
     finished(rs, common.mustCall());
   }));
+}
+
+{
+  const d = new EE();
+  d._writableState = {};
+  d._writableState.finished = true;
+  finished(d, { readable: false, writable: true }, common.mustCall((err) => {
+    assert.strictEqual(err, undefined);
+  }));
+  d._writableState.errored = true;
+  d.emit('close');
+}
+
+{
+  const r = new Readable();
+  finished(r, common.mustCall((err) => {
+    assert.strictEqual(err.code, 'ERR_STREAM_PREMATURE_CLOSE');
+  }));
+  r.push('asd');
+  r.push(null);
+  r.destroy();
 }

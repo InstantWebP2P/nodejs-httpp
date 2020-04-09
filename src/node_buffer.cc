@@ -163,7 +163,6 @@ void CallbackInfo::WeakCallback(
     const WeakCallbackInfo<CallbackInfo>& data) {
   CallbackInfo* self = data.GetParameter();
   self->WeakCallback(data.GetIsolate());
-  delete self;
 }
 
 
@@ -171,6 +170,7 @@ void CallbackInfo::WeakCallback(Isolate* isolate) {
   callback_(data_, hint_);
   int64_t change_in_bytes = -static_cast<int64_t>(sizeof(*this));
   isolate->AdjustAmountOfExternalAllocatedMemory(change_in_bytes);
+  delete this;
 }
 
 
@@ -417,9 +417,6 @@ MaybeLocal<Object> New(Environment* env,
                                    nullptr);
   Local<ArrayBuffer> ab = ArrayBuffer::New(env->isolate(),
                                            std::move(backing));
-  // TODO(thangktran): drop this check when V8 is pumped to 8.0 .
-  if (!ab->IsExternal())
-    ab->Externalize(ab->GetBackingStore());
   if (ab->SetPrivate(env->context(),
                      env->arraybuffer_untransferable_private_symbol(),
                      True(env->isolate())).IsNothing()) {
@@ -1212,9 +1209,6 @@ void Initialize(Local<Object> target,
                                    nullptr);
     Local<ArrayBuffer> array_buffer =
         ArrayBuffer::New(env->isolate(), std::move(backing));
-    // TODO(thangktran): drop this check when V8 is pumped to 8.0 .
-    if (!array_buffer->IsExternal())
-      array_buffer->Externalize(array_buffer->GetBackingStore());
     array_buffer->SetPrivate(
         env->context(),
         env->arraybuffer_untransferable_private_symbol(),

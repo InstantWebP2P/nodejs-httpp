@@ -4,19 +4,27 @@ const assert = require('assert');
 
 const { Writable } = require('stream');
 
-function expectError(w, arg, code) {
-  let errorCalled = false;
-  let ticked = false;
-  w.write(arg, common.mustCall((err) => {
-    assert.strictEqual(ticked, true);
-    assert.strictEqual(errorCalled, false);
-    assert.strictEqual(err.code, code);
-  }));
-  ticked = true;
-  w.on('error', common.mustCall((err) => {
-    errorCalled = true;
-    assert.strictEqual(err.code, code);
-  }));
+function expectError(w, arg, code, sync) {
+  if (sync) {
+    if (code) {
+      assert.throws(() => w.write(arg), { code });
+    } else {
+      w.write(arg);
+    }
+  } else {
+    let errorCalled = false;
+    let ticked = false;
+    w.write(arg, common.mustCall((err) => {
+      assert.strictEqual(ticked, true);
+      assert.strictEqual(errorCalled, false);
+      assert.strictEqual(err.code, code);
+    }));
+    ticked = true;
+    w.on('error', common.mustCall((err) => {
+      errorCalled = true;
+      assert.strictEqual(err.code, code);
+    }));
+  }
 }
 
 function test(autoDestroy) {
@@ -35,7 +43,6 @@ function test(autoDestroy) {
       _write() {}
     });
     w.destroy();
-    expectError(w, 'asd', 'ERR_STREAM_DESTROYED');
   }
 
   {
@@ -43,7 +50,7 @@ function test(autoDestroy) {
       autoDestroy,
       _write() {}
     });
-    expectError(w, null, 'ERR_STREAM_NULL_VALUES');
+    expectError(w, null, 'ERR_STREAM_NULL_VALUES', true);
   }
 
   {
@@ -51,7 +58,7 @@ function test(autoDestroy) {
       autoDestroy,
       _write() {}
     });
-    expectError(w, {}, 'ERR_INVALID_ARG_TYPE');
+    expectError(w, {}, 'ERR_INVALID_ARG_TYPE', true);
   }
 }
 

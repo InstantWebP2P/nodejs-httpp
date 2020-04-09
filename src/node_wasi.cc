@@ -170,6 +170,9 @@ void WASI::New(const FunctionCallbackInfo<Value>& args) {
   const uint32_t argc = argv->Length();
   uvwasi_options_t options;
 
+  options.in = 0;
+  options.out = 1;
+  options.err = 2;
   options.fd_table_size = 3;
   options.argc = argc;
   options.argv = argc == 0 ? nullptr : new char*[argc];
@@ -1810,7 +1813,7 @@ static void Initialize(Local<Object> target,
 
   Local<FunctionTemplate> tmpl = env->NewFunctionTemplate(WASI::New);
   auto wasi_wrap_string = FIXED_ONE_BYTE_STRING(env->isolate(), "WASI");
-  tmpl->InstanceTemplate()->SetInternalFieldCount(1);
+  tmpl->InstanceTemplate()->SetInternalFieldCount(WASI::kInternalFieldCount);
   tmpl->SetClassName(wasi_wrap_string);
 
   env->SetProtoMethod(tmpl, "args_get", WASI::ArgsGet);

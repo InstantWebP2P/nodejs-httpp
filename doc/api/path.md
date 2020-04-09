@@ -56,8 +56,8 @@ path.posix.basename('/tmp/myfile.html');
 
 On Windows Node.js follows the concept of per-drive working directory.
 This behavior can be observed when using a drive path without a backslash. For
-example, `path.resolve('c:\\')` can potentially return a different result than
-`path.resolve('c:')`. For more information, see
+example, `path.resolve('C:\\')` can potentially return a different result than
+`path.resolve('C:')`. For more information, see
 [this MSDN page][MSDN-Rel-Path].
 
 ## `path.basename(path[, ext])`
@@ -389,7 +389,7 @@ path.parse('/home/user/dir/file.txt');
 │ root │              │ name │ ext │
 "  /    home/user/dir / file  .txt "
 └──────┴──────────────┴──────┴─────┘
-(all spaces in the "" line should be ignored — they are purely for formatting)
+(All spaces in the "" line should be ignored. They are purely for formatting.)
 ```
 
 On Windows:
@@ -411,7 +411,7 @@ path.parse('C:\\path\\dir\\file.txt');
 │ root │              │ name │ ext │
 " C:\      path\dir   \ file  .txt "
 └──────┴──────────────┴──────┴─────┘
-(all spaces in the "" line should be ignored — they are purely for formatting)
+(All spaces in the "" line should be ignored. They are purely for formatting.)
 ```
 
 A [`TypeError`][] is thrown if `path` is not a string.

@@ -547,28 +547,9 @@ function expectsError(validator, exact) {
   }, exact);
 }
 
-const suffix = 'This is caused by either a bug in Node.js ' +
-  'or incorrect usage of Node.js internals.\n' +
-  'Please open an issue with this stack trace at ' +
-  'https://github.com/nodejs/node/issues\n';
-
-function expectsInternalAssertion(fn, message) {
-  assert.throws(fn, {
-    message: `${message}\n${suffix}`,
-    name: 'Error',
-    code: 'ERR_INTERNAL_ASSERTION'
-  });
-}
-
 function skipIfInspectorDisabled() {
   if (!process.features.inspector) {
     skip('V8 inspector is disabled');
-  }
-}
-
-function skipIfReportDisabled() {
-  if (!process.config.variables.node_report) {
-    skip('Diagnostic reporting is disabled');
   }
 }
 
@@ -672,7 +653,7 @@ function invalidArgTypeHelper(input) {
   return ` Received type ${typeof input} (${inspected})`;
 }
 
-module.exports = {
+const common = {
   allowGlobals,
   buildType,
   canCreateSymLink,
@@ -680,7 +661,6 @@ module.exports = {
   createZeroFilledFile,
   disableCrashOnUnhandledRejection,
   expectsError,
-  expectsInternalAssertion,
   expectWarning,
   getArrayBufferViews,
   getBufferSources,
@@ -714,10 +694,9 @@ module.exports = {
   skipIf32Bits,
   skipIfEslintMissing,
   skipIfInspectorDisabled,
-  skipIfReportDisabled,
   skipIfWorker,
 
-  get enoughTestCPU() {
+  get enoughTestCpu() {
     const cpus = require('os').cpus();
     return Array.isArray(cpus) && (cpus.length > 1 || cpus[0].speed > 999);
   },
@@ -815,3 +794,12 @@ module.exports = {
   }
 
 };
+
+const validProperties = new Set(Object.keys(common));
+module.exports = new Proxy(common, {
+  get(obj, prop) {
+    if (!validProperties.has(prop))
+      throw new Error(`Using invalid common property: '${prop}'`);
+    return obj[prop];
+  }
+});

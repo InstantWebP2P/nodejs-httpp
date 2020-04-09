@@ -88,7 +88,7 @@ class PerIsolatePlatformData :
   void DecreaseHandleCount();
 
   static void FlushTasks(uv_async_t* handle);
-  static void RunForegroundTask(std::unique_ptr<v8::Task> task);
+  void RunForegroundTask(std::unique_ptr<v8::Task> task);
   static void RunForegroundTask(uv_timer_t* timer);
 
   struct ShutdownCallback {
@@ -101,6 +101,7 @@ class PerIsolatePlatformData :
   std::shared_ptr<PerIsolatePlatformData> self_reference_;
   uint32_t uv_handle_count_ = 1;  // 1 = flush_tasks_
 
+  v8::Isolate* const isolate_;
   uv_loop_t* const loop_;
   uv_async_t* flush_tasks_ = nullptr;
   TaskQueue<v8::Task> foreground_tasks_;
@@ -138,8 +139,8 @@ class WorkerThreadsTaskRunner {
 class NodePlatform : public MultiIsolatePlatform {
  public:
   NodePlatform(int thread_pool_size,
-               node::tracing::TracingController* tracing_controller);
-  ~NodePlatform() override = default;
+               v8::TracingController* tracing_controller);
+  ~NodePlatform() override;
 
   void DrainTasks(v8::Isolate* isolate) override;
   void Shutdown();
@@ -149,18 +150,10 @@ class NodePlatform : public MultiIsolatePlatform {
   void CallOnWorkerThread(std::unique_ptr<v8::Task> task) override;
   void CallDelayedOnWorkerThread(std::unique_ptr<v8::Task> task,
                                  double delay_in_seconds) override;
-  void CallOnForegroundThread(v8::Isolate* isolate, v8::Task* task) override {
-    UNREACHABLE();
-  }
-  void CallDelayedOnForegroundThread(v8::Isolate* isolate,
-                                     v8::Task* task,
-                                     double delay_in_seconds) override {
-    UNREACHABLE();
-  }
   bool IdleTasksEnabled(v8::Isolate* isolate) override;
   double MonotonicallyIncreasingTime() override;
   double CurrentClockTimeMillis() override;
-  node::tracing::TracingController* GetTracingController() override;
+  v8::TracingController* GetTracingController() override;
   bool FlushForegroundTasks(v8::Isolate* isolate) override;
 
   void RegisterIsolate(v8::Isolate* isolate, uv_loop_t* loop) override;
@@ -185,8 +178,9 @@ class NodePlatform : public MultiIsolatePlatform {
     IsolatePlatformDelegate*, std::shared_ptr<PerIsolatePlatformData>>;
   std::unordered_map<v8::Isolate*, DelegatePair> per_isolate_;
 
-  node::tracing::TracingController* tracing_controller_;
+  v8::TracingController* tracing_controller_;
   std::shared_ptr<WorkerThreadsTaskRunner> worker_thread_task_runner_;
+  bool has_shut_down_ = false;
 };
 
 }  // namespace node

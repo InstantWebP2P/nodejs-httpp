@@ -352,7 +352,7 @@ async function processLineByLine() {
 
 ### `rl.line`
 <!-- YAML
-added: 0.1.98
+added: v0.1.98
 -->
 
 * {string|undefined}
@@ -387,7 +387,7 @@ process.stdin.on('keypress', (c, k) => {
 
 ### `rl.cursor`
 <!-- YAML
-added: 0.1.98
+added: v0.1.98
 -->
 
 * {number|undefined}
@@ -456,7 +456,7 @@ the current position of the cursor down.
 <!-- YAML
 added: v0.1.98
 changes:
-  - version: REPLACEME
+  - version: v13.9.0
     pr-url: https://github.com/nodejs/node/pull/31318
     description: The `tabSize` option is supported now.
   - version: v8.3.0, 6.11.4

@@ -1232,7 +1232,7 @@ passing keys as strings or `Buffer`s due to improved security features.
 <!-- YAML
 added: v11.6.0
 changes:
-  - version: REPLACEME
+  - version: v13.9.0
     pr-url: https://github.com/nodejs/node/pull/31178
     description: Added support for `'dh'`.
   - version: v12.0.0
@@ -2091,7 +2091,7 @@ algorithm names.
 
 ### `crypto.diffieHellman(options)`
 <!-- YAML
-added: REPLACEME
+added: v13.9.0
 -->
 
 * `options`: {Object}
@@ -2107,7 +2107,7 @@ Both keys must have the same `asymmetricKeyType`, which must be one of `'dh'`
 <!-- YAML
 added: v10.12.0
 changes:
-  - version: REPLACEME
+  - version: v13.9.0
     pr-url: https://github.com/nodejs/node/pull/31178
     description: Add support for Diffie-Hellman.
   - version: v12.0.0
@@ -2180,7 +2180,7 @@ a `Promise` for an `Object` with `publicKey` and `privateKey` properties.
 <!-- YAML
 added: v10.12.0
 changes:
-  - version: REPLACEME
+  - version: v13.9.0
     pr-url: https://github.com/nodejs/node/pull/31178
     description: Add support for Diffie-Hellman.
   - version: v12.0.0
@@ -2308,8 +2308,9 @@ console.log(aliceSecret === bobSecret);
 added: v10.0.0
 -->
 
-* Returns: {boolean} `true` if and only if a FIPS compliant crypto provider is
-  currently in use.
+* Returns: {number} `1` if and only if a FIPS compliant crypto provider is
+  currently in use, `0` otherwise. A future semver-major release may change
+  the return type of this API to a {boolean}.
 
 ### `crypto.getHashes()`
 <!-- YAML
@@ -2482,8 +2483,10 @@ changes:
 -->
 
 * `privateKey` {Object | string | Buffer | KeyObject}
-  * `oaepHash` {string} The hash function to use for OAEP padding.
+  * `oaepHash` {string} The hash function to use for OAEP padding and MGF1.
     **Default:** `'sha1'`
+  * `oaepLabel` {Buffer | TypedArray | DataView} The label to use for OAEP
+     padding. If not specified, no label is used.
   * `padding` {crypto.constants} An optional padding value defined in
     `crypto.constants`, which may be: `crypto.constants.RSA_NO_PADDING`,
     `crypto.constants.RSA_PKCS1_PADDING`, or
@@ -2570,8 +2573,10 @@ changes:
 
 * `key` {Object | string | Buffer | KeyObject}
   * `key` {string | Buffer | KeyObject} A PEM encoded public or private key.
-  * `oaepHash` {string} The hash function to use for OAEP padding.
+  * `oaepHash` {string} The hash function to use for OAEP padding and MGF1.
     **Default:** `'sha1'`
+  * `oaepLabel` {Buffer | TypedArray | DataView} The label to use for OAEP
+     padding. If not specified, no label is used.
   * `passphrase` {string | Buffer} An optional passphrase for the private key.
   * `padding` {crypto.constants} An optional padding value defined in
     `crypto.constants`, which may be: `crypto.constants.RSA_NO_PADDING`,

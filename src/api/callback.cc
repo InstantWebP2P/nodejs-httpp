@@ -62,16 +62,16 @@ InternalCallbackScope::InternalCallbackScope(Environment* env,
   // If you hit this assertion, you forgot to enter the v8::Context first.
   CHECK_EQ(Environment::GetCurrent(env->isolate()), env);
 
+  env->async_hooks()->push_async_context(
+    async_context_.async_id, async_context_.trigger_async_id, object);
+
+  pushed_ids_ = true;
+
   if (asyncContext.async_id != 0 && !skip_hooks_) {
     // No need to check a return value because the application will exit if
     // an exception occurs.
     AsyncWrap::EmitBefore(env, asyncContext.async_id);
   }
-
-  env->async_hooks()->push_async_context(async_context_.async_id,
-                              async_context_.trigger_async_id, object);
-
-  pushed_ids_ = true;
 }
 
 InternalCallbackScope::~InternalCallbackScope() {
@@ -88,14 +88,14 @@ void InternalCallbackScope::Close() {
     env_->async_hooks()->clear_async_id_stack();
   }
 
+  if (!failed_ && async_context_.async_id != 0 && !skip_hooks_) {
+    AsyncWrap::EmitAfter(env_, async_context_.async_id);
+  }
+
   if (pushed_ids_)
     env_->async_hooks()->pop_async_context(async_context_.async_id);
 
   if (failed_) return;
-
-  if (async_context_.async_id != 0 && !skip_hooks_) {
-    AsyncWrap::EmitAfter(env_, async_context_.async_id);
-  }
 
   if (env_->async_callback_scope_depth() > 1 || skip_task_queues_) {
     return;
@@ -139,6 +139,7 @@ void InternalCallbackScope::Close() {
 }
 
 MaybeLocal<Value> InternalMakeCallback(Environment* env,
+                                       Local<Object> resource,
                                        Local<Object> recv,
                                        const Local<Function> callback,
                                        int argc,
@@ -150,7 +151,7 @@ MaybeLocal<Value> InternalMakeCallback(Environment* env,
     CHECK(!argv[i].IsEmpty());
 #endif
 
-  InternalCallbackScope scope(env, recv, asyncContext);
+  InternalCallbackScope scope(env, resource, asyncContext);
   if (scope.Failed()) {
     return MaybeLocal<Value>();
   }
@@ -224,7 +225,7 @@ MaybeLocal<Value> MakeCallback(Isolate* isolate,
   CHECK_NOT_NULL(env);
   Context::Scope context_scope(env->context());
   MaybeLocal<Value> ret =
-      InternalMakeCallback(env, recv, callback, argc, argv, asyncContext);
+      InternalMakeCallback(env, recv, recv, callback, argc, argv, asyncContext);
   if (ret.IsEmpty() && env->async_callback_scope_depth() == 0) {
     // This is only for legacy compatibility and we may want to look into
     // removing/adjusting it.

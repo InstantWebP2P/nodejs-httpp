@@ -8,18 +8,17 @@ const common = require('../common.js');
 const {
   createHook,
   executionAsyncResource,
-  executionAsyncId
+  executionAsyncId,
+  AsyncLocalStorage
 } = require('async_hooks');
 const { createServer } = require('http');
 
-// Configuration for the http server
-// there is no need for parameters in this test
-const connections = 500;
-const path = '/';
-
 const bench = common.createBenchmark(main, {
-  type: ['async-resource', 'destroy'],
+  type: ['async-resource', 'destroy', 'async-local-storage'],
   asyncMethod: ['callbacks', 'async'],
+  path: '/',
+  connections: 500,
+  duration: 5,
   n: [1e6]
 });
 
@@ -36,7 +35,7 @@ function buildCurrentResource(getServe) {
 
   function getCLS() {
     const resource = executionAsyncResource();
-    if (resource === null || !resource[cls]) {
+    if (!resource[cls]) {
       return null;
     }
     return resource[cls].state;
@@ -44,9 +43,6 @@ function buildCurrentResource(getServe) {
 
   function setCLS(state) {
     const resource = executionAsyncResource();
-    if (resource === null) {
-      return;
-    }
     if (!resource[cls]) {
       resource[cls] = { state };
     } else {
@@ -55,7 +51,7 @@ function buildCurrentResource(getServe) {
   }
 
   function init(asyncId, type, triggerAsyncId, resource) {
-    var cr = executionAsyncResource();
+    const cr = executionAsyncResource();
     if (cr !== null) {
       resource[cls] = cr[cls];
     }
@@ -102,6 +98,41 @@ function buildDestroy(getServe) {
   }
 }
 
+function buildAsyncLocalStorage(getServe) {
+  const asyncLocalStorage = new AsyncLocalStorage();
+  const server = createServer((req, res) => {
+    asyncLocalStorage.runSyncAndReturn({}, () => {
+      getServe(getCLS, setCLS)(req, res);
+    });
+  });
+
+  return {
+    server,
+    close
+  };
+
+  function getCLS() {
+    const store = asyncLocalStorage.getStore();
+    if (store === undefined) {
+      return null;
+    }
+    return store.state;
+  }
+
+  function setCLS(state) {
+    const store = asyncLocalStorage.getStore();
+    if (store === undefined) {
+      return;
+    }
+    store.state = state;
+  }
+
+  function close() {
+    asyncLocalStorage.disable();
+    server.close();
+  }
+}
+
 function getServeAwait(getCLS, setCLS) {
   return async function serve(req, res) {
     setCLS(Math.random());
@@ -126,7 +157,8 @@ function getServeCallbacks(getCLS, setCLS) {
 
 const types = {
   'async-resource': buildCurrentResource,
-  'destroy': buildDestroy
+  'destroy': buildDestroy,
+  'async-local-storage': buildAsyncLocalStorage
 };
 
 const asyncMethods = {
@@ -134,7 +166,7 @@ const asyncMethods = {
   'async': getServeAwait
 };
 
-function main({ type, asyncMethod }) {
+function main({ type, asyncMethod, connections, duration, path }) {
   const { server, close } = types[type](asyncMethods[asyncMethod]);
 
   server
@@ -143,7 +175,8 @@ function main({ type, asyncMethod }) {
 
       bench.http({
         path,
-        connections
+        connections,
+        duration
       }, () => {
         close();
       });

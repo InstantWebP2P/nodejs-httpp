@@ -64,6 +64,19 @@ inline MultiIsolatePlatform* IsolateData::platform() const {
   return platform_;
 }
 
+inline void IsolateData::set_worker_context(worker::Worker* context) {
+  CHECK_NULL(worker_context_);  // Should be set only once.
+  worker_context_ = context;
+}
+
+inline worker::Worker* IsolateData::worker_context() const {
+  return worker_context_;
+}
+
+inline v8::Local<v8::String> IsolateData::async_wrap_provider(int index) const {
+  return async_wrap_providers_[index].Get(isolate_);
+}
+
 inline AsyncHooks::AsyncHooks()
     : async_ids_stack_(env()->isolate(), 16 * 2),
       fields_(env()->isolate(), kFieldsCount),
@@ -86,20 +99,6 @@ inline AsyncHooks::AsyncHooks()
   // kAsyncIdCounter should start at 1 because that'll be the id the execution
   // context during bootstrap (code that runs before entering uv_run()).
   async_id_fields_[AsyncHooks::kAsyncIdCounter] = 1;
-
-  // Create all the provider strings that will be passed to JS. Place them in
-  // an array so the array index matches the PROVIDER id offset. This way the
-  // strings can be retrieved quickly.
-#define V(Provider)                                                           \
-  providers_[AsyncWrap::PROVIDER_ ## Provider].Set(                           \
-      env()->isolate(),                                                       \
-      v8::String::NewFromOneByte(                                             \
-        env()->isolate(),                                                     \
-        reinterpret_cast<const uint8_t*>(#Provider),                          \
-        v8::NewStringType::kInternalized,                                     \
-        sizeof(#Provider) - 1).ToLocalChecked());
-  NODE_ASYNC_PROVIDER_TYPES(V)
-#undef V
 }
 inline AliasedUint32Array& AsyncHooks::fields() {
   return fields_;
@@ -118,7 +117,7 @@ inline v8::Local<v8::Array> AsyncHooks::execution_async_resources() {
 }
 
 inline v8::Local<v8::String> AsyncHooks::provider_string(int idx) {
-  return providers_[idx].Get(env()->isolate());
+  return env()->isolate_data()->async_wrap_provider(idx);
 }
 
 inline void AsyncHooks::no_force_checks() {
@@ -328,14 +327,46 @@ inline Environment* Environment::GetCurrent(
   return GetFromCallbackData(info.Data());
 }
 
-inline Environment* Environment::GetFromCallbackData(v8::Local<v8::Value> val) {
+Environment* Environment::GetFromCallbackData(v8::Local<v8::Value> val) {
   DCHECK(val->IsObject());
   v8::Local<v8::Object> obj = val.As<v8::Object>();
-  DCHECK_GE(obj->InternalFieldCount(), 1);
-  Environment* env =
-      static_cast<Environment*>(obj->GetAlignedPointerFromInternalField(0));
+  DCHECK_GE(obj->InternalFieldCount(),
+            BaseObject::kInternalFieldCount);
+  Environment* env = Unwrap<BaseObject>(obj)->env();
   DCHECK(env->as_callback_data_template()->HasInstance(obj));
   return env;
+}
+
+template <typename T>
+Environment::BindingScope<T>::BindingScope(Environment* env) : env(env) {
+  v8::Local<v8::Object> callback_data;
+  if (!env->MakeBindingCallbackData<T>().ToLocal(&callback_data))
+    return;
+  data = Unwrap<T>(callback_data);
+
+  // No nesting allowed currently.
+  CHECK_EQ(env->current_callback_data(), env->as_callback_data());
+  env->set_current_callback_data(callback_data);
+}
+
+template <typename T>
+Environment::BindingScope<T>::~BindingScope() {
+  env->set_current_callback_data(env->as_callback_data());
+}
+
+template <typename T>
+v8::MaybeLocal<v8::Object> Environment::MakeBindingCallbackData() {
+  v8::Local<v8::Function> ctor;
+  v8::Local<v8::Object> obj;
+  if (!as_callback_data_template()->GetFunction(context()).ToLocal(&ctor) ||
+      !ctor->NewInstance(context()).ToLocal(&obj)) {
+    return v8::MaybeLocal<v8::Object>();
+  }
+  T* data = new T(this, obj);
+  // This won't compile if T is not a BaseObject subclass.
+  CHECK_EQ(data, static_cast<BaseObject*>(data));
+  data->MakeWeak();
+  return obj;
 }
 
 inline Environment* Environment::GetThreadLocalEnv() {
@@ -549,93 +580,6 @@ inline double Environment::get_default_trigger_async_id() {
   return default_trigger_async_id;
 }
 
-inline double* Environment::heap_statistics_buffer() const {
-  CHECK_NOT_NULL(heap_statistics_buffer_);
-  return static_cast<double*>(heap_statistics_buffer_->Data());
-}
-
-inline void Environment::set_heap_statistics_buffer(
-    std::shared_ptr<v8::BackingStore> backing_store) {
-  CHECK(!heap_statistics_buffer_);  // Should be set only once.
-  heap_statistics_buffer_ = std::move(backing_store);
-}
-
-inline double* Environment::heap_space_statistics_buffer() const {
-  CHECK(heap_space_statistics_buffer_);
-  return static_cast<double*>(heap_space_statistics_buffer_->Data());
-}
-
-inline void Environment::set_heap_space_statistics_buffer(
-    std::shared_ptr<v8::BackingStore> backing_store) {
-  CHECK(!heap_space_statistics_buffer_);  // Should be set only once.
-  heap_space_statistics_buffer_ = std::move(backing_store);
-}
-
-inline double* Environment::heap_code_statistics_buffer() const {
-  CHECK(heap_code_statistics_buffer_);
-  return static_cast<double*>(heap_code_statistics_buffer_->Data());
-}
-
-inline void Environment::set_heap_code_statistics_buffer(
-    std::shared_ptr<v8::BackingStore> backing_store) {
-  CHECK(!heap_code_statistics_buffer_);  // Should be set only once.
-  heap_code_statistics_buffer_ = std::move(backing_store);
-}
-
-inline char* Environment::http_parser_buffer() const {
-  return http_parser_buffer_;
-}
-
-inline void Environment::set_http_parser_buffer(char* buffer) {
-  CHECK_NULL(http_parser_buffer_);  // Should be set only once.
-  http_parser_buffer_ = buffer;
-}
-
-inline bool Environment::http_parser_buffer_in_use() const {
-  return http_parser_buffer_in_use_;
-}
-
-inline void Environment::set_http_parser_buffer_in_use(bool in_use) {
-  http_parser_buffer_in_use_ = in_use;
-}
-
-inline http2::Http2State* Environment::http2_state() const {
-  return http2_state_.get();
-}
-
-inline void Environment::set_http2_state(
-    std::unique_ptr<http2::Http2State> buffer) {
-  CHECK(!http2_state_);  // Should be set only once.
-  http2_state_ = std::move(buffer);
-}
-
-bool Environment::debug_enabled(DebugCategory category) const {
-  DCHECK_GE(static_cast<int>(category), 0);
-  DCHECK_LT(static_cast<int>(category),
-           static_cast<int>(DebugCategory::CATEGORY_COUNT));
-  return debug_enabled_[static_cast<int>(category)];
-}
-
-void Environment::set_debug_enabled(DebugCategory category, bool enabled) {
-  DCHECK_GE(static_cast<int>(category), 0);
-  DCHECK_LT(static_cast<int>(category),
-           static_cast<int>(DebugCategory::CATEGORY_COUNT));
-  debug_enabled_[static_cast<int>(category)] = enabled;
-}
-
-inline AliasedFloat64Array* Environment::fs_stats_field_array() {
-  return &fs_stats_field_array_;
-}
-
-inline AliasedBigUint64Array* Environment::fs_stats_field_bigint_array() {
-  return &fs_stats_field_bigint_array_;
-}
-
-inline std::vector<std::unique_ptr<fs::FileHandleReadWrap>>&
-Environment::file_handle_read_wrap_freelist() {
-  return file_handle_read_wrap_freelist_;
-}
-
 inline std::shared_ptr<EnvironmentOptions> Environment::options() {
   return options_;
 }
@@ -743,7 +687,8 @@ inline uint64_t Environment::heap_prof_interval() const {
 
 #endif  // HAVE_INSPECTOR
 
-inline std::shared_ptr<HostPort> Environment::inspector_host_port() {
+inline
+std::shared_ptr<ExclusiveAccess<HostPort>> Environment::inspector_host_port() {
   return inspector_host_port_;
 }
 
@@ -824,8 +769,9 @@ void Environment::SetImmediateThreadsafe(Fn&& cb) {
   {
     Mutex::ScopedLock lock(native_immediates_threadsafe_mutex_);
     native_immediates_threadsafe_.Push(std::move(callback));
+    if (task_queues_async_initialized_)
+      uv_async_send(&task_queues_async_);
   }
-  uv_async_send(&task_queues_async_);
 }
 
 template <typename Fn>
@@ -835,8 +781,9 @@ void Environment::RequestInterrupt(Fn&& cb) {
   {
     Mutex::ScopedLock lock(native_immediates_threadsafe_mutex_);
     native_immediates_interrupts_.Push(std::move(callback));
+    if (task_queues_async_initialized_)
+      uv_async_send(&task_queues_async_);
   }
-  uv_async_send(&task_queues_async_);
   RequestInterruptFromV8();
 }
 
@@ -893,15 +840,15 @@ inline void Environment::set_has_serialized_options(bool value) {
 }
 
 inline bool Environment::is_main_thread() const {
-  return flags_ & kIsMainThread;
+  return worker_context() == nullptr;
 }
 
 inline bool Environment::owns_process_state() const {
-  return flags_ & kOwnsProcessState;
+  return flags_ & EnvironmentFlags::kOwnsProcessState;
 }
 
 inline bool Environment::owns_inspector() const {
-  return flags_ & kOwnsInspector;
+  return flags_ & EnvironmentFlags::kOwnsInspector;
 }
 
 bool Environment::filehandle_close_warning() const {
@@ -912,17 +859,20 @@ void Environment::set_filehandle_close_warning(bool on) {
   emit_filehandle_warning_ = on;
 }
 
+bool Environment::emit_insecure_umask_warning() const {
+  return emit_insecure_umask_warning_;
+}
+
+void Environment::set_emit_insecure_umask_warning(bool on) {
+  emit_insecure_umask_warning_ = on;
+}
+
 inline uint64_t Environment::thread_id() const {
   return thread_id_;
 }
 
 inline worker::Worker* Environment::worker_context() const {
-  return worker_context_;
-}
-
-inline void Environment::set_worker_context(worker::Worker* context) {
-  CHECK_NULL(worker_context_);  // Should be set only once.
-  worker_context_ = context;
+  return isolate_data()->worker_context();
 }
 
 inline void Environment::add_sub_worker_context(worker::Worker* context) {
@@ -968,7 +918,7 @@ inline const Mutex& Environment::extra_linked_bindings_mutex() const {
   return extra_linked_bindings_mutex_;
 }
 
-inline performance::performance_state* Environment::performance_state() {
+inline performance::PerformanceState* Environment::performance_state() {
   return performance_state_.get();
 }
 
@@ -1132,7 +1082,7 @@ inline v8::Local<v8::FunctionTemplate>
                                      v8::Local<v8::Signature> signature,
                                      v8::ConstructorBehavior behavior,
                                      v8::SideEffectType side_effect_type) {
-  v8::Local<v8::Object> external = as_callback_data();
+  v8::Local<v8::Object> external = current_callback_data();
   return v8::FunctionTemplate::New(isolate(), callback, external,
                                    signature, 0, behavior, side_effect_type);
 }
@@ -1235,6 +1185,7 @@ void Environment::RemoveCleanupHook(void (*fn)(void*), void* arg) {
 inline void Environment::RegisterFinalizationGroupForCleanup(
     v8::Local<v8::FinalizationGroup> group) {
   cleanup_finalization_groups_.emplace_back(isolate(), group);
+  DCHECK(task_queues_async_initialized_);
   uv_async_send(&task_queues_async_);
 }
 
@@ -1269,7 +1220,17 @@ void Environment::modify_base_object_count(int64_t delta) {
 }
 
 int64_t Environment::base_object_count() const {
-  return base_object_count_;
+  return base_object_count_ - initial_base_object_count_;
+}
+
+void Environment::set_main_utf16(std::unique_ptr<v8::String::Value> str) {
+  CHECK(!main_utf16_);
+  main_utf16_ = std::move(str);
+}
+
+void Environment::set_process_exit_handler(
+    std::function<void(Environment*, int)>&& handler) {
+  process_exit_handler_ = std::move(handler);
 }
 
 #define VP(PropertyName, StringValue) V(v8::Private, PropertyName)
@@ -1277,9 +1238,8 @@ int64_t Environment::base_object_count() const {
 #define VS(PropertyName, StringValue) V(v8::String, PropertyName)
 #define V(TypeName, PropertyName)                                             \
   inline                                                                      \
-  v8::Local<TypeName> IsolateData::PropertyName(v8::Isolate* isolate) const { \
-    /* Strings are immutable so casting away const-ness here is okay. */      \
-    return const_cast<IsolateData*>(this)->PropertyName ## _.Get(isolate);    \
+  v8::Local<TypeName> IsolateData::PropertyName() const {                     \
+    return PropertyName ## _ .Get(isolate_);                                  \
   }
   PER_ISOLATE_PRIVATE_SYMBOL_PROPERTIES(VP)
   PER_ISOLATE_SYMBOL_PROPERTIES(VY)
@@ -1294,7 +1254,7 @@ int64_t Environment::base_object_count() const {
 #define VS(PropertyName, StringValue) V(v8::String, PropertyName)
 #define V(TypeName, PropertyName)                                             \
   inline v8::Local<TypeName> Environment::PropertyName() const {              \
-    return isolate_data()->PropertyName(isolate());                           \
+    return isolate_data()->PropertyName();                                    \
   }
   PER_ISOLATE_PRIVATE_SYMBOL_PROPERTIES(VP)
   PER_ISOLATE_SYMBOL_PROPERTIES(VY)
@@ -1319,6 +1279,10 @@ int64_t Environment::base_object_count() const {
     return PersistentToLocal::Strong(context_);
   }
 }  // namespace node
+
+// These two files depend on each other. Including base_object-inl.h after this
+// file is the easiest way to avoid issues with that circular dependency.
+#include "base_object-inl.h"
 
 #endif  // defined(NODE_WANT_INTERNALS) && NODE_WANT_INTERNALS
 

@@ -11,7 +11,7 @@ invariants.
 <!-- YAML
 added: v9.9.0
 changes:
-  - version: REPLACEME
+  - version: v13.9.0
     description: Changed "strict mode" to "strict assertion mode" and "legacy
                  mode" to "legacy assertion mode" to avoid confusion with the
                  more usual meaining of "strict mode".
@@ -1129,6 +1129,21 @@ if the `asyncFn` fails to reject.
     {
       name: 'TypeError',
       message: 'Wrong value'
+    }
+  );
+})();
+```
+
+```js
+(async () => {
+  await assert.rejects(
+    async () => {
+      throw new TypeError('Wrong value');
+    },
+    (err) => {
+      assert.strictEqual(err.name, 'TypeError');
+      assert.strictEqual(err.message, 'Wrong value');
+      return true;
     }
   );
 })();

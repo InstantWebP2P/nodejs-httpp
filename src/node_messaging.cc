@@ -389,9 +389,6 @@ Maybe<bool> Message::Serialize(Environment* env,
   for (Local<ArrayBuffer> ab : array_buffers) {
     // If serialization succeeded, we render it inaccessible in this Isolate.
     std::shared_ptr<BackingStore> backing_store = ab->GetBackingStore();
-    // TODO(addaleax): This can/should be dropped once we have V8 8.0.
-    if (!ab->IsExternal())
-      ab->Externalize(backing_store);
     ab->Detach();
 
     array_buffers_.emplace_back(std::move(backing_store));
@@ -935,7 +932,8 @@ Local<FunctionTemplate> GetMessagePortConstructorTemplate(Environment* env) {
   {
     Local<FunctionTemplate> m = env->NewFunctionTemplate(MessagePort::New);
     m->SetClassName(env->message_port_constructor_string());
-    m->InstanceTemplate()->SetInternalFieldCount(1);
+    m->InstanceTemplate()->SetInternalFieldCount(
+        MessagePort::kInternalFieldCount);
     m->Inherit(HandleWrap::GetConstructorTemplate(env));
 
     env->SetProtoMethod(m, "postMessage", MessagePort::PostMessage);

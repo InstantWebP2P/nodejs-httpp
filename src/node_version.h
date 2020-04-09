@@ -89,10 +89,10 @@
  * version matching should open a pull request to reserve a number in this
  * registry.
  */
-#define NODE_MODULE_VERSION 81
+#define NODE_MODULE_VERSION 83
 
 // The NAPI_VERSION provided by this version of the runtime. This is the version
 // which the Node binary being built supports.
-#define NAPI_VERSION  5
+#define NAPI_VERSION  6
 
 #endif  // SRC_NODE_VERSION_H_

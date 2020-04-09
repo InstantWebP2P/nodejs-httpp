@@ -35,6 +35,7 @@
 #include "node_options-inl.h"
 #include "node_perf.h"
 #include "node_process.h"
+#include "node_report.h"
 #include "node_revert.h"
 #include "node_v8_platform-inl.h"
 #include "node_version.h"
@@ -65,13 +66,7 @@
 #include "inspector/worker_inspector.h"  // ParentInspectorHandle
 #endif
 
-#ifdef NODE_ENABLE_LARGE_CODE_PAGES
 #include "large_pages/node_large_page.h"
-#endif
-
-#ifdef NODE_REPORT
-#include "node_report.h"
-#endif
 
 #if defined(__APPLE__) || defined(__linux__)
 #define NODE_USE_V8_WASM_TRAP_HANDLER 1
@@ -203,8 +198,8 @@ MaybeLocal<Value> ExecuteBootstrapper(Environment* env,
 int Environment::InitializeInspector(
     std::unique_ptr<inspector::ParentInspectorHandle> parent_handle) {
   std::string inspector_path;
+  bool is_main = !parent_handle;
   if (parent_handle) {
-    DCHECK(!is_main_thread());
     inspector_path = parent_handle->url();
     inspector_agent_->SetParentHandle(std::move(parent_handle));
   } else {
@@ -218,7 +213,7 @@ int Environment::InitializeInspector(
   inspector_agent_->Start(inspector_path,
                           options_->debug_options(),
                           inspector_host_port(),
-                          is_main_thread());
+                          is_main);
   if (options_->debug_options().inspector_enabled &&
       !inspector_agent_->IsListening()) {
     return 12;  // Signal internal error
@@ -336,7 +331,7 @@ MaybeLocal<Value> Environment::BootstrapNode() {
 
   Local<String> env_string = FIXED_ONE_BYTE_STRING(isolate_, "env");
   Local<Object> env_var_proxy;
-  if (!CreateEnvVarProxy(context(), isolate_, as_callback_data())
+  if (!CreateEnvVarProxy(context(), isolate_, current_callback_data())
            .ToLocal(&env_var_proxy) ||
       process_object()->Set(context(), env_string, env_var_proxy).IsNothing()) {
     return MaybeLocal<Value>();
@@ -377,6 +372,7 @@ void MarkBootstrapComplete(const FunctionCallbackInfo<Value>& args) {
       performance::NODE_PERFORMANCE_MILESTONE_BOOTSTRAP_COMPLETE);
 }
 
+static
 MaybeLocal<Value> StartExecution(Environment* env, const char* main_script_id) {
   EscapableHandleScope scope(env->isolate());
   CHECK_NOT_NULL(main_script_id);
@@ -401,12 +397,36 @@ MaybeLocal<Value> StartExecution(Environment* env, const char* main_script_id) {
       ExecuteBootstrapper(env, main_script_id, &parameters, &arguments));
 }
 
-MaybeLocal<Value> StartMainThreadExecution(Environment* env) {
+MaybeLocal<Value> StartExecution(Environment* env, StartExecutionCallback cb) {
+  InternalCallbackScope callback_scope(
+      env,
+      Object::New(env->isolate()),
+      { 1, 0 },
+      InternalCallbackScope::kSkipAsyncHooks);
+
+  if (cb != nullptr) {
+    EscapableHandleScope scope(env->isolate());
+
+    if (StartExecution(env, "internal/bootstrap/environment").IsEmpty())
+      return {};
+
+    StartExecutionCallbackInfo info = {
+      env->process_object(),
+      env->native_module_require(),
+    };
+
+    return scope.EscapeMaybe(cb(info));
+  }
+
   // To allow people to extend Node in different ways, this hook allows
   // one to drop a file lib/_third_party_main.js into the build
   // directory which will be executed instead of Node's normal loading.
   if (NativeModuleEnv::Exists("_third_party_main")) {
     return StartExecution(env, "internal/main/run_third_party_main");
+  }
+
+  if (env->worker_context() != nullptr) {
+    return StartExecution(env, "internal/main/worker_thread");
   }
 
   std::string first_argv;
@@ -445,15 +465,6 @@ MaybeLocal<Value> StartMainThreadExecution(Environment* env) {
   }
 
   return StartExecution(env, "internal/main/eval_stdin");
-}
-
-void LoadEnvironment(Environment* env) {
-  CHECK(env->is_main_thread());
-  // TODO(joyeecheung): Not all of the execution modes in
-  // StartMainThreadExecution() make sense for embedders. Pick the
-  // useful ones out, and allow embedders to customize the entry
-  // point more directly without using _third_party_main.js
-  USE(StartMainThreadExecution(env));
 }
 
 #ifdef __POSIX__
@@ -717,6 +728,13 @@ int ProcessGlobalArgs(std::vector<std::string>* args,
     }
   }
 
+  if (per_process::cli_options->disable_proto != "delete" &&
+      per_process::cli_options->disable_proto != "throw" &&
+      per_process::cli_options->disable_proto != "") {
+    errors->emplace_back("invalid mode passed to --disable-proto");
+    return 12;
+  }
+
   auto env_opts = per_process::cli_options->per_isolate->per_env;
   if (std::find(v8_args.begin(), v8_args.end(),
                 "--abort-on-uncaught-exception") != v8_args.end() ||
@@ -777,11 +795,9 @@ int InitializeNodeWithArgs(std::vector<std::string>* argv,
   // Make inherited handles noninheritable.
   uv_disable_stdio_inheritance();
 
-#ifdef NODE_REPORT
   // Cache the original command line to be
   // used in diagnostic reports.
   per_process::cli_options->cmdline = *argv;
-#endif  //  NODE_REPORT
 
 #if defined(NODE_V8_OPTIONS)
   // Should come before the call to V8::SetFlagsFromCommandLine()
@@ -790,80 +806,19 @@ int InitializeNodeWithArgs(std::vector<std::string>* argv,
   V8::SetFlagsFromString(NODE_V8_OPTIONS, sizeof(NODE_V8_OPTIONS) - 1);
 #endif
 
-  std::shared_ptr<EnvironmentOptions> default_env_options =
-      per_process::cli_options->per_isolate->per_env;
-  {
-    std::string text;
-    default_env_options->pending_deprecation =
-        credentials::SafeGetenv("NODE_PENDING_DEPRECATION", &text) &&
-        text[0] == '1';
-  }
-
-  // Allow for environment set preserving symlinks.
-  {
-    std::string text;
-    default_env_options->preserve_symlinks =
-        credentials::SafeGetenv("NODE_PRESERVE_SYMLINKS", &text) &&
-        text[0] == '1';
-  }
-
-  {
-    std::string text;
-    default_env_options->preserve_symlinks_main =
-        credentials::SafeGetenv("NODE_PRESERVE_SYMLINKS_MAIN", &text) &&
-        text[0] == '1';
-  }
-
-  if (default_env_options->redirect_warnings.empty()) {
-    credentials::SafeGetenv("NODE_REDIRECT_WARNINGS",
-                            &default_env_options->redirect_warnings);
-  }
+  HandleEnvOptions(per_process::cli_options->per_isolate->per_env);
 
 #if !defined(NODE_WITHOUT_NODE_OPTIONS)
   std::string node_options;
 
   if (credentials::SafeGetenv("NODE_OPTIONS", &node_options)) {
-    std::vector<std::string> env_argv;
+    std::vector<std::string> env_argv =
+        ParseNodeOptionsEnvVar(node_options, errors);
+
+    if (!errors->empty()) return 9;
+
     // [0] is expected to be the program name, fill it in from the real argv.
-    env_argv.push_back(argv->at(0));
-
-    bool is_in_string = false;
-    bool will_start_new_arg = true;
-    for (std::string::size_type index = 0;
-         index < node_options.size();
-         ++index) {
-      char c = node_options.at(index);
-
-      // Backslashes escape the following character
-      if (c == '\\' && is_in_string) {
-        if (index + 1 == node_options.size()) {
-          errors->push_back("invalid value for NODE_OPTIONS "
-                            "(invalid escape)\n");
-          return 9;
-        } else {
-          c = node_options.at(++index);
-        }
-      } else if (c == ' ' && !is_in_string) {
-        will_start_new_arg = true;
-        continue;
-      } else if (c == '"') {
-        is_in_string = !is_in_string;
-        continue;
-      }
-
-      if (will_start_new_arg) {
-        env_argv.emplace_back(std::string(1, c));
-        will_start_new_arg = false;
-      } else {
-        env_argv.back() += c;
-      }
-    }
-
-    if (is_in_string) {
-      errors->push_back("invalid value for NODE_OPTIONS "
-                        "(unterminated string)\n");
-      return 9;
-    }
+    env_argv.insert(env_argv.begin(), argv->at(0));
 
     const int exit_code = ProcessGlobalArgs(&env_argv,
                                             nullptr,
@@ -973,6 +928,10 @@ void Init(int* argc,
 }
 
 InitializationResult InitializeOncePerProcess(int argc, char** argv) {
+  // Initialized the enabled list for Debug() calls with system
+  // environment variables.
+  per_process::enabled_debug_list.Parse(nullptr);
+
   atexit(ResetStdio);
   PlatformInit();
 
@@ -997,25 +956,13 @@ InitializationResult InitializeOncePerProcess(int argc, char** argv) {
     }
   }
 
-#if defined(NODE_ENABLE_LARGE_CODE_PAGES) && NODE_ENABLE_LARGE_CODE_PAGES
   if (per_process::cli_options->use_largepages == "on" ||
       per_process::cli_options->use_largepages == "silent") {
-    if (node::IsLargePagesEnabled()) {
-      if (node::MapStaticCodeToLargePages() != 0 &&
-          per_process::cli_options->use_largepages != "silent") {
-        fprintf(stderr,
-                "Mapping code to large pages failed. Reverting to default page "
-                "size.\n");
-      }
-    } else if (per_process::cli_options->use_largepages != "silent") {
-      fprintf(stderr, "Large pages are not enabled.\n");
+    int result = node::MapStaticCodeToLargePages();
+    if (per_process::cli_options->use_largepages == "on" && result != 0) {
+      fprintf(stderr, "%s\n", node::LargePagesError(result));
     }
   }
-#else
-  if (per_process::cli_options->use_largepages == "on") {
-    fprintf(stderr, "Mapping to large pages is not supported.\n");
-  }
-#endif  // NODE_ENABLE_LARGE_CODE_PAGES
 
   if (per_process::cli_options->print_version) {
     printf("%s\n", NODE_VERSION);

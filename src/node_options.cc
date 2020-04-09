@@ -3,6 +3,7 @@
 
 #include "env-inl.h"
 #include "node_binding.h"
+#include "node_internals.h"
 
 #include <errno.h>
 #include <sstream>
@@ -75,48 +76,6 @@ void PerProcessOptions::CheckOptions(std::vector<std::string>* errors) {
 
 void PerIsolateOptions::CheckOptions(std::vector<std::string>* errors) {
   per_env->CheckOptions(errors);
-#ifdef NODE_REPORT
-  if (per_env->experimental_report) {
-    // Assign the report_signal default value here. Once the
-    // --experimental-report flag is dropped, move this initialization to
-    // node_options.h, where report_signal is declared.
-    if (report_signal.empty())
-      report_signal = "SIGUSR2";
-    return;
-  }
-
-  if (!report_directory.empty()) {
-    errors->push_back("--report-directory option is valid only when "
-                      "--experimental-report is set");
-  }
-
-  if (!report_filename.empty()) {
-    errors->push_back("--report-filename option is valid only when "
-                      "--experimental-report is set");
-  }
-
-  if (!report_signal.empty()) {
-    errors->push_back("--report-signal option is valid only when "
-                      "--experimental-report is set");
-  }
-
-  if (report_on_fatalerror) {
-    errors->push_back(
-        "--report-on-fatalerror option is valid only when "
-        "--experimental-report is set");
-  }
-
-  if (report_on_signal) {
-    errors->push_back("--report-on-signal option is valid only when "
-                      "--experimental-report is set");
-  }
-
-  if (report_uncaught_exception) {
-    errors->push_back(
-        "--report-uncaught-exception option is valid only when "
-        "--experimental-report is set");
-  }
-#endif  // NODE_REPORT
 }
 
 void EnvironmentOptions::CheckOptions(std::vector<std::string>* errors) {
@@ -360,12 +319,7 @@ EnvironmentOptionsParser::EnvironmentOptionsParser() {
             &EnvironmentOptions::experimental_vm_modules,
             kAllowedInEnvironment);
   AddOption("--experimental-worker", "", NoOp{}, kAllowedInEnvironment);
-#ifdef NODE_REPORT
-  AddOption("--experimental-report",
-            "enable report generation",
-            &EnvironmentOptions::experimental_report,
-            kAllowedInEnvironment);
-#endif  // NODE_REPORT
+  AddOption("--experimental-report", "", NoOp{}, kAllowedInEnvironment);
   AddOption("--experimental-wasi-unstable-preview1",
             "experimental WASI support",
             &EnvironmentOptions::experimental_wasi,
@@ -455,7 +409,7 @@ EnvironmentOptionsParser::EnvironmentOptionsParser() {
       "the profile to the current working directory.",
       &EnvironmentOptions::heap_prof);
   AddOption("--heap-prof-name",
-            "specified file name of the V8 CPU profile generated with "
+            "specified file name of the V8 heap profile generated with "
             "--heap-prof",
             &EnvironmentOptions::heap_prof_name);
   AddOption("--heap-prof-dir",
@@ -468,7 +422,7 @@ EnvironmentOptionsParser::EnvironmentOptionsParser() {
             &EnvironmentOptions::heap_prof_interval);
 #endif  // HAVE_INSPECTOR
   AddOption("--max-http-header-size",
-            "set the maximum size of HTTP headers (default: 8192 (8KB))",
+            "set the maximum size of HTTP headers (default: 16384 (16KB))",
             &EnvironmentOptions::max_http_header_size,
             kAllowedInEnvironment);
   AddOption("--redirect-warnings",
@@ -615,8 +569,15 @@ PerIsolateOptionsParser::PerIsolateOptionsParser(
             "disallow eval and friends",
             V8Option{},
             kAllowedInEnvironment);
-
-#ifdef NODE_REPORT
+  AddOption("--huge-max-old-generation-size",
+             "increase default maximum heap size on machines with 16GB memory "
+             "or more",
+             V8Option{},
+             kAllowedInEnvironment);
+  AddOption("--jitless",
+             "disable runtime allocation of executable memory",
+             V8Option{},
+             kAllowedInEnvironment);
   AddOption("--report-uncaught-exception",
             "generate diagnostic report on uncaught exceptions",
             &PerIsolateOptions::report_uncaught_exception,
@@ -625,27 +586,12 @@ PerIsolateOptionsParser::PerIsolateOptionsParser(
             "generate diagnostic report upon receiving signals",
             &PerIsolateOptions::report_on_signal,
             kAllowedInEnvironment);
-  AddOption("--report-on-fatalerror",
-            "generate diagnostic report on fatal (internal) errors",
-            &PerIsolateOptions::report_on_fatalerror,
-            kAllowedInEnvironment);
   AddOption("--report-signal",
             "causes diagnostic report to be produced on provided signal,"
             " unsupported in Windows. (default: SIGUSR2)",
             &PerIsolateOptions::report_signal,
             kAllowedInEnvironment);
   Implies("--report-signal", "--report-on-signal");
-  AddOption("--report-filename",
-            "define custom report file name."
-            " (default: YYYYMMDD.HHMMSS.PID.SEQUENCE#.txt)",
-            &PerIsolateOptions::report_filename,
-            kAllowedInEnvironment);
-  AddOption("--report-directory",
-            "define custom report pathname."
-            " (default: current working directory of Node.js process)",
-            &PerIsolateOptions::report_directory,
-            kAllowedInEnvironment);
-#endif  // NODE_REPORT
 
   Insert(eop, &PerIsolateOptions::get_per_env_options);
 }
@@ -680,7 +626,10 @@ PerProcessOptionsParser::PerProcessOptionsParser(
             "", /* undocumented, only for debugging */
             &PerProcessOptions::debug_arraybuffer_allocations,
             kAllowedInEnvironment);
-
+  AddOption("--disable-proto",
+            "disable Object.prototype.__proto__",
+            &PerProcessOptions::disable_proto,
+            kAllowedInEnvironment);
 
   // 12.x renamed this inadvertently, so alias it for consistency within the
   // release line, while using the original name for consistency with older
@@ -700,6 +649,24 @@ PerProcessOptionsParser::PerProcessOptionsParser(
   AddOption("--v8-options",
             "print V8 command line options",
             &PerProcessOptions::print_v8_help);
+  AddOption("--report-compact",
+            "output compact single-line JSON",
+            &PerProcessOptions::report_compact,
+            kAllowedInEnvironment);
+  AddOption("--report-directory",
+            "define custom report pathname."
+            " (default: current working directory of Node.js process)",
+            &PerProcessOptions::report_directory,
+            kAllowedInEnvironment);
+  AddOption("--report-filename",
+            "define custom report file name."
+            " (default: YYYYMMDD.HHMMSS.PID.SEQUENCE#.txt)",
+            &PerProcessOptions::report_filename,
+            kAllowedInEnvironment);
+  AddOption("--report-on-fatalerror",
+              "generate diagnostic report on fatal (internal) errors",
+              &PerProcessOptions::report_on_fatalerror,
+              kAllowedInEnvironment);
 
 #ifdef NODE_HAVE_I18N_SUPPORT
   AddOption("--icu-data-dir",
@@ -1009,6 +976,68 @@ void Initialize(Local<Object> target,
 }
 
 }  // namespace options_parser
+
+void HandleEnvOptions(std::shared_ptr<EnvironmentOptions> env_options) {
+  HandleEnvOptions(env_options, [](const char* name) {
+    std::string text;
+    return credentials::SafeGetenv(name, &text) ? text : "";
+  });
+}
+
+void HandleEnvOptions(std::shared_ptr<EnvironmentOptions> env_options,
+                      std::function<std::string(const char*)> opt_getter) {
+  env_options->pending_deprecation =
+      opt_getter("NODE_PENDING_DEPRECATION") == "1";
+
+  env_options->preserve_symlinks = opt_getter("NODE_PRESERVE_SYMLINKS") == "1";
+
+  env_options->preserve_symlinks_main =
+      opt_getter("NODE_PRESERVE_SYMLINKS_MAIN") == "1";
+
+  if (env_options->redirect_warnings.empty())
+    env_options->redirect_warnings = opt_getter("NODE_REDIRECT_WARNINGS");
+}
+
+std::vector<std::string> ParseNodeOptionsEnvVar(
+    const std::string& node_options, std::vector<std::string>* errors) {
+  std::vector<std::string> env_argv;
+
+  bool is_in_string = false;
+  bool will_start_new_arg = true;
+  for (std::string::size_type index = 0; index < node_options.size(); ++index) {
+    char c = node_options.at(index);
+
+    // Backslashes escape the following character
+    if (c == '\\' && is_in_string) {
+      if (index + 1 == node_options.size()) {
+        errors->push_back("invalid value for NODE_OPTIONS "
+                          "(invalid escape)\n");
+        return env_argv;
+      } else {
+        c = node_options.at(++index);
+      }
+    } else if (c == ' ' && !is_in_string) {
+      will_start_new_arg = true;
+      continue;
+    } else if (c == '"') {
+      is_in_string = !is_in_string;
+      continue;
+    }
+
+    if (will_start_new_arg) {
+      env_argv.emplace_back(std::string(1, c));
+      will_start_new_arg = false;
+    } else {
+      env_argv.back() += c;
+    }
+  }
+
+  if (is_in_string) {
+    errors->push_back("invalid value for NODE_OPTIONS "
+                      "(unterminated string)\n");
+  }
+  return env_argv;
+}
 }  // namespace node
 
 NODE_MODULE_CONTEXT_AWARE_INTERNAL(options, node::options_parser::Initialize)

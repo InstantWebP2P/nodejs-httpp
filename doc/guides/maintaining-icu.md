@@ -97,7 +97,7 @@ new Intl.DateTimeFormat('es', { month: 'long' }).format(new Date(9E8));
 
 …Should return `enero` not `January`.
 
-* Now, copy `deps/icu` over to `deps/icu-small`
+* Now, run the shrink tool to update `deps/icu-small` from `deps/icu`
 
 > :warning: Do not modify any source code in `deps/icu-small` !
 > See section below about floating patches to ICU.
@@ -218,7 +218,7 @@ following the steps above in the prior section of this document ought to be
 repeatable without concern for overriding a patch.
 
 2. **Verifiability.** Given the number of files modified in an ICU PR,
-a floating patch could easily be missed — or dropped altogether next time
+a floating patch could easily be missed or dropped altogether next time
 something is landed.
 
 3. **Compatibility.** There are a number of ways that ICU can be loaded into

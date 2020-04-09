@@ -43,7 +43,9 @@ BaseObject::BaseObject(Environment* env, v8::Local<v8::Object> object)
     : persistent_handle_(env->isolate(), object), env_(env) {
   CHECK_EQ(false, object.IsEmpty());
   CHECK_GT(object->InternalFieldCount(), 0);
-  object->SetAlignedPointerInInternalField(0, static_cast<void*>(this));
+  object->SetAlignedPointerInInternalField(
+      BaseObject::kSlot,
+      static_cast<void*>(this));
   env->AddCleanupHook(DeleteMe, static_cast<void*>(this));
   env->modify_base_object_count(1);
 }
@@ -67,7 +69,7 @@ BaseObject::~BaseObject() {
 
   {
     v8::HandleScope handle_scope(env()->isolate());
-    object()->SetAlignedPointerInInternalField(0, nullptr);
+    object()->SetAlignedPointerInInternalField(BaseObject::kSlot, nullptr);
   }
 }
 
@@ -98,14 +100,16 @@ Environment* BaseObject::env() const {
   return env_;
 }
 
-BaseObject* BaseObject::FromJSObject(v8::Local<v8::Object> obj) {
-  CHECK_GT(obj->InternalFieldCount(), 0);
-  return static_cast<BaseObject*>(obj->GetAlignedPointerFromInternalField(0));
+BaseObject* BaseObject::FromJSObject(v8::Local<v8::Value> value) {
+  v8::Local<v8::Object> obj = value.As<v8::Object>();
+  DCHECK_GE(obj->InternalFieldCount(), BaseObject::kSlot);
+  return static_cast<BaseObject*>(
+      obj->GetAlignedPointerFromInternalField(BaseObject::kSlot));
 }
 
 
 template <typename T>
-T* BaseObject::FromJSObject(v8::Local<v8::Object> object) {
+T* BaseObject::FromJSObject(v8::Local<v8::Value> object) {
   return static_cast<T*>(FromJSObject(object));
 }
 
@@ -148,11 +152,12 @@ BaseObject::MakeLazilyInitializedJSTemplate(Environment* env) {
   auto constructor = [](const v8::FunctionCallbackInfo<v8::Value>& args) {
     DCHECK(args.IsConstructCall());
     DCHECK_GT(args.This()->InternalFieldCount(), 0);
-    args.This()->SetAlignedPointerInInternalField(0, nullptr);
+    args.This()->SetAlignedPointerInInternalField(BaseObject::kSlot, nullptr);
   };
 
   v8::Local<v8::FunctionTemplate> t = env->NewFunctionTemplate(constructor);
-  t->InstanceTemplate()->SetInternalFieldCount(1);
+  t->InstanceTemplate()->SetInternalFieldCount(
+      BaseObject::kInternalFieldCount);
   return t;
 }
 
@@ -230,13 +235,13 @@ BaseObject* BaseObjectPtrImpl<T, kIsWeak>::get_base_object() const {
 
 template <typename T, bool kIsWeak>
 BaseObjectPtrImpl<T, kIsWeak>::~BaseObjectPtrImpl() {
-  if (get() == nullptr) return;
   if (kIsWeak) {
-    if (--pointer_data()->weak_ptr_count == 0 &&
+    if (pointer_data() != nullptr &&
+        --pointer_data()->weak_ptr_count == 0 &&
         pointer_data()->self == nullptr) {
       delete pointer_data();
     }
-  } else {
+  } else if (get() != nullptr) {
     get()->decrease_refcount();
   }
 }
