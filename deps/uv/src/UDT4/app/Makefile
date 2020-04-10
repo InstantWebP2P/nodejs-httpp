@@ -5,7 +5,7 @@ ifndef os
 endif
 
 ifndef arch
-   arch = IA32
+   arch = x86_64 
 endif
 
 CCFLAGS = -Wall -D$(os) -I../src -finline-functions -O3
@@ -20,6 +20,10 @@ endif
 
 ifeq ($(arch), IA64)
    CCFLAGS += -DIA64
+endif
+
+ifeq ($(arch), x86_64)
+   CCFLAGS += -Dx86_64
 endif
 
 ifeq ($(arch), SPARC)

@@ -1423,9 +1423,9 @@ void CUDT::close()
 #ifndef EVPIPE_OSFD
    // waiting all send and recv calls to stop
    ///printf("%s.%s.%d\n", __FILE__, __FUNCTION__, __LINE__);
-   CGuard sendguard(m_SendLock);
+   //CGuard sendguard(m_SendLock);
    ///printf("%s.%s.%d\n", __FILE__, __FUNCTION__, __LINE__);
-   CGuard recvguard(m_RecvLock);
+   //CGuard recvguard(m_RecvLock);
    ///printf("%s.%s.%d\n", __FILE__, __FUNCTION__, __LINE__);
 #endif
 

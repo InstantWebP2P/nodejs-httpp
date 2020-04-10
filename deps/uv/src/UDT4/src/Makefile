@@ -5,7 +5,7 @@ ifndef os
 endif
 
 ifndef arch
-   arch = IA32
+   arch = x86_64 
 endif
 
 CCFLAGS = -fPIC -Wall -Wextra -D$(os) -finline-functions -O3 -fno-strict-aliasing -fvisibility=hidden -DEVPIPE_OSFD
@@ -30,10 +30,17 @@ ifeq ($(arch), AMD64)
    CCFLAGS += -DAMD64
 endif
 
-OBJS = api.o buffer.o cache.o ccc.o channel.o common.o core.o epoll.o list.o md5.o packet.o queue.o window.o udtc.o
+ifeq ($(arch), x86_64)
+   CCFLAGS += -Dx86_64
+endif
+
+OBJS = api.o buffer.o cache.o ccc.o channel.o common.o udt_core.o epoll.o list.o md5.o packet.o queue.o window.o udtc.o
 DIR = $(shell pwd)
 
 all: libudt.so libudt.a udt
+
+udt_core.o: udt_core.cpp core.h udt.h
+	$(C++) $(CCFLAGS) $< -c
 
 %.o: %.cpp %.h udt.h
 	$(C++) $(CCFLAGS) $< -c
