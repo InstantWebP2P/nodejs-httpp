@@ -40,15 +40,27 @@ HTTPP - Run HTTP over UDP and Bring Web in Peer or P2P styles.
 * Welcome contributing on document, codes, tests and issues
 
 
-Evented I/O for V8 javascript. [![Build Status](https://secure.travis-ci.org/joyent/node.png)](http://travis-ci.org/joyent/node)
+Evented I/O for V8 javascript.
 ===
 
 To checkout the sourcecode:
 
     git clone https://github.com/InstantWebP2P/node-httpp.git
-    git checkout v0.8-httpp
 
-### To build:
+
+### Build on Linux with Docker
+
+  building:
+  
+    ./appbld ./configure --prefix=/appins
+    ./appbld make -j 6
+    ./appbld make install
+    
+  packaging and start Node.js REPL:
+    
+    ./apppkg
+    
+### To build on other platforms
 
 Prerequisites (Unix only):
 
@@ -83,19 +95,8 @@ non-standard name, run the following instead:
 
 Windows:
 
-    vcbuild.bat    
+    vcbuild.bat
     
-### Build on Linux with Docker
-
-  building:
-  
-    ./appbld ./configure --prefix=/appins
-    ./appbld make -j 6
-    ./appbld make install
-    
-  packaging and start Node.js REPL:
-    
-    ./apppkg
 
 ### Stay on NPM v2.15.9
 
