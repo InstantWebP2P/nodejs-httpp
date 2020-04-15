@@ -1,6 +1,11 @@
 name: C/C++ CI
 
-on: [push]
+on:
+  push:
+    branches: [ v0.8-httpp ]
+  pull_request:
+    branches: [ v0.8-httpp ]
+
 
 jobs:
   build:
