@@ -4,8 +4,6 @@
 
 * Consists of four modules: udt.js, httpp.js, udts.js, httpps.js with the compatible api to net.js,http.js,tls.js and https.js
 
-[Discussion group](https://groups.google.com/d/forum/iwebpp)
-
 [Wiki page](https://github.com/InstantWebP2P/node-httpp/wiki/An-introduction-to-node-httpp)
 
 ### Features
