@@ -5,8 +5,12 @@ prefix parallel
 # sample-test                        : PASS,FLAKY
 
 [true] # This section applies to all platforms
+# https://github.com/nodejs/node/issues/29802
+test-http2-reset-flood: PASS,FLAKY
 
 [$system==win32]
+# https://github.com/nodejs/node/issues/32863
+test-child-process-fork-args: PASS,FLAKY
 # https://github.com/nodejs/node/issues/20750
 test-http2-client-upload: PASS,FLAKY
 # https://github.com/nodejs/node/issues/20750
@@ -44,6 +48,10 @@ test-crypto-keygen: SKIP
 test-fs-stat-bigint: PASS,FLAKY
 # https://github.com/nodejs/node/issues/29802
 test-http2-reset-flood: PASS,FLAKY
+# https://github.com/nodejs/node/issues/28803
+test-stdout-close-catch: PASS,FLAKY
+# https://github.com/nodejs/node/issues/31280
+test-worker-message-port-message-before-close: PASS,FLAKY
 
 [$system==aix]
 

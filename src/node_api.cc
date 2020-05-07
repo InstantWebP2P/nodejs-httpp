@@ -129,7 +129,6 @@ class ThreadSafeFunction : public node::AsyncResource {
       is_closing(false),
       context(context_),
       max_queue_size(max_queue_size_),
-      main_thread(uv_thread_self()),
       env(env_),
       finalize_data(finalize_data_),
       finalize_cb(finalize_cb_),
@@ -149,16 +148,36 @@ class ThreadSafeFunction : public node::AsyncResource {
 
   napi_status Push(void* data, napi_threadsafe_function_call_mode mode) {
     node::Mutex::ScopedLock lock(this->mutex);
-    uv_thread_t current_thread = uv_thread_self();
 
     while (queue.size() >= max_queue_size &&
         max_queue_size > 0 &&
         !is_closing) {
       if (mode == napi_tsfn_nonblocking) {
         return napi_queue_full;
-      } else if (uv_thread_equal(&current_thread, &main_thread)) {
-        return napi_would_deadlock;
       }
+
+      // Here we check if there is a Node.js event loop running on this thread.
+      // If there is, and our queue is full, we return `napi_would_deadlock`. We
+      // do this for two reasons:
+      //
+      // 1. If this is the thread on which our own event loop runs then we
+      //    cannot wait here because that will prevent our event loop from
+      //    running and emptying the very queue on which we are waiting.
+      //
+      // 2. If this is not the thread on which our own event loop runs then we
+      //    still cannot wait here because that allows the following sequence of
+      //    events:
+      //
+      //    1. JSThread1 calls JSThread2 and blocks while its queue is full and
+      //       because JSThread2's queue is also full.
+      //
+      //    2. JSThread2 calls JSThread1 before it's had a chance to remove an
+      //       item from its own queue and blocks because JSThread1's queue is
+      //       also full.
+      v8::Isolate* isolate = v8::Isolate::GetCurrent();
+      if (isolate != nullptr && node::GetCurrentEventLoop(isolate) != nullptr)
+        return napi_would_deadlock;
+
       cond->Wait(lock);
     }
 
@@ -231,8 +250,8 @@ class ThreadSafeFunction : public node::AsyncResource {
       if (max_queue_size > 0) {
         cond = std::make_unique<node::ConditionVariable>();
       }
-      if ((max_queue_size == 0 || cond) &&
-          uv_idle_init(loop, &idle) == 0) {
+      if (max_queue_size == 0 || cond) {
+        CHECK_EQ(0, uv_idle_init(loop, &idle));
         return napi_ok;
       }
 
@@ -272,7 +291,6 @@ class ThreadSafeFunction : public node::AsyncResource {
   void DispatchOne() {
     void* data = nullptr;
     bool popped_value = false;
-    bool idle_stop_failed = false;
 
     {
       node::Mutex::ScopedLock lock(this->mutex);
@@ -298,43 +316,24 @@ class ThreadSafeFunction : public node::AsyncResource {
             }
             CloseHandlesAndMaybeDelete();
           } else {
-            if (uv_idle_stop(&idle) != 0) {
-              idle_stop_failed = true;
-            }
+            CHECK_EQ(0, uv_idle_stop(&idle));
           }
         }
       }
     }
 
-    if (popped_value || idle_stop_failed) {
+    if (popped_value) {
       v8::HandleScope scope(env->isolate);
       CallbackScope cb_scope(this);
-
-      if (idle_stop_failed) {
-        CHECK(napi_throw_error(env,
-                               "ERR_NAPI_TSFN_STOP_IDLE_LOOP",
-                               "Failed to stop the idle loop") == napi_ok);
-      } else {
-        napi_value js_callback = nullptr;
-        if (!ref.IsEmpty()) {
-          v8::Local<v8::Function> js_cb =
-            v8::Local<v8::Function>::New(env->isolate, ref);
-          js_callback = v8impl::JsValueFromV8LocalValue(js_cb);
-        }
-        env->CallIntoModuleThrow([&](napi_env env) {
-          call_js_cb(env, js_callback, context, data);
-        });
+      napi_value js_callback = nullptr;
+      if (!ref.IsEmpty()) {
+        v8::Local<v8::Function> js_cb =
+          v8::Local<v8::Function>::New(env->isolate, ref);
+        js_callback = v8impl::JsValueFromV8LocalValue(js_cb);
       }
-    }
-  }
-
-  void MaybeStartIdle() {
-    if (uv_idle_start(&idle, IdleCb) != 0) {
-      v8::HandleScope scope(env->isolate);
-      CallbackScope cb_scope(this);
-      CHECK(napi_throw_error(env,
-                             "ERR_NAPI_TSFN_START_IDLE_LOOP",
-                             "Failed to start the idle loop") == napi_ok);
+      env->CallIntoModuleThrow([&](napi_env env) {
+        call_js_cb(env, js_callback, context, data);
+      });
     }
   }
 
@@ -416,7 +415,7 @@ class ThreadSafeFunction : public node::AsyncResource {
   static void AsyncCb(uv_async_t* async) {
     ThreadSafeFunction* ts_fn =
         node::ContainerOf(&ThreadSafeFunction::async, async);
-    ts_fn->MaybeStartIdle();
+    CHECK_EQ(0, uv_idle_start(&ts_fn->idle, IdleCb));
   }
 
   static void Cleanup(void* data) {
@@ -438,7 +437,6 @@ class ThreadSafeFunction : public node::AsyncResource {
   // means we don't need the mutex to read them.
   void* context;
   size_t max_queue_size;
-  uv_thread_t main_thread;
 
   // These are variables accessed only from the loop thread.
   v8impl::Persistent<v8::Function> ref;

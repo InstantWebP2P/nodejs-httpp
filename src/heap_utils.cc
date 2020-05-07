@@ -237,7 +237,7 @@ class HeapSnapshotStream : public AsyncWrap,
   HeapSnapshotStream(
       Environment* env,
       HeapSnapshotPointer&& snapshot,
-      v8::Local<v8::Object> obj) :
+      Local<Object> obj) :
       AsyncWrap(env, obj, AsyncWrap::PROVIDER_HEAPSNAPSHOT),
       StreamBase(env),
       snapshot_(std::move(snapshot)) {
@@ -328,7 +328,7 @@ inline bool WriteSnapshot(Isolate* isolate, const char* filename) {
 
 }  // namespace
 
-void DeleteHeapSnapshot(const v8::HeapSnapshot* snapshot) {
+void DeleteHeapSnapshot(const HeapSnapshot* snapshot) {
   const_cast<HeapSnapshot*>(snapshot)->Delete();
 }
 

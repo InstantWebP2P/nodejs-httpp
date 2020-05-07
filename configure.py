@@ -117,6 +117,11 @@ parser.add_option('--dest-os',
     choices=valid_os,
     help='operating system to build for ({0})'.format(', '.join(valid_os)))
 
+parser.add_option('--error-on-warn',
+    action='store_true',
+    dest='error_on_warn',
+    help='Turn compiler warnings into errors for node core sources.')
+
 parser.add_option('--gdb',
     action='store_true',
     dest='gdb',
@@ -635,6 +640,12 @@ parser.add_option('--v8-non-optimized-debug',
     default=False,
     help='compile V8 with minimal optimizations and with runtime checks')
 
+parser.add_option('--v8-with-dchecks',
+    action='store_true',
+    dest='v8_with_dchecks',
+    default=False,
+    help='compile V8 with debug checks and runtime debugging features enabled')
+
 parser.add_option('--node-builtin-modules-path',
     action='store',
     dest='node_builtin_modules_path',
@@ -1012,6 +1023,7 @@ def configure_node(o):
   o['variables']['node_install_npm'] = b(not options.without_npm)
   o['variables']['debug_node'] = b(options.debug_node)
   o['default_configuration'] = 'Debug' if options.debug else 'Release'
+  o['variables']['error_on_warn'] = b(options.error_on_warn)
 
   host_arch = host_arch_win() if os.name == 'nt' else host_arch_cc()
   target_arch = options.dest_cpu or host_arch
@@ -1235,6 +1247,7 @@ def configure_v8(o):
   o['variables']['v8_enable_gdbjit'] = 1 if options.gdb else 0
   o['variables']['v8_no_strict_aliasing'] = 1  # Work around compiler bugs.
   o['variables']['v8_optimized_debug'] = 0 if options.v8_non_optimized_debug else 1
+  o['variables']['dcheck_always_on'] = 1 if options.v8_with_dchecks else 0
   o['variables']['v8_random_seed'] = 0  # Use a random seed for hash tables.
   o['variables']['v8_promise_internal_field_count'] = 1 # Add internal field to promises for async hooks.
   o['variables']['v8_use_siphash'] = 0 if options.without_siphash else 1

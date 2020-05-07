@@ -16,7 +16,6 @@ using node::kAllowedInEnvironment;
 using node::kDisallowedInEnvironment;
 using v8::Array;
 using v8::ArrayBuffer;
-using v8::BackingStore;
 using v8::Boolean;
 using v8::Context;
 using v8::Float64Array;
@@ -27,7 +26,6 @@ using v8::Integer;
 using v8::Isolate;
 using v8::Local;
 using v8::Locker;
-using v8::Maybe;
 using v8::MaybeLocal;
 using v8::Null;
 using v8::Number;
@@ -40,6 +38,8 @@ using v8::Value;
 
 namespace node {
 namespace worker {
+
+constexpr double kMB = 1024 * 1024;
 
 Worker::Worker(Environment* env,
                Local<Object> wrap,
@@ -95,8 +95,6 @@ bool Worker::is_stopped() const {
 void Worker::UpdateResourceConstraints(ResourceConstraints* constraints) {
   constraints->set_stack_limit(reinterpret_cast<uint32_t*>(stack_base_));
 
-  constexpr double kMB = 1024 * 1024;
-
   if (resource_limits_[kMaxYoungGenerationSizeMb] > 0) {
     constraints->set_max_young_generation_size_in_bytes(
         resource_limits_[kMaxYoungGenerationSizeMb] * kMB);
@@ -133,9 +131,7 @@ class WorkerThreadData {
     if (ret != 0) {
       char err_buf[128];
       uv_err_name_r(ret, err_buf, sizeof(err_buf));
-      w->custom_error_ = "ERR_WORKER_INIT_FAILED";
-      w->custom_error_str_ = err_buf;
-      w->stopped_ = true;
+      w->Exit(1, "ERR_WORKER_INIT_FAILED", err_buf);
       return;
     }
     loop_init_failed_ = false;
@@ -150,9 +146,9 @@ class WorkerThreadData {
 
     Isolate* isolate = Isolate::Allocate();
     if (isolate == nullptr) {
-      w->custom_error_ = "ERR_WORKER_OUT_OF_MEMORY";
-      w->custom_error_str_ = "Failed to create new Isolate";
-      w->stopped_ = true;
+      // TODO(addaleax): This should be ERR_WORKER_INIT_FAILED,
+      // ERR_WORKER_OUT_OF_MEMORY is for reaching the per-Worker heap limit.
+      w->Exit(1, "ERR_WORKER_OUT_OF_MEMORY", "Failed to create new Isolate");
       return;
     }
 
@@ -235,9 +231,7 @@ class WorkerThreadData {
 size_t Worker::NearHeapLimit(void* data, size_t current_heap_limit,
                              size_t initial_heap_limit) {
   Worker* worker = static_cast<Worker*>(data);
-  worker->custom_error_ = "ERR_WORKER_OUT_OF_MEMORY";
-  worker->custom_error_str_ = "JS heap out of memory";
-  worker->Exit(1);
+  worker->Exit(1, "ERR_WORKER_OUT_OF_MEMORY", "JS heap out of memory");
   // Give the current GC some extra leeway to let it finish rather than
   // crash hard. We are not going to perform further allocations anyway.
   constexpr size_t kExtraHeapAllowance = 16 * 1024 * 1024;
@@ -294,8 +288,9 @@ void Worker::Run() {
         TryCatch try_catch(isolate_);
         context = NewContext(isolate_);
         if (context.IsEmpty()) {
-          custom_error_ = "ERR_WORKER_OUT_OF_MEMORY";
-          custom_error_str_ = "Failed to create new Context";
+          // TODO(addaleax): This should be ERR_WORKER_INIT_FAILED,
+          // ERR_WORKER_OUT_OF_MEMORY is for reaching the per-Worker heap limit.
+          Exit(1, "ERR_WORKER_OUT_OF_MEMORY", "Failed to create new Context");
           return;
         }
       }
@@ -594,9 +589,20 @@ void Worker::StartThread(const FunctionCallbackInfo<Value>& args) {
 
   w->stopped_ = false;
 
+  if (w->resource_limits_[kStackSizeMb] > 0) {
+    if (w->resource_limits_[kStackSizeMb] * kMB < kStackBufferSize) {
+      w->resource_limits_[kStackSizeMb] = kStackBufferSize / kMB;
+      w->stack_size_ = kStackBufferSize;
+    } else {
+      w->stack_size_ = w->resource_limits_[kStackSizeMb] * kMB;
+    }
+  } else {
+    w->resource_limits_[kStackSizeMb] = w->stack_size_ / kMB;
+  }
+
   uv_thread_options_t thread_options;
   thread_options.flags = UV_THREAD_HAS_STACK_SIZE;
-  thread_options.stack_size = kStackSize;
+  thread_options.stack_size = w->stack_size_;
   int ret = uv_thread_create_ex(&w->tid_, &thread_options, [](void* arg) {
     // XXX: This could become a std::unique_ptr, but that makes at least
     // gcc 6.3 detect undefined behaviour when there shouldn't be any.
@@ -606,7 +612,7 @@ void Worker::StartThread(const FunctionCallbackInfo<Value>& args) {
 
     // Leave a few kilobytes just to make sure we're within limits and have
     // some space to do work in C++ land.
-    w->stack_base_ = stack_top - (kStackSize - kStackBufferSize);
+    w->stack_base_ = stack_top - (w->stack_size_ - kStackBufferSize);
 
     w->Run();
 
@@ -684,9 +690,16 @@ Local<Float64Array> Worker::GetResourceLimits(Isolate* isolate) const {
   return Float64Array::New(ab, 0, kTotalResourceLimitCount);
 }
 
-void Worker::Exit(int code) {
+void Worker::Exit(int code, const char* error_code, const char* error_message) {
   Mutex::ScopedLock lock(mutex_);
-  Debug(this, "Worker %llu called Exit(%d)", thread_id_.id, code);
+  Debug(this, "Worker %llu called Exit(%d, %s, %s)",
+        thread_id_.id, code, error_code, error_message);
+
+  if (error_code != nullptr) {
+    custom_error_ = error_code;
+    custom_error_str_ = error_message;
+  }
+
   if (env_ != nullptr) {
     exit_code_ = code;
     Stop(env_);
@@ -832,6 +845,7 @@ void InitWorker(Local<Object> target,
   NODE_DEFINE_CONSTANT(target, kMaxYoungGenerationSizeMb);
   NODE_DEFINE_CONSTANT(target, kMaxOldGenerationSizeMb);
   NODE_DEFINE_CONSTANT(target, kCodeRangeSizeMb);
+  NODE_DEFINE_CONSTANT(target, kStackSizeMb);
   NODE_DEFINE_CONSTANT(target, kTotalResourceLimitCount);
 }
 

@@ -167,7 +167,9 @@ Currently, overriding `Error.prepareStackTrace` is ignored when the
 
 ### `--experimental-import-meta-resolve`
 <!-- YAML
-added: v13.9.0
+added:
+  - v13.9.0
+  - v12.16.2
 -->
 
 Enable experimental `import.meta.resolve()` support.
@@ -210,7 +212,9 @@ Enable experimental top-level `await` keyword support in REPL.
 
 ### `--experimental-specifier-resolution=mode`
 <!-- YAML
-added: v13.4.0
+added:
+ - v13.4.0
+ - v12.16.0
 -->
 
 Sets the resolution algorithm for resolving ES module specifiers. Valid options
@@ -231,7 +235,9 @@ Enable experimental ES Module support in the `vm` module.
 
 ### `--experimental-wasi-unstable-preview1`
 <!-- YAML
-added: v13.3.0
+added:
+  - v13.3.0
+  - v12.16.0
 changes:
   - version: v13.6.0
     pr-url: https://github.com/nodejs/node/pull/30980
@@ -417,7 +423,10 @@ endpoint on `http://host:port/json/list`.
 
 ### `--insecure-http-parser`
 <!-- YAML
-added: v13.4.0
+added:
+ - v13.4.0
+ - v12.15.0
+ - v10.19.0
 -->
 
 Use an insecure HTTP parser that accepts invalid HTTP headers. This may allow
@@ -439,9 +448,11 @@ disappear in a non-semver-major release.
 
 ### `--max-http-header-size=size`
 <!-- YAML
-added: v11.6.0
+added:
+ - v11.6.0
+ - v10.15.0
 changes:
-  - version: REPLACEME
+  - version: v13.13.0
     pr-url: https://github.com/nodejs/node/pull/32520
     description: Change maximum default size of HTTP headers from 8KB to 16KB.
 -->
@@ -648,13 +659,16 @@ Name of the file to which the report will be written.
 <!-- YAML
 added: v11.8.0
 changes:
+  - version:
+    - v14.0.0
+    - v13.14.0
+    pr-url: https://github.com/nodejs/node/pull/32496
+    description: This option is no longer considered experimental.
   - version: v12.0.0
     pr-url: https://github.com/nodejs/node/pull/27312
     description: changed from `--diagnostic-report-on-fatalerror` to
                  `--report-on-fatalerror`
 -->
-
-> Stability: 1 - Experimental
 
 Enables the report to be triggered on fatal errors (internal errors within
 the Node.js runtime such as out of memory) that lead to termination of the
@@ -736,7 +750,9 @@ with crypto support (default).
 
 ### `--tls-keylog=file`
 <!-- YAML
-added: v13.2.0
+added:
+ - v13.2.0
+ - v12.16.0
 -->
 
 Log TLS key material to a file. The key material is in NSS `SSLKEYLOGFILE`
@@ -745,7 +761,9 @@ traffic.
 
 ### `--tls-max-v1.2`
 <!-- YAML
-added: v12.0.0
+added:
+ - v12.0.0
+ - v10.20.0
 -->
 
 Set [`tls.DEFAULT_MAX_VERSION`][] to 'TLSv1.2'. Use to disable support for
@@ -761,7 +779,9 @@ for TLSv1.3.
 
 ### `--tls-min-v1.0`
 <!-- YAML
-added: v12.0.0
+added:
+ - v12.0.0
+ - v10.20.0
 -->
 
 Set default [`tls.DEFAULT_MIN_VERSION`][] to 'TLSv1'. Use for compatibility with
@@ -769,7 +789,9 @@ old TLS clients or servers.
 
 ### `--tls-min-v1.1`
 <!-- YAML
-added: v12.0.0
+added:
+ - v12.0.0
+ - v10.20.0
 -->
 
 Set default [`tls.DEFAULT_MIN_VERSION`][] to 'TLSv1.1'. Use for compatibility
@@ -777,7 +799,9 @@ with old TLS clients or servers.
 
 ### `--tls-min-v1.2`
 <!-- YAML
-added: v12.2.0
+added:
+ - v12.2.0
+ - v10.20.0
 -->
 
 Set default [`tls.DEFAULT_MIN_VERSION`][] to 'TLSv1.2'. This is the default for
@@ -824,7 +848,9 @@ Enables the collection of trace event tracing information.
 
 ### `--trace-exit`
 <!-- YAML
-added: v13.5.0
+added:
+ - v13.5.0
+ - v12.16.0
 -->
 
 Prints a stack trace whenever an environment is exited proactively,
@@ -881,7 +907,9 @@ Track heap object allocations for heap snapshots.
 
 ### `--unhandled-rejections=mode`
 <!-- YAML
-added: v12.0.0
+added:
+ - v12.0.0
+ - v10.17.0
 -->
 
 By default all unhandled rejections trigger a warning plus a deprecation warning
@@ -1272,7 +1300,9 @@ to an empty string (`''` or `' '`) disables persistent REPL history.
 
 ### `NODE_REPL_EXTERNAL_MODULE=file`
 <!-- YAML
-added: v13.0.0
+added:
+ - v13.0.0
+ - v12.16.0
 -->
 
 Path to a Node.js module which will be loaded in place of the built-in REPL.
@@ -1418,6 +1448,30 @@ mitigate this issue, one potential solution is to increase the size of libuv's
 threadpool by setting the `'UV_THREADPOOL_SIZE'` environment variable to a value
 greater than `4` (its current default value). For more information, see the
 [libuv threadpool documentation][].
+
+## Useful V8 options
+
+V8 has its own set of CLI options. Any V8 CLI option that is provided to `node`
+will be passed on to V8 to handle. V8's options have _no stability guarantee_.
+The V8 team themselves don't consider them to be part of their formal API,
+and reserve the right to change them at any time. Likewise, they are not
+covered by the Node.js stability guarantees. Many of the V8
+options are of interest only to V8 developers. Despite this, there is a small
+set of V8 options that are widely applicable to Node.js, and they are
+documented here:
+
+### `--max-old-space-size=SIZE` (in Mbytes)
+
+Sets the max memory size of V8's old memory section. As memory
+consumption approaches the limit, V8 will spend more time on
+garbage collection in an effort to free unused memory.
+
+On a machine with 2GB of memory, consider setting this to
+1536 (1.5GB) to leave some memory for other uses and avoid swapping.
+
+```console
+$ node --max-old-space-size=1536 index.js
+```
 
 [`--openssl-config`]: #cli_openssl_config_file
 [`Buffer`]: buffer.html#buffer_class_buffer

@@ -379,9 +379,10 @@ A `TypeError` will be thrown if `size` is not a number.
 
 The `Buffer` module pre-allocates an internal `Buffer` instance of
 size [`Buffer.poolSize`][] that is used as a pool for the fast allocation of new
-`Buffer` instances created using [`Buffer.allocUnsafe()`][] and the deprecated
-`new Buffer(size)` constructor only when `size` is less than or equal to
-`Buffer.poolSize >> 1` (floor of [`Buffer.poolSize`][] divided by two).
+`Buffer` instances created using [`Buffer.allocUnsafe()`][],
+[`Buffer.from(array)`][], and the deprecated `new Buffer(size)` constructor only
+when `size` is less than or equal to `Buffer.poolSize >> 1` (floor of
+[`Buffer.poolSize`][] divided by two).
 
 Use of this pre-allocated internal memory pool is a key difference between
 calling `Buffer.alloc(size, fill)` vs. `Buffer.allocUnsafe(size).fill(fill)`.
@@ -568,8 +569,11 @@ Array entries outside that range will be truncated to fit into it.
 const buf = Buffer.from([0x62, 0x75, 0x66, 0x66, 0x65, 0x72]);
 ```
 
-A `TypeError` will be thrown if `array` is not an `Array` or other type
+A `TypeError` will be thrown if `array` is not an `Array` or another type
 appropriate for `Buffer.from()` variants.
+
+`Buffer.from(array)` and [`Buffer.from(string)`][] may also use the internal
+`Buffer` pool like [`Buffer.allocUnsafe()`][] does.
 
 ### Class Method: `Buffer.from(arrayBuffer[, byteOffset[, length]])`
 <!-- YAML
@@ -619,7 +623,8 @@ console.log(buf.length);
 ```
 
 A `TypeError` will be thrown if `arrayBuffer` is not an [`ArrayBuffer`][] or a
-[`SharedArrayBuffer`][] or other type appropriate for `Buffer.from()` variants.
+[`SharedArrayBuffer`][] or another type appropriate for `Buffer.from()`
+variants.
 
 ### Class Method: `Buffer.from(buffer)`
 <!-- YAML
@@ -643,7 +648,7 @@ console.log(buf2.toString());
 // Prints: buffer
 ```
 
-A `TypeError` will be thrown if `buffer` is not a `Buffer` or other type
+A `TypeError` will be thrown if `buffer` is not a `Buffer` or another type
 appropriate for `Buffer.from()` variants.
 
 ### Class Method: `Buffer.from(object[, offsetOrEncoding[, length]])`
@@ -680,8 +685,8 @@ const buf = Buffer.from(new Foo(), 'utf8');
 // Prints: <Buffer 74 68 69 73 20 69 73 20 61 20 74 65 73 74>
 ```
 
-A `TypeError` will be thrown if `object` has not mentioned methods or is not of
-other type appropriate for `Buffer.from()` variants.
+A `TypeError` will be thrown if `object` does not have the mentioned methods or
+is not of another type appropriate for `Buffer.from()` variants.
 
 ### Class Method: `Buffer.from(string[, encoding])`
 <!-- YAML
@@ -706,7 +711,7 @@ console.log(buf1.toString('latin1'));
 // Prints: this is a tÃ©st
 ```
 
-A `TypeError` will be thrown if `string` is not a string or other type
+A `TypeError` will be thrown if `string` is not a string or another type
 appropriate for `Buffer.from()` variants.
 
 ### Class Method: `Buffer.isBuffer(obj)`
@@ -1337,7 +1342,9 @@ The `buf.parent` property is a deprecated alias for `buf.buffer`.
 ### `buf.readBigInt64BE([offset])`
 ### `buf.readBigInt64LE([offset])`
 <!-- YAML
-added: v12.0.0
+added:
+ - v12.0.0
+ - v10.20.0
 -->
 
 * `offset` {integer} Number of bytes to skip before starting to read. Must
@@ -1353,7 +1360,9 @@ Integers read from a `Buffer` are interpreted as two's complement signed values.
 ### `buf.readBigUInt64BE([offset])`
 ### `buf.readBigUInt64LE([offset])`
 <!-- YAML
-added: v12.0.0
+added:
+ - v12.0.0
+ - v10.20.0
 -->
 
 * `offset` {integer} Number of bytes to skip before starting to read. Must
@@ -2023,7 +2032,9 @@ console.log(`${length} bytes: ${buffer.toString('utf8', 8, 10)}`);
 ### `buf.writeBigInt64BE(value[, offset])`
 ### `buf.writeBigInt64LE(value[, offset])`
 <!-- YAML
-added: v12.0.0
+added:
+ - v12.0.0
+ - v10.20.0
 -->
 
 * `value` {bigint} Number to be written to `buf`.
@@ -2049,7 +2060,9 @@ console.log(buf);
 ### `buf.writeBigUInt64BE(value[, offset])`
 ### `buf.writeBigUInt64LE(value[, offset])`
 <!-- YAML
-added: v12.0.0
+added:
+ - v12.0.0
+ - v10.20.0
 -->
 
 * `value` {bigint} Number to be written to `buf`.
@@ -2516,9 +2529,7 @@ changes:
 * `size` {integer} The desired length of the new `Buffer`.
 
 See [`Buffer.alloc()`][] and [`Buffer.allocUnsafe()`][]. This variant of the
-constructor is equivalent to [`Buffer.allocUnsafe()`][], although using
-[`Buffer.alloc()`][] is recommended in code paths that are not critical to
-performance.
+constructor is equivalent to [`Buffer.alloc()`][].
 
 ### `new Buffer(string[, encoding])`
 <!-- YAML
@@ -2733,10 +2744,11 @@ to one of these new APIs.*
   uninitialized, the allocated segment of memory might contain old data that is
   potentially sensitive.
 
-`Buffer` instances returned by [`Buffer.allocUnsafe()`][] *may* be allocated off
-a shared internal memory pool if `size` is less than or equal to half
-[`Buffer.poolSize`][]. Instances returned by [`Buffer.allocUnsafeSlow()`][]
-*never* use the shared internal memory pool.
+`Buffer` instances returned by [`Buffer.allocUnsafe()`][] and
+[`Buffer.from(array)`][] *may* be allocated off a shared internal memory pool
+if `size` is less than or equal to half [`Buffer.poolSize`][]. Instances
+returned by [`Buffer.allocUnsafeSlow()`][] *never* use the shared internal
+memory pool.
 
 ### The `--zero-fill-buffers` command line option
 <!-- YAML

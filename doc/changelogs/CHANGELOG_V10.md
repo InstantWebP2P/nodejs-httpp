@@ -2,6 +2,7 @@
 
 <!--lint disable prohibited-strings-->
 <!--lint disable maximum-line-length-->
+<!--lint disable no-literal-urls-->
 
 <table>
 <tr>
@@ -10,6 +11,7 @@
 </tr>
 <tr>
 <td valign="top">
+<a href="#10.20.1">10.20.1</a><br/>
 <a href="#10.20.0">10.20.0</a><br/>
 <a href="#10.19.0">10.19.0</a><br/>
 <a href="#10.18.1">10.18.1</a><br/>
@@ -49,6 +51,7 @@
 </table>
 
 * Other Versions
+  * [14.x](CHANGELOG_V14.md)
   * [13.x](CHANGELOG_V13.md)
   * [12.x](CHANGELOG_V12.md)
   * [11.x](CHANGELOG_V11.md)
@@ -62,6 +65,20 @@
   * [0.10.x](CHANGELOG_V010.md)
   * [io.js](CHANGELOG_IOJS.md)
   * [Archive](CHANGELOG_ARCHIVE.md)
+
+<a id="10.20.1"></a>
+## 2020-04-12, Version 10.20.1 'Dubnium' (LTS), @BethGriggs
+
+### Notable changes
+
+Due to release process failures, Node.js v10.20.0 shipped with source
+and header tarballs that did not properly match the final release
+commit that was used to build the binaries. We recommend that Node.js
+v10.20.0 not be used, particularly in any applications using native
+add-ons or where compiling Node.js from source is involved.
+
+Node.js v10.20.1 is a clean release with the correct sources and is
+strongly recommended in place of v10.20.0.
 
 <a id="10.20.0"></a>
 ## 2020-04-08, Version 10.20.0 'Dubnium' (LTS), @BethGriggs

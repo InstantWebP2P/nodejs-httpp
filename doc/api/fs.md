@@ -430,8 +430,9 @@ included in the iteration results.
 added: v10.10.0
 -->
 
-A representation of a directory entry, as returned by reading from an
-[`fs.Dir`][].
+A representation of a directory entry, which can be a file or a subdirectory
+within the directory, as returned by reading from an [`fs.Dir`][]. The
+directory entry is a combination of the file name and file type pairs.
 
 Additionally, when [`fs.readdir()`][] or [`fs.readdirSync()`][] is called with
 the `withFileTypes` option set to `true`, the resulting array is filled with
@@ -636,7 +637,9 @@ argument to `fs.createReadStream()`. If `path` is passed as a string, then
 
 ### `readStream.pending`
 <!-- YAML
-added: v11.2.0
+added:
+ - v11.2.0
+ - v10.16.0
 -->
 
 * {boolean}
@@ -2459,11 +2462,11 @@ changes:
 Asynchronously creates a directory.
 
 The callback is given a possible exception and, if `recursive` is `true`, the
-first folder path created, `(err, [path])`.
+first directory path created, `(err, [path])`.
 
 The optional `options` argument can be an integer specifying `mode` (permission
 and sticky bits), or an object with a `mode` property and a `recursive`
-property indicating whether parent folders should be created. Calling
+property indicating whether parent directories should be created. Calling
 `fs.mkdir()` when `path` is a directory that exists results in an error only
 when `recursive` is false.
 
@@ -2509,7 +2512,7 @@ changes:
 * Returns: {string|undefined}
 
 Synchronously creates a directory. Returns `undefined`, or if `recursive` is
-`true`, the first folder path created.
+`true`, the first directory path created.
 This is the synchronous version of [`fs.mkdir()`][].
 
 See also: mkdir(2).
@@ -2536,7 +2539,7 @@ changes:
   * `encoding` {string} **Default:** `'utf8'`
 * `callback` {Function}
   * `err` {Error}
-  * `folder` {string}
+  * `directory` {string}
 
 Creates a unique temporary directory.
 
@@ -2546,16 +2549,16 @@ inconsistencies, avoid trailing `X` characters in `prefix`. Some platforms,
 notably the BSDs, can return more than six random characters, and replace
 trailing `X` characters in `prefix` with random characters.
 
-The created folder path is passed as a string to the callback's second
+The created directory path is passed as a string to the callback's second
 parameter.
 
 The optional `options` argument can be a string specifying an encoding, or an
 object with an `encoding` property specifying the character encoding to use.
 
 ```js
-fs.mkdtemp(path.join(os.tmpdir(), 'foo-'), (err, folder) => {
+fs.mkdtemp(path.join(os.tmpdir(), 'foo-'), (err, directory) => {
   if (err) throw err;
-  console.log(folder);
+  console.log(directory);
   // Prints: /tmp/foo-itXde2 or C:\Users\...\AppData\Local\Temp\foo-itXde2
 });
 ```
@@ -2571,9 +2574,9 @@ must end with a trailing platform-specific path separator
 const tmpDir = os.tmpdir();
 
 // This method is *INCORRECT*:
-fs.mkdtemp(tmpDir, (err, folder) => {
+fs.mkdtemp(tmpDir, (err, directory) => {
   if (err) throw err;
-  console.log(folder);
+  console.log(directory);
   // Will print something similar to `/tmpabc123`.
   // A new temporary directory is created at the file system root
   // rather than *within* the /tmp directory.
@@ -2581,9 +2584,9 @@ fs.mkdtemp(tmpDir, (err, folder) => {
 
 // This method is *CORRECT*:
 const { sep } = require('path');
-fs.mkdtemp(`${tmpDir}${sep}`, (err, folder) => {
+fs.mkdtemp(`${tmpDir}${sep}`, (err, directory) => {
   if (err) throw err;
-  console.log(folder);
+  console.log(directory);
   // Will print something similar to `/tmp/abc123`.
   // A new temporary directory is created within
   // the /tmp directory.
@@ -2600,7 +2603,7 @@ added: v5.10.0
   * `encoding` {string} **Default:** `'utf8'`
 * Returns: {string}
 
-Returns the created folder path.
+Returns the created directory path.
 
 For detailed information, see the documentation of the asynchronous version of
 this API: [`fs.mkdtemp()`][].
@@ -2652,7 +2655,9 @@ Functions based on `fs.open()` exhibit this behavior as well:
 <!-- YAML
 added: v12.12.0
 changes:
-  - version: v13.1.0
+  - version:
+     - v13.1.0
+     - v12.16.0
     pr-url: https://github.com/nodejs/node/pull/30114
     description: The `bufferSize` option was introduced.
 -->
@@ -2679,7 +2684,9 @@ directory and subsequent read operations.
 <!-- YAML
 added: v12.12.0
 changes:
-  - version: v13.1.0
+  - version:
+     - v13.1.0
+     - v12.16.0
     pr-url: https://github.com/nodejs/node/pull/30114
     description: The `bufferSize` option was introduced.
 -->
@@ -3071,9 +3078,9 @@ this API: [`fs.read()`][].
 
 ## `fs.readSync(fd, buffer, [options])`
 <!-- YAML
-added: REPLACEME
+added: v13.13.0
 changes:
-  - version: REPLACEME
+  - version: v13.13.0
     pr-url: https://github.com/nodejs/node/pull/32460
     description: Options object can be passed in
                  to make offset, length and position optional
@@ -3097,7 +3104,7 @@ this API: [`fs.read()`][].
 
 ## `fs.readv(fd, buffers[, position], callback)`
 <!-- YAML
-added: REPLACEME
+added: v13.13.0
 -->
 
 * `fd` {integer}
@@ -3120,7 +3127,7 @@ The callback will be given three arguments: `err`, `bytesRead`, and
 
 ## `fs.readvSync(fd, buffers[, position])`
 <!-- YAML
-added: REPLACEME
+added: v13.13.0
 -->
 
 * `fd` {integer}
@@ -3331,7 +3338,9 @@ Synchronous rename(2). Returns `undefined`.
 <!-- YAML
 added: v0.0.2
 changes:
-  - version: v13.3.0
+  - version:
+     - v13.3.0
+     - v12.16.0
     pr-url: https://github.com/nodejs/node/pull/30644
     description: The `maxBusyTries` option is renamed to `maxRetries`, and its
                  default is 0. The `emfileWait` option has been removed, and
@@ -3384,7 +3393,9 @@ Windows and an `ENOTDIR` error on POSIX.
 <!-- YAML
 added: v0.1.21
 changes:
-  - version: v13.3.0
+  - version:
+     - v13.3.0
+     - v12.16.0
     pr-url: https://github.com/nodejs/node/pull/30644
     description: The `maxBusyTries` option is renamed to `maxRetries`, and its
                  default is 0. The `emfileWait` option has been removed, and
@@ -3465,7 +3476,7 @@ error raised if the file is not available.
 To check if a file exists without manipulating it afterwards, [`fs.access()`][]
 is recommended.
 
-For example, given the following folder structure:
+For example, given the following directory structure:
 
 ```fundamental
 - txtDir
@@ -3777,8 +3788,8 @@ Change the file system timestamps of the object referenced by `path`.
 
 The `atime` and `mtime` arguments follow these rules:
 
-* Values can be either numbers representing Unix epoch time, `Date`s, or a
-  numeric string like `'123456789.0'`.
+* Values can be either numbers representing Unix epoch time in seconds,
+  `Date`s, or a numeric string like `'123456789.0'`.
 * If the value can not be converted to a number, or is `NaN`, `Infinity` or
   `-Infinity`, an `Error` will be thrown.
 
@@ -3997,7 +4008,7 @@ This happens when:
 <!-- YAML
 added: v0.0.2
 changes:
-  - version: REPLACEME
+  - version: v14.0.0
     pr-url: https://github.com/nodejs/node/pull/31030
     description: The `buffer` parameter won't coerce unsupported input to
                  strings anymore.
@@ -4058,7 +4069,7 @@ the end of the file.
 <!-- YAML
 added: v0.11.5
 changes:
-  - version: REPLACEME
+  - version: v14.0.0
     pr-url: https://github.com/nodejs/node/pull/31030
     description: The `string` parameter won't coerce unsupported input to
                  strings anymore.
@@ -4117,7 +4128,7 @@ details.
 <!-- YAML
 added: v0.1.29
 changes:
-  - version: REPLACEME
+  - version: v14.0.0
     pr-url: https://github.com/nodejs/node/pull/31030
     description: The `data` parameter won't coerce unsupported input to
                  strings anymore.
@@ -4207,7 +4218,7 @@ to contain only `', World'`.
 <!-- YAML
 added: v0.1.29
 changes:
-  - version: REPLACEME
+  - version: v14.0.0
     pr-url: https://github.com/nodejs/node/pull/31030
     description: The `data` parameter won't coerce unsupported input to
                  strings anymore.
@@ -4239,7 +4250,7 @@ this API: [`fs.writeFile()`][].
 <!-- YAML
 added: v0.1.21
 changes:
-  - version: REPLACEME
+  - version: v14.0.0
     pr-url: https://github.com/nodejs/node/pull/31030
     description: The `buffer` parameter won't coerce unsupported input to
                  strings anymore.
@@ -4269,7 +4280,7 @@ this API: [`fs.write(fd, buffer...)`][].
 <!-- YAML
 added: v0.11.5
 changes:
-  - version: REPLACEME
+  - version: v14.0.0
     pr-url: https://github.com/nodejs/node/pull/31030
     description: The `string` parameter won't coerce unsupported input to
                  strings anymore.
@@ -4509,7 +4520,7 @@ of the file.
 
 #### `filehandle.readv(buffers[, position])`
 <!-- YAML
-added: REPLACEME
+added: v13.13.0
 -->
 
 * `buffers` {ArrayBufferView[]}
@@ -4641,7 +4652,7 @@ This function does not work on AIX versions before 7.1, it will resolve the
 <!-- YAML
 added: v10.0.0
 changes:
-  - version: REPLACEME
+  - version: v14.0.0
     pr-url: https://github.com/nodejs/node/pull/31030
     description: The `buffer` parameter won't coerce unsupported input to
                  buffers anymore.
@@ -4678,7 +4689,7 @@ the end of the file.
 <!-- YAML
 added: v10.0.0
 changes:
-  - version: REPLACEME
+  - version: v14.0.0
     pr-url: https://github.com/nodejs/node/pull/31030
     description: The `string` parameter won't coerce unsupported input to
                  strings anymore.
@@ -4714,7 +4725,7 @@ the end of the file.
 <!-- YAML
 added: v10.0.0
 changes:
-  - version: REPLACEME
+  - version: v14.0.0
     pr-url: https://github.com/nodejs/node/pull/31030
     description: The `data` parameter won't coerce unsupported input to
                  strings anymore.
@@ -4972,11 +4983,11 @@ added: v10.0.0
 * Returns: {Promise}
 
 Asynchronously creates a directory then resolves the `Promise` with either no
-arguments, or the first folder path created if `recursive` is `true`.
+arguments, or the first directory path created if `recursive` is `true`.
 
 The optional `options` argument can be an integer specifying `mode` (permission
 and sticky bits), or an object with a `mode` property and a `recursive`
-property indicating whether parent folders should be created. Calling
+property indicating whether parent directories should be created. Calling
 `fsPromises.mkdir()` when `path` is a directory that exists results in a
 rejection only when `recursive` is false.
 
@@ -4991,7 +5002,7 @@ added: v10.0.0
 * Returns: {Promise}
 
 Creates a unique temporary directory and resolves the `Promise` with the created
-folder path. A unique directory name is generated by appending six random
+directory path. A unique directory name is generated by appending six random
 characters to the end of the provided `prefix`. Due to platform
 inconsistencies, avoid trailing `X` characters in `prefix`. Some platforms,
 notably the BSDs, can return more than six random characters, and replace
@@ -5041,7 +5052,9 @@ a colon, Node.js will open a file system stream, as described by
 <!-- YAML
 added: v12.12.0
 changes:
-  - version: v13.1.0
+  - version:
+     - v13.1.0
+     - v12.16.0
     pr-url: https://github.com/nodejs/node/pull/30114
     description: The `bufferSize` option was introduced.
 -->
@@ -5199,7 +5212,9 @@ upon success.
 <!-- YAML
 added: v10.0.0
 changes:
-  - version: v13.3.0
+  - version:
+     - v13.3.0
+     - v12.16.0
     pr-url: https://github.com/nodejs/node/pull/30644
     description: The `maxBusyTries` option is renamed to `maxRetries`, and its
                  default is 0. The `emfileWait` option has been removed, and
@@ -5319,7 +5334,7 @@ The `atime` and `mtime` arguments follow these rules:
 <!-- YAML
 added: v10.0.0
 changes:
-  - version: REPLACEME
+  - version: v14.0.0
     pr-url: https://github.com/nodejs/node/pull/31030
     description: The `data` parameter won't coerce unsupported input to
                  strings anymore.

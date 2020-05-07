@@ -568,7 +568,12 @@ server.listen(1337, '127.0.0.1', () => {
 ### `request.abort()`
 <!-- YAML
 added: v0.3.8
+deprecated:
+  - v14.1.0
+  - v13.14.0
 -->
+
+> Stability: 0 - Deprecated: Use [`request.destroy()`][] instead.
 
 Marks the request as aborting. Calling this will cause remaining data
 in the response to be dropped and the socket to be destroyed.
@@ -623,10 +628,39 @@ If `data` is specified, it is equivalent to calling
 If `callback` is specified, it will be called when the request stream
 is finished.
 
+### `request.destroy([error])`
+<!-- YAML
+added: v0.3.0
+-->
+
+* `error` {Error} Optional, an error to emit with `'error'` event.
+* Returns: {this}
+
+Destroy the request. Optionally emit an `'error'` event,
+and emit a `'close'` event. Calling this will cause remaining data
+in the response to be dropped and the socket to be destroyed.
+
+See [`writable.destroy()`][] for further details.
+
+#### `request.destroyed`
+<!-- YAML
+added:
+  - v14.1.0
+  - v13.14.0
+-->
+
+* {boolean}
+
+Is `true` after [`request.destroy()`][] has been called.
+
+See [`writable.destroyed`][] for further details.
+
 ### `request.finished`
 <!-- YAML
 added: v0.0.1
-deprecated: v13.4.0
+deprecated:
+ - v13.4.0
+ - v12.16.0
 -->
 
 > Stability: 0 - Deprecated. Use [`request.writableEnded`][].
@@ -703,9 +737,10 @@ request.removeHeader('Content-Type');
 ```
 
 ### `request.reusedSocket`
-
 <!-- YAML
-added: v13.0.0
+added:
+ - v13.0.0
+ - v12.16.0
 -->
 
 * {boolean} Whether the request is send through a reused socket.
@@ -1107,7 +1142,9 @@ Stops the server from accepting new connections. See [`net.Server.close()`][].
 
 ### `server.headersTimeout`
 <!-- YAML
-added: v11.3.0
+added:
+ - v11.3.0
+ - v10.14.0
 -->
 
 * {number} **Default:** `60000`
@@ -1279,7 +1316,9 @@ See [`response.socket`][].
 
 ### `response.cork()`
 <!-- YAML
-added: v13.2.0
+added:
+ - v13.2.0
+ - v12.16.0
 -->
 
 See [`writable.cork()`][].
@@ -1311,7 +1350,9 @@ is finished.
 ### `response.finished`
 <!-- YAML
 added: v0.0.2
-deprecated: v13.4.0
+deprecated:
+ - v13.4.0
+ - v12.16.0
 -->
 
 > Stability: 0 - Deprecated. Use [`response.writableEnded`][].
@@ -1578,7 +1619,9 @@ status message which was sent out.
 
 ### `response.uncork()`
 <!-- YAML
-added: v13.2.0
+added:
+ - v13.2.0
+ - v12.16.0
 -->
 
 See [`writable.uncork()`][].
@@ -1654,7 +1697,9 @@ the request body should be sent. See the [`'checkContinue'`][] event on
 <!-- YAML
 added: v0.1.30
 changes:
-  - version: v11.10.0
+  - version:
+     - v11.10.0
+     - v10.17.0
     pr-url: https://github.com/nodejs/node/pull/25974
     description: Return `this` from `writeHead()` to allow chaining with
                  `end()`.
@@ -1713,12 +1758,10 @@ const server = http.createServer((req, res) => {
 });
 ```
 
-`Content-Length` is given in bytes not characters. The above example
-works because the string `'hello world'` contains only single byte characters.
-If the body contains higher coded characters then `Buffer.byteLength()`
-should be used to determine the number of bytes in a given encoding.
-And Node.js does not check whether `Content-Length` and the length of the body
-which has been transmitted are equal or not.
+`Content-Length` is given in bytes, not characters. Use
+[`Buffer.byteLength()`][] to determine the length of the body in bytes. Node.js
+does not check whether `Content-Length` and the length of the body which has
+been transmitted are equal or not.
 
 Attempting to set a header field name or value that contains invalid characters
 will result in a [`TypeError`][] being thrown.
@@ -1735,7 +1778,9 @@ the request body should be sent.
 <!-- YAML
 added: v0.1.17
 changes:
-  - version: v13.1.0
+  - version:
+     - v13.1.0
+     - v12.16.0
     pr-url: https://github.com/nodejs/node/pull/30135
     description: The `readableHighWaterMark` value mirrors that of the socket.
 -->
@@ -2034,7 +2079,10 @@ Found'`.
 <!-- YAML
 added: v0.1.13
 changes:
-  - version: v13.8.0
+  - version:
+     - v13.8.0
+     - v12.15.0
+     - v10.19.0
     pr-url: https://github.com/nodejs/node/pull/31448
     description: The `insecureHTTPParser` option is supported now.
   - version: v13.3.0
@@ -2149,7 +2197,9 @@ requests.
 
 ## `http.maxHeaderSize`
 <!-- YAML
-added: v11.6.0
+added:
+ - v11.6.0
+ - v10.15.0
 -->
 
 * {number}
@@ -2165,7 +2215,10 @@ This can be overridden for servers and client requests by passing the
 <!-- YAML
 added: v0.3.6
 changes:
-  - version: v13.8.0
+  - version:
+     - v13.8.0
+     - v12.15.0
+     - v10.19.0
     pr-url: https://github.com/nodejs/node/pull/31448
     description: The `insecureHTTPParser` option is supported now.
   - version: v13.3.0
@@ -2356,8 +2409,43 @@ the following events will be emitted in the following order:
 * `'close'`
 * `'close'` on the `res` object
 
-If `req.abort()` is called before the connection succeeds, the following events
-will be emitted in the following order:
+If `req.destroy()` is called before a socket is assigned, the following
+events will be emitted in the following order:
+
+* (`req.destroy()` called here)
+* `'error'` with an error with message `'Error: socket hang up'` and code
+  `'ECONNRESET'`
+* `'close'`
+
+If `req.destroy()` is called before the connection succeeds, the following
+events will be emitted in the following order:
+
+* `'socket'`
+* (`req.destroy()` called here)
+* `'error'` with an error with message `'Error: socket hang up'` and code
+  `'ECONNRESET'`
+* `'close'`
+
+If `req.destroy()` is called after the response is received, the following
+events will be emitted in the following order:
+
+* `'socket'`
+* `'response'`
+  * `'data'` any number of times, on the `res` object
+* (`req.destroy()` called here)
+* `'aborted'` on the `res` object
+* `'close'`
+* `'close'` on the `res` object
+
+If `req.abort()` is called before a socket is assigned, the following
+events will be emitted in the following order:
+
+* (`req.abort()` called here)
+* `'abort'`
+* `'close'`
+
+If `req.abort()` is called before the connection succeeds, the following
+events will be emitted in the following order:
 
 * `'socket'`
 * (`req.abort()` called here)
@@ -2366,8 +2454,8 @@ will be emitted in the following order:
   `'ECONNRESET'`
 * `'close'`
 
-If `req.abort()` is called after the response is received, the following events
-will be emitted in the following order:
+If `req.abort()` is called after the response is received, the following
+events will be emitted in the following order:
 
 * `'socket'`
 * `'response'`
@@ -2388,6 +2476,7 @@ not abort the request or do anything besides add a `'timeout'` event.
 [`'response'`]: #http_event_response
 [`'upgrade'`]: #http_event_upgrade
 [`Agent`]: #http_class_http_agent
+[`Buffer.byteLength()`]: buffer.html#buffer_class_method_buffer_bytelength_string_encoding
 [`Duplex`]: stream.html#stream_class_stream_duplex
 [`TypeError`]: errors.html#errors_class_typeerror
 [`URL`]: url.html#url_the_whatwg_url_api
@@ -2412,6 +2501,7 @@ not abort the request or do anything besides add a `'timeout'` event.
 [`new URL()`]: url.html#url_constructor_new_url_input_base
 [`removeHeader(name)`]: #http_request_removeheader_name
 [`request.end()`]: #http_request_end_data_encoding_callback
+[`request.destroy()`]: #http_request_destroy_error
 [`request.flushHeaders()`]: #http_request_flushheaders
 [`request.getHeader()`]: #http_request_getheader_name
 [`request.setHeader()`]: #http_request_setheader_name_value
@@ -2441,5 +2531,7 @@ not abort the request or do anything besides add a `'timeout'` event.
 [`socket.unref()`]: net.html#net_socket_unref
 [`url.parse()`]: url.html#url_url_parse_urlstring_parsequerystring_slashesdenotehost
 [`HPE_HEADER_OVERFLOW`]: errors.html#errors_hpe_header_overflow
+[`writable.destroy()`]: stream.html#stream_writable_destroy_error
+[`writable.destroyed`]: stream.html#stream_writable_destroyed
 [`writable.cork()`]: stream.html#stream_writable_cork
 [`writable.uncork()`]: stream.html#stream_writable_uncork

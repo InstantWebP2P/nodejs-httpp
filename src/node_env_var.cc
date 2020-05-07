@@ -121,7 +121,7 @@ void RealEnvStore::Set(Isolate* isolate,
   node::Utf8Value val(isolate, value);
 
 #ifdef _WIN32
-  if (key[0] == L'=') return;
+  if (key.length() > 0 && key[0] == '=') return;
 #endif
   uv_os_setenv(*key, *val);
   DateTimeConfigurationChangeNotification(isolate, key);
@@ -139,7 +139,7 @@ int32_t RealEnvStore::Query(const char* key) const {
   }
 
 #ifdef _WIN32
-  if (key[0] == L'=') {
+  if (key[0] == '=') {
     return static_cast<int32_t>(v8::ReadOnly) |
            static_cast<int32_t>(v8::DontDelete) |
            static_cast<int32_t>(v8::DontEnum);
@@ -227,7 +227,7 @@ void MapKVStore::Set(Isolate* isolate, Local<String> key, Local<String> value) {
   Mutex::ScopedLock lock(mutex_);
   Utf8Value key_str(isolate, key);
   Utf8Value value_str(isolate, value);
-  if (*key_str != nullptr && *value_str != nullptr) {
+  if (*key_str != nullptr && key_str.length() > 0 && *value_str != nullptr) {
     map_[std::string(*key_str, key_str.length())] =
         std::string(*value_str, value_str.length());
   }
@@ -377,13 +377,11 @@ static void EnvEnumerator(const PropertyCallbackInfo<Array>& info) {
       env->env_vars()->Enumerate(env->isolate()));
 }
 
-MaybeLocal<Object> CreateEnvVarProxy(Local<Context> context,
-                                     Isolate* isolate,
-                                     Local<Object> data) {
+MaybeLocal<Object> CreateEnvVarProxy(Local<Context> context, Isolate* isolate) {
   EscapableHandleScope scope(isolate);
   Local<ObjectTemplate> env_proxy_template = ObjectTemplate::New(isolate);
   env_proxy_template->SetHandler(NamedPropertyHandlerConfiguration(
-      EnvGetter, EnvSetter, EnvQuery, EnvDeleter, EnvEnumerator, data,
+      EnvGetter, EnvSetter, EnvQuery, EnvDeleter, EnvEnumerator, Local<Value>(),
       PropertyHandlerFlags::kHasNoSideEffect));
   return scope.EscapeMaybe(env_proxy_template->NewInstance(context));
 }

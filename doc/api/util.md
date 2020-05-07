@@ -398,10 +398,12 @@ stream.write('With ES6');
 <!-- YAML
 added: v0.3.0
 changes:
-  - version: REPLACEME
+  - version: v13.13.0
     pr-url: https://github.com/nodejs/node/pull/32392
     description: The `maxStringLength` option is supported now.
-  - version: v13.5.0
+  - version:
+     - v13.5.0
+     - v12.16.0
     pr-url: https://github.com/nodejs/node/pull/30768
     description: User defined prototype properties are inspected in case
                  `showHidden` is `true`.
@@ -488,7 +490,7 @@ changes:
     negative to show no elements. **Default:** `100`.
   * `maxStringLength` {integer} Specifies the maximum number of characters to
     include when formatting. Set to `null` or `Infinity` to show all elements.
-    Set to `0` or negative to show no characters. **Default:** `Infinity`.
+    Set to `0` or negative to show no characters. **Default:** `10000`.
   * `breakLength` {integer} The length at which input values are split across
     multiple lines. Set to `Infinity` to format the input as a single line
     (in combination with `compact` set to `true` or any number >= `1`).
@@ -1002,7 +1004,9 @@ throw an error.
 <!-- YAML
 added: v8.0.0
 changes:
-  - version: v13.12.0
+  - version:
+      - v13.12.0
+      - v12.16.2
     pr-url: https://github.com/nodejs/node/pull/31672
     description: This is now defined as a shared symbol.
 -->
@@ -1253,6 +1257,25 @@ See also [`util.types.isArrayBuffer()`][] and
 ```js
 util.types.isAnyArrayBuffer(new ArrayBuffer());  // Returns true
 util.types.isAnyArrayBuffer(new SharedArrayBuffer());  // Returns true
+```
+
+### `util.types.isArrayBufferView(value)`
+<!-- YAML
+added: v10.0.0
+-->
+
+* `value` {any}
+* Returns: {boolean}
+
+Returns `true` if the value is an instance of one of the [`ArrayBuffer`][]
+views, such as typed array objects or [`DataView`][].  Equivalent to
+[`ArrayBuffer.isView()`][].
+
+```js
+util.types.isArrayBufferView(new Int8Array());  // true
+util.types.isArrayBufferView(Buffer.from('hello world')); // true
+util.types.isArrayBufferView(new DataView(new ArrayBuffer(16)));  // true
+util.types.isArrayBufferView(new ArrayBuffer());  // false
 ```
 
 ### `util.types.isArgumentsObject(value)`
@@ -1897,7 +1920,7 @@ util.types.isWeakSet(new WeakSet());  // Returns true
 ### `util.types.isWebAssemblyCompiledModule(value)`
 <!-- YAML
 added: v10.0.0
-deprecated: REPLACEME
+deprecated: v14.0.0
 -->
 
 > Stability: 0 - Deprecated: Use `value instanceof WebAssembly.Module` instead.

@@ -96,6 +96,7 @@
       'lib/zlib.js',
       'lib/internal/assert.js',
       'lib/internal/assert/assertion_error.js',
+      'lib/internal/assert/calltracker.js',
       'lib/internal/async_hooks.js',
       'lib/internal/buffer.js',
       'lib/internal/cli_table.js',
@@ -375,6 +376,9 @@
       'msvs_disabled_warnings!': [4244],
 
       'conditions': [
+        [ 'error_on_warn=="true"', {
+          'cflags': ['-Werror'],
+        }],
         [ 'node_intermediate_lib_type=="static_library" and '
             'node_shared=="true" and OS=="aix"', {
           # For AIX, shared lib is linked by static lib and .exp. In the
@@ -631,6 +635,8 @@
         'src/uv.cc',
         # headers to make for a more pleasant IDE experience
         'src/aliased_buffer.h',
+        'src/aliased_struct.h',
+        'src/aliased_struct-inl.h',
         'src/async_wrap.h',
         'src/async_wrap-inl.h',
         'src/base_object.h',
@@ -747,6 +753,9 @@
       'msvs_disabled_warnings!': [4244],
 
       'conditions': [
+        [ 'error_on_warn=="true"', {
+          'cflags': ['-Werror'],
+        }],
         [ 'node_builtin_modules_path!=""', {
           'defines': [ 'NODE_BUILTIN_MODULES_PATH="<(node_builtin_modules_path)"' ]
         }],
