@@ -10,6 +10,7 @@
 
 ### Features
 
+* Node.js v12.x compatible
 * Run HTTP and HTTPS over UDP, taking UDP high performance
 * Support multi-process/thread UDT server by utilizing multi-cores' CPU
 * Enhance UDT security by authenticating both control and data packet
