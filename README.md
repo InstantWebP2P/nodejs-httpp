@@ -13,13 +13,11 @@
 * Node.js v12.x compatible
 * Run HTTP and HTTPS over UDP, taking UDP high performance
 * Support multi-process/thread UDT server by utilizing multi-cores' CPU
-* Enhance UDT security by authenticating both control and data packet
 * Configurable Congestion Control
-* Per-socket network performance monitor
-* Per-socket bandwidth limitation
+* Per-Socket network performance monitor
 * Extend client/central server style web service transparently
 * Easy to use API, reuse existing http/web and node.js technology
-* Support windows/linux/OSx, RaspberryPi, Android
+* Support Windows/Linux/OSx, RaspberryPi, Android
 
 ### TODO
 
