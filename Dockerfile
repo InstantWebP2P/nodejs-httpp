@@ -1,7 +1,7 @@
 #
-# node-httpp packaging Dockerfile
+# nodejs-httpp packaging Dockerfile
 #
-# https://github.com/InstantWebP2P/node-httpp
+# https://github.com/InstantWebP2P/nodejs-httpp
 # Copyright (c) 2020 Tom Zhou<appnet.link@gmail.com>
 
 # Pull base image.

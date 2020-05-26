@@ -1,12 +1,12 @@
 ### nodejs-httpp - Run HTTP over UDP and Bring Web in Peer or P2P styles.
 
-![test-linux](https://github.com/InstantWebP2P/node-httpp/workflows/test-linux/badge.svg?branch=v12.x-httpp)
-![test-macOS](https://github.com/InstantWebP2P/node-httpp/workflows/test-macOS/badge.svg?branch=v12.x-httpp)
-![build-windows](https://github.com/InstantWebP2P/node-httpp/workflows/build-windows/badge.svg?branch=v12.x-httpp)
+![test-linux](https://github.com/InstantWebP2P/nodejs-httpp/workflows/test-linux/badge.svg?branch=v12.x-httpp)
+![test-macOS](https://github.com/InstantWebP2P/nodejs-httpp/workflows/test-macOS/badge.svg?branch=v12.x-httpp)
+![build-windows](https://github.com/InstantWebP2P/nodejs-httpp/workflows/build-windows/badge.svg?branch=v12.x-httpp)
 
 * Consists of four modules: udt.js, httpp.js, udts.js, httpps.js with the compatible api to net.js,http.js,tls.js and https.js
 
-[Wiki page](https://github.com/InstantWebP2P/node-httpp/wiki/An-introduction-to-node-httpp)
+[Wiki page](https://github.com/InstantWebP2P/nodejs-httpp/wiki/An-introduction-to-nodejs-httpp)
 
 ### Features
 
@@ -39,7 +39,7 @@
 
 ### To checkout the sourcecode:
 
-    git clone https://github.com/InstantWebP2P/node-httpp.git
+    git clone https://github.com/InstantWebP2P/nodejs-httpp.git
 
 
 ### Build on Linux with Docker
