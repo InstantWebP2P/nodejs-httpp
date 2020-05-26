@@ -12,7 +12,7 @@
 
 * Node.js v12.x compatible
 * Run HTTP and HTTPS over UDP, taking UDP high performance
-* Support multi-process/thread UDT server by utilizing multi-cores' CPU
+* Support multi-process/thread UDP server by utilizing multi-cores' CPU
 * Configurable Congestion Control
 * Per-Socket network performance monitor
 * Extend client/central server style web service transparently
