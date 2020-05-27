@@ -6,7 +6,7 @@
 
 * Consists of four modules: udt.js, httpp.js, udts.js, httpps.js with the compatible api to net.js,http.js,tls.js and https.js
 
-[Wiki page](https://github.com/InstantWebP2P/nodejs-httpp/wiki/An-introduction-to-nodejs-httpp)
+[Wiki page](https://github.com/InstantWebP2P/nodejs-httpp/wiki/An-introduction-to-run-http-over-udp-with-node.js)
 
 ### Features
 
