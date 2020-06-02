@@ -174,7 +174,7 @@ function ClientRequest(input, options, cb) {
   let method = options.method;
   const methodIsString = (typeof method === 'string');
   if (method !== null && method !== undefined && !methodIsString) {
-    throw new ERR_INVALID_ARG_TYPE('method', 'string', method);
+    throw new ERR_INVALID_ARG_TYPE('options.method', 'string', method);
   }
 
   if (methodIsString && method) {
@@ -190,7 +190,7 @@ function ClientRequest(input, options, cb) {
   if (insecureHTTPParser !== undefined &&
       typeof insecureHTTPParser !== 'boolean') {
     throw new ERR_INVALID_ARG_TYPE(
-      'insecureHTTPParser', 'boolean', insecureHTTPParser);
+      'options.insecureHTTPParser', 'boolean', insecureHTTPParser);
   }
   this.insecureHTTPParser = insecureHTTPParser;
 
@@ -446,13 +446,6 @@ function socketErrorListener(err) {
   socket.destroy();
 }
 
-function freeSocketErrorListener(err) {
-  const socket = this;
-  debug('SOCKET ERROR on FREE socket:', err.message, err.stack);
-  socket.destroy();
-  socket.emit('agentRemove');
-}
-
 function socketOnEnd() {
   const socket = this;
   const req = this._httpMessage;
@@ -627,8 +620,11 @@ function responseKeepAlive(req) {
   socket.removeListener('error', socketErrorListener);
   socket.removeListener('data', socketOnData);
   socket.removeListener('end', socketOnEnd);
-  socket.once('error', freeSocketErrorListener);
-  // There are cases where _handle === null. Avoid those. Passing null to
+
+  // TODO(ronag): Between here and emitFreeNT the socket
+  // has no 'error' handler.
+
+  // There are cases where _handle === null. Avoid those. Passing undefined to
   // nextTick() will call getDefaultTriggerAsyncId() to retrieve the id.
   const asyncId = socket._handle ? socket._handle.getAsyncId() : undefined;
   // Mark this socket as available, AFTER user-added end
@@ -697,7 +693,6 @@ function tickOnSocket(req, socket) {
   }
 
   parser.onIncoming = parserOnIncomingClient;
-  socket.removeListener('error', freeSocketErrorListener);
   socket.on('error', socketErrorListener);
   socket.on('data', socketOnData);
   socket.on('end', socketOnEnd);
@@ -737,6 +732,8 @@ function listenSocketTimeout(req) {
 }
 
 ClientRequest.prototype.onSocket = function onSocket(socket) {
+  // TODO(ronag): Between here and onSocketNT the socket
+  // has no 'error' handler.
   process.nextTick(onSocketNT, this, socket);
 };
 

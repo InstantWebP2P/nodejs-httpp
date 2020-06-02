@@ -341,7 +341,7 @@ function Server(options, requestListener) {
   if (insecureHTTPParser !== undefined &&
       typeof insecureHTTPParser !== 'boolean') {
     throw new ERR_INVALID_ARG_TYPE(
-      'insecureHTTPParser', 'boolean', insecureHTTPParser);
+      'options.insecureHTTPParser', 'boolean', insecureHTTPParser);
   }
   this.insecureHTTPParser = insecureHTTPParser;
 
@@ -361,7 +361,7 @@ function Server(options, requestListener) {
   this.timeout = kDefaultHttpServerTimeout;
   this.keepAliveTimeout = 5000;
   this.maxHeadersCount = null;
-  this.headersTimeout = 40 * 1000; // 40 seconds
+  this.headersTimeout = 60 * 1000; // 60 seconds
 }
 ObjectSetPrototypeOf(Server.prototype, net.Server.prototype);
 ObjectSetPrototypeOf(Server, net.Server);
@@ -576,8 +576,12 @@ function onParserExecute(server, socket, parser, state, ret) {
 
   // If we have not parsed the headers, destroy the socket
   // after server.headersTimeout to protect from DoS attacks.
-  // start === 0 means that we have parsed headers.
-  if (start !== 0 && nowDate() - start > server.headersTimeout) {
+  // start === 0 means that we have parsed headers, while
+  // server.headersTimeout === 0 means user disabled this check.
+  if (
+    start !== 0 && server.headersTimeout &&
+    nowDate() - start > server.headersTimeout
+  ) {
     const serverTimeout = server.emit('timeout', socket);
 
     if (!serverTimeout)
@@ -665,9 +669,12 @@ function clearIncoming(req) {
   if (parser && parser.incoming === req) {
     if (req.readableEnded) {
       parser.incoming = null;
+      req.emit('close');
     } else {
       req.on('end', clearIncoming);
     }
+  } else {
+    req.emit('close');
   }
 }
 
@@ -678,7 +685,6 @@ function resOnFinish(req, res, socket, state, server) {
   assert(state.incoming.length === 0 || state.incoming[0] === req);
 
   state.incoming.shift();
-  clearIncoming(req);
 
   // If the user never called req.read(), and didn't pipe() or
   // .resume() or .on('data'), then we call req._dump() so that the
@@ -687,7 +693,7 @@ function resOnFinish(req, res, socket, state, server) {
     req._dump();
 
   res.detachSocket(socket);
-  req.emit('close');
+  clearIncoming(req);
   process.nextTick(emitCloseNT, res);
 
   if (res._last) {

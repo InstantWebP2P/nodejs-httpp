@@ -70,11 +70,19 @@ const {
   ERR_TLS_RENEGOTIATION_DISABLED,
   ERR_TLS_REQUIRED_SERVER_NAME,
   ERR_TLS_SESSION_ATTACK,
-  ERR_TLS_SNI_FROM_SERVER
+  ERR_TLS_SNI_FROM_SERVER,
+  ERR_TLS_INVALID_STATE
 } = codes;
 const { onpskexchange: kOnPskExchange } = internalBinding('symbols');
-const { getOptionValue } = require('internal/options');
-const { validateString, validateBuffer } = require('internal/validators');
+const {
+  getOptionValue,
+  getAllowUnauthorized,
+} = require('internal/options');
+const {
+  validateString,
+  validateBuffer,
+  validateUint32
+} = require('internal/validators');
 const traceTls = getOptionValue('--trace-tls');
 const tlsKeylog = getOptionValue('--tls-keylog');
 const { appendFile } = require('fs');
@@ -87,6 +95,8 @@ const kSNICallback = Symbol('snicallback');
 const kEnableTrace = Symbol('enableTrace');
 const kPskCallback = Symbol('pskcallback');
 const kPskIdentityHint = Symbol('pskidentityhint');
+const kPendingSession = Symbol('pendingSession');
+const kIsVerified = Symbol('verified');
 
 const noop = () => {};
 
@@ -270,7 +280,11 @@ function requestOCSPDone(socket) {
 function onnewsessionclient(sessionId, session) {
   debug('client emit session');
   const owner = this[owner_symbol];
-  owner.emit('session', session);
+  if (owner[kIsVerified]) {
+    owner.emit('session', session);
+  } else {
+    owner[kPendingSession] = session;
+  }
 }
 
 function onnewsession(sessionId, session) {
@@ -463,12 +477,15 @@ function TLSSocket(socket, opts) {
   this._securePending = false;
   this._newSessionPending = false;
   this._controlReleased = false;
+  this.secureConnecting = true;
   this._SNICallback = null;
   this.servername = null;
   this.alpnProtocol = null;
   this.authorized = false;
   this.authorizationError = null;
   this[kRes] = null;
+  this[kIsVerified] = false;
+  this[kPendingSession] = null;
 
   let wrap;
   if ((socket instanceof net.Socket && socket._handle) || !socket) {
@@ -639,6 +656,8 @@ TLSSocket.prototype._destroySSL = function _destroySSL() {
     this.ssl._secureContext.context = null;
   }
   this.ssl = null;
+  this[kPendingSession] = null;
+  this[kIsVerified] = false;
 };
 
 // Constructor guts, arbitrarily factored out.
@@ -864,6 +883,18 @@ TLSSocket.prototype.renegotiate = function(options, callback) {
   return true;
 };
 
+TLSSocket.prototype.exportKeyingMaterial = function(length, label, context) {
+  validateUint32(length, 'length', true);
+  validateString(label, 'label');
+  if (context !== undefined)
+    validateBuffer(context, 'context');
+
+  if (!this._secureEstablished)
+    throw new ERR_TLS_INVALID_STATE();
+
+  return this._handle.exportKeyingMaterial(length, label, context);
+};
+
 TLSSocket.prototype.setMaxSendFragment = function setMaxSendFragment(size) {
   return this._handle.setMaxSendFragment(size) === 1;
 };
@@ -1020,6 +1051,7 @@ function onServerSocketSecure() {
 
   if (!this.destroyed && this._releaseControl()) {
     debug('server emit secureConnection');
+    this.secureConnecting = false;
     this._tlsOptions.server.emit('secureConnection', this);
   }
 }
@@ -1508,6 +1540,12 @@ function onConnectSecure() {
     this.emit('secureConnect');
   }
 
+  this[kIsVerified] = true;
+  const session = this[kPendingSession];
+  this[kPendingSession] = null;
+  if (session)
+    this.emit('session', session);
+
   this.removeListener('end', onConnectEnd);
 }
 
@@ -1527,22 +1565,12 @@ function onConnectEnd() {
   }
 }
 
-let warnOnAllowUnauthorized = true;
-
 // Arguments: [port,] [host,] [options,] [cb]
 exports.connect = function connect(...args) {
   args = normalizeConnectArgs(args);
   let options = args[0];
   const cb = args[1];
-  const allowUnauthorized = process.env.NODE_TLS_REJECT_UNAUTHORIZED === '0';
-
-  if (allowUnauthorized && warnOnAllowUnauthorized) {
-    warnOnAllowUnauthorized = false;
-    process.emitWarning('Setting the NODE_TLS_REJECT_UNAUTHORIZED ' +
-                        'environment variable to \'0\' makes TLS connections ' +
-                        'and HTTPS requests insecure by disabling ' +
-                        'certificate verification.');
-  }
+  const allowUnauthorized = getAllowUnauthorized();
 
   options = {
     rejectUnauthorized: !allowUnauthorized,

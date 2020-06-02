@@ -46,7 +46,6 @@ const {
   isIP,
   isIPv4,
   isIPv6,
-  isLegalPort,
   normalizedArgsSymbol,
   makeSyncWrite
 } = require('internal/net');
@@ -97,7 +96,6 @@ const {
     ERR_INVALID_OPT_VALUE,
     ERR_SERVER_ALREADY_LISTEN,
     ERR_SERVER_NOT_RUNNING,
-    ERR_SOCKET_BAD_PORT,
     ERR_SOCKET_CLOSED
   },
   errnoException,
@@ -105,7 +103,7 @@ const {
   uvExceptionWithHostPort
 } = require('internal/errors');
 const { isUint8Array } = require('internal/util/types');
-const { validateInt32, validateString } = require('internal/validators');
+const { validateInt32, validatePort, validateString } = require('internal/validators');
 const kLastWriteQueueSize = Symbol('lastWriteQueueSize');
 const {
   DTRACE_NET_SERVER_CONNECTION,
@@ -634,9 +632,9 @@ function onReadableStreamEnd() {
     this.write = writeAfterFIN;
     if (this.writable)
       this.end();
-  }
-
-  if (!this.destroyed && !this.writable && !this.writableLength)
+    else if (!this.writableLength)
+      this.destroy();
+  } else if (!this.destroyed && !this.writable && !this.writableLength)
     this.destroy();
 }
 
@@ -1275,9 +1273,7 @@ function lookupAndConnect(self, options) {
       throw new ERR_INVALID_ARG_TYPE('options.port',
                                      ['number', 'string'], port);
     }
-    if (!isLegalPort(port)) {
-      throw new ERR_SOCKET_BAD_PORT(port);
-    }
+    validatePort(port);
   }
   port |= 0;
 
@@ -1714,9 +1710,7 @@ Server.prototype.listen = function(...args) {
   // or if options.port is normalized as 0 before
   let backlog;
   if (typeof options.port === 'number' || typeof options.port === 'string') {
-    if (!isLegalPort(options.port)) {
-      throw new ERR_SOCKET_BAD_PORT(options.port);
-    }
+    validatePort(options.port, 'options.port');
     backlog = options.backlog || backlogFromArgs;
     // start UDT server listening on host:port
     if (options.host) {
