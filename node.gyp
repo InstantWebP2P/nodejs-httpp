@@ -24,6 +24,7 @@
     'node_core_target_name%': 'node',
     'node_lib_target_name%': 'libnode',
     'node_intermediate_lib_type%': 'static_library',
+    'node_builtin_modules_path%': '',
     'library_files': [
       'lib/internal/bootstrap/environment.js',
       'lib/internal/bootstrap/loaders.js',
@@ -148,6 +149,7 @@
       'lib/internal/fs/utils.js',
       'lib/internal/fs/watchers.js',
       'lib/internal/http.js',
+      'lib/internal/heap_utils.js',
       'lib/internal/histogram.js',
       'lib/internal/idna.js',
       'lib/internal/inspector_async_hook.js',
@@ -222,6 +224,7 @@
       'lib/internal/vm/module.js',
       'lib/internal/worker.js',
       'lib/internal/worker/io.js',
+      'lib/internal/watchdog.js',
       'lib/internal/streams/lazy_transform.js',
       'lib/internal/streams/async_iterator.js',
       'lib/internal/streams/buffer_list.js',
@@ -257,6 +260,11 @@
     'node_mksnapshot_exec': '<(PRODUCT_DIR)/<(EXECUTABLE_PREFIX)node_mksnapshot<(EXECUTABLE_SUFFIX)',
     'mkcodecache_exec': '<(PRODUCT_DIR)/<(EXECUTABLE_PREFIX)mkcodecache<(EXECUTABLE_SUFFIX)',
     'conditions': [
+      ['GENERATOR == "ninja"', {
+        'node_text_start_object_path': 'src/large_pages/node_text_start.node_text_start.o'
+      }, {
+        'node_text_start_object_path': 'node_text_start/src/large_pages/node_text_start.o'
+      }],
       [ 'node_shared=="true"', {
         'node_target_type%': 'shared_library',
         'conditions': [
@@ -321,10 +329,25 @@
 
   'targets': [
     {
+      'target_name': 'node_text_start',
+      'type': 'none',
+      'conditions': [
+        [ 'OS in "linux freebsd" and '
+          'target_arch=="x64"', {
+          'type': 'static_library',
+          'sources': [
+            'src/large_pages/node_text_start.S'
+          ]
+        }],
+      ]
+    },
+    {
       'target_name': '<(node_core_target_name)',
       'type': 'executable',
 
       'defines': [
+        'NODE_ARCH="<(target_arch)"',
+        'NODE_PLATFORM="<(OS)"',
         'NODE_WANT_INTERNALS=1',
       ],
 
@@ -412,13 +435,6 @@
             'OTHER_LDFLAGS': [ '-Wl,-rpath,@loader_path', ],
           },
         }],
-        [ 'node_report=="true"', {
-          'defines': [
-            'NODE_REPORT',
-            'NODE_ARCH="<(target_arch)"',
-            'NODE_PLATFORM="<(OS)"',
-          ],
-        }],
         ['OS=="win"', {
           'libraries': [
             'Dbghelp.lib',
@@ -505,6 +521,13 @@
             'src/node_snapshot_stub.cc'
           ],
         }],
+        [ 'OS in "linux freebsd" and '
+          'target_arch=="x64"', {
+          'dependencies': [ 'node_text_start' ],
+          'ldflags+': [
+            '<(obj_dir)/<(node_text_start_object_path)'
+          ]
+        }],
       ],
     }, # node_core_target_name
     {
@@ -548,6 +571,7 @@
         'src/js_native_api_v8.h',
         'src/js_native_api_v8_internals.h',
         'src/js_stream.cc',
+        'src/json_utils.cc',
         'src/module_wrap.cc',
         'src/node.cc',
         'src/node_api.cc',
@@ -579,7 +603,11 @@
         'src/node_process_events.cc',
         'src/node_process_methods.cc',
         'src/node_process_object.cc',
+        'src/node_report.cc',
+        'src/node_report_module.cc',
+        'src/node_report_utils.cc',
         'src/node_serdes.cc',
+        'src/node_sockaddr.cc',
         'src/node_stat_watcher.cc',
         'src/node_symbols.cc',
         'src/node_task_queue.cc',
@@ -635,6 +663,9 @@
         'src/histogram-inl.h',
         'src/http_parser_adaptor.h',
         'src/js_stream.h',
+        'src/json_utils.h',
+        'src/large_pages/node_large_page.cc',
+        'src/large_pages/node_large_page.h',
         'src/memory_tracker.h',
         'src/memory_tracker-inl.h',
         'src/module_wrap.h',
@@ -670,8 +701,11 @@
         'src/node_perf_common.h',
         'src/node_platform.h',
         'src/node_process.h',
+        'src/node_report.h',
         'src/node_revert.h',
         'src/node_root_certs.h',
+        'src/node_sockaddr.h',
+        'src/node_sockaddr-inl.h',
         'src/node_stat_watcher.h',
         'src/node_union_bytes.h',
         'src/node_url.h',
@@ -735,6 +769,9 @@
       'msvs_disabled_warnings!': [4244],
 
       'conditions': [
+        [ 'node_builtin_modules_path!=""', {
+          'defines': [ 'NODE_BUILTIN_MODULES_PATH="<(node_builtin_modules_path)"' ]
+        }],
         [ 'node_shared=="true"', {
           'sources': [
             'src/node_snapshot_stub.cc',
@@ -767,6 +804,7 @@
           'libraries': [
             'Dbghelp',
             'Psapi',
+            'Ws2_32',
           ],
         }],
         [ 'node_use_etw=="true"', {
@@ -851,31 +889,10 @@
             'src/tls_wrap.h'
           ],
         }],
-        [ 'node_report=="true"', {
-          'sources': [
-            'src/node_report.cc',
-            'src/node_report_module.cc',
-            'src/node_report_utils.cc',
-          ],
-          'defines': [
-            'NODE_REPORT',
-            'NODE_ARCH="<(target_arch)"',
-            'NODE_PLATFORM="<(OS)"',
-          ],
-          'conditions': [
-            ['OS=="win"', {
-              'libraries': [ 'Ws2_32' ],
-            }],
-          ],
-        }],
-        [ 'node_use_large_pages=="true" and OS in "linux freebsd mac"', {
+        [ 'OS in "linux freebsd mac" and '
+          'target_arch=="x64" and '
+          'node_target_type=="executable"', {
           'defines': [ 'NODE_ENABLE_LARGE_CODE_PAGES=1' ],
-          # The current implementation of Large Pages is under Linux.
-          # Other implementations are possible but not currently supported.
-          'sources': [
-            'src/large_pages/node_large_page.cc',
-            'src/large_pages/node_large_page.h'
-          ],
         }],
         [ 'use_openssl_def==1', {
           # TODO(bnoordhuis) Make all platforms export the same list of symbols.
@@ -1129,7 +1146,11 @@
         'test/cctest',
       ],
 
-      'defines': [ 'NODE_WANT_INTERNALS=1' ],
+      'defines': [
+        'NODE_ARCH="<(target_arch)"',
+        'NODE_PLATFORM="<(OS)"',
+        'NODE_WANT_INTERNALS=1',
+      ],
 
       'sources': [
         'src/node_snapshot_stub.cc',
@@ -1146,6 +1167,8 @@
         'test/cctest/test_linked_binding.cc',
         'test/cctest/test_per_process.cc',
         'test/cctest/test_platform.cc',
+        'test/cctest/test_json_utils.cc',
+        'test/cctest/test_sockaddr.cc',
         'test/cctest/test_traced_value.cc',
         'test/cctest/test_util.cc',
         'test/cctest/test_url.cc',
@@ -1181,21 +1204,6 @@
           'xcode_settings': {
             'OTHER_LDFLAGS': [ '-Wl,-rpath,@loader_path', ],
           },
-        }],
-        [ 'node_report=="true"', {
-          'sources': [
-            'test/cctest/test_report_util.cc',
-          ],
-          'defines': [
-            'NODE_REPORT',
-            'NODE_ARCH="<(target_arch)"',
-            'NODE_PLATFORM="<(OS)"',
-          ],
-          'conditions': [
-            ['OS=="win"', {
-              'libraries': [ 'Ws2_32' ],
-            }],
-          ],
         }],
         ['OS=="win"', {
           'libraries': [

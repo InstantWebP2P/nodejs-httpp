@@ -2441,6 +2441,26 @@ assert.strictEqual(
 
   assert.strictEqual(out, expected);
 
+  // Unicode support. あ has a length of one and a width of two.
+  obj = [
+    '123', '123', '123', '123', 'あああ',
+    '123', '123', '123', '123', 'あああ'
+  ];
+
+  out = util.inspect(obj, { compact: 3 });
+
+  expected = [
+    '[',
+    "  '123',    '123',",
+    "  '123',    '123',",
+    "  'あああ', '123',",
+    "  '123',    '123',",
+    "  '123',    'あああ'",
+    ']',
+  ].join('\n');
+
+  assert.strictEqual(out, expected);
+
   // Verify that array grouping and line consolidation does not happen together.
   obj = {
     a: {
@@ -2757,4 +2777,12 @@ assert.strictEqual(
   const undetectable = vm.runInThisContext('%GetUndetectable()');
   v8.setFlagsFromString('--no-allow-natives-syntax');
   assert.strictEqual(inspect(undetectable), '{}');
+}
+
+{
+  const x = 'a'.repeat(1e6);
+  assert.strictEqual(
+    util.inspect(x, { maxStringLength: 4 }),
+    "'aaaa'... 999996 more characters"
+  );
 }

@@ -34,7 +34,7 @@
 
     # Reset this number to 0 on major V8 upgrades.
     # Increment by one for each non-official patch applied to deps/v8.
-    'v8_embedder_string': '-node.35',
+    'v8_embedder_string': '-node.37',
 
     ##### V8 defaults for Node.js #####
 
@@ -235,7 +235,10 @@
             'RuntimeLibrary': '<(MSVC_runtimeType)',
             'RuntimeTypeInfo': 'false',
           }
-        }
+        },
+        'xcode_settings': {
+          'GCC_OPTIMIZATION_LEVEL': '3', # stop gyp from defaulting to -Os
+        },
       }
     },
 
@@ -315,8 +318,9 @@
         'cflags+': [
           '-fno-omit-frame-pointer',
           '-fsanitize=address',
-          '-DLEAK_SANITIZER'
+          '-fsanitize-address-use-after-scope',
         ],
+        'defines': [ 'LEAK_SANITIZER', 'V8_USE_ADDRESS_SANITIZER' ],
         'cflags!': [ '-fomit-frame-pointer' ],
         'ldflags': [ '-fsanitize=address' ],
       }],

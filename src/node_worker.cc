@@ -30,7 +30,6 @@ using v8::Integer;
 using v8::Isolate;
 using v8::Local;
 using v8::Locker;
-using v8::Maybe;
 using v8::MaybeLocal;
 using v8::Null;
 using v8::Number;
@@ -145,10 +144,10 @@ class WorkerThreadData {
       uv_err_name_r(ret, err_buf, sizeof(err_buf));
       w->custom_error_ = "ERR_WORKER_INIT_FAILED";
       w->custom_error_str_ = err_buf;
-      w->loop_init_failed_ = true;
       w->stopped_ = true;
       return;
     }
+    loop_init_failed_ = false;
 
     Isolate::CreateParams params;
     SetIsolateCreateParamsForNode(&params);
@@ -201,6 +200,7 @@ class WorkerThreadData {
     }
 
     if (isolate != nullptr) {
+      CHECK(!loop_init_failed_);
       bool platform_finished = false;
 
       isolate_data_.reset();
@@ -219,18 +219,20 @@ class WorkerThreadData {
 
       // Wait until the platform has cleaned up all relevant resources.
       while (!platform_finished) {
-        CHECK(!w_->loop_init_failed_);
         uv_run(&loop_, UV_RUN_ONCE);
       }
     }
-    if (!w_->loop_init_failed_) {
+    if (!loop_init_failed_) {
       CheckedUvLoopClose(&loop_);
     }
   }
 
+  bool loop_is_usable() const { return !loop_init_failed_; }
+
  private:
   Worker* const w_;
   uv_loop_t loop_;
+  bool loop_init_failed_ = true;
   DeleteFnPtr<IsolateData, FreeIsolateData> isolate_data_;
 
   friend class Worker;
@@ -260,7 +262,7 @@ void Worker::Run() {
 
   WorkerThreadData data(this);
   if (isolate_ == nullptr) return;
-  CHECK(!data.w_->loop_init_failed_);
+  CHECK(data.loop_is_usable());
 
   Debug(this, "Starting worker with id %llu", thread_id_);
   {
@@ -344,12 +346,6 @@ void Worker::Run() {
         env_->InitializeInspector(std::move(inspector_parent_handle_));
 #endif
         HandleScope handle_scope(isolate_);
-        InternalCallbackScope callback_scope(
-            env_.get(),
-            Local<Object>(),
-            { 1, 0 },
-            InternalCallbackScope::kAllowEmptyResource |
-                InternalCallbackScope::kSkipAsyncHooks);
 
         if (!env_->RunBootstrapping().IsEmpty()) {
           CreateEnvMessagePort(env_.get());
@@ -617,21 +613,12 @@ void Worker::StartThread(const FunctionCallbackInfo<Value>& args) {
   ASSIGN_OR_RETURN_UNWRAP(&w, args.This());
   Mutex::ScopedLock lock(w->mutex_);
 
-  // The object now owns the created thread and should not be garbage collected
-  // until that finishes.
-  w->ClearWeak();
-
-  w->env()->add_sub_worker_context(w);
   w->stopped_ = false;
-  w->thread_joined_ = false;
-
-  if (w->has_ref_)
-    w->env()->add_refs(1);
 
   uv_thread_options_t thread_options;
   thread_options.flags = UV_THREAD_HAS_STACK_SIZE;
   thread_options.stack_size = kStackSize;
-  CHECK_EQ(uv_thread_create_ex(&w->tid_, &thread_options, [](void* arg) {
+  int ret = uv_thread_create_ex(&w->tid_, &thread_options, [](void* arg) {
     // XXX: This could become a std::unique_ptr, but that makes at least
     // gcc 6.3 detect undefined behaviour when there shouldn't be any.
     // gcc 7+ handles this well.
@@ -652,7 +639,29 @@ void Worker::StartThread(const FunctionCallbackInfo<Value>& args) {
           w->JoinThread();
           // implicitly delete w
         });
-  }, static_cast<void*>(w)), 0);
+  }, static_cast<void*>(w));
+
+  if (ret == 0) {
+    // The object now owns the created thread and should not be garbage
+    // collected until that finishes.
+    w->ClearWeak();
+    w->thread_joined_ = false;
+
+    if (w->has_ref_)
+      w->env()->add_refs(1);
+
+    w->env()->add_sub_worker_context(w);
+  } else {
+    w->stopped_ = true;
+
+    char err_buf[128];
+    uv_err_name_r(ret, err_buf, sizeof(err_buf));
+    {
+      Isolate* isolate = w->env()->isolate();
+      HandleScope handle_scope(isolate);
+      THROW_ERR_WORKER_INIT_FAILED(isolate, err_buf);
+    }
+  }
 }
 
 void Worker::StopThread(const FunctionCallbackInfo<Value>& args) {
@@ -708,6 +717,53 @@ void Worker::MemoryInfo(MemoryTracker* tracker) const {
   tracker->TrackField("parent_port", parent_port_);
 }
 
+class WorkerHeapSnapshotTaker : public AsyncWrap {
+ public:
+  WorkerHeapSnapshotTaker(Environment* env, Local<Object> obj)
+    : AsyncWrap(env, obj, AsyncWrap::PROVIDER_WORKERHEAPSNAPSHOT) {}
+
+  SET_NO_MEMORY_INFO()
+  SET_MEMORY_INFO_NAME(WorkerHeapSnapshotTaker)
+  SET_SELF_SIZE(WorkerHeapSnapshotTaker)
+};
+
+void Worker::TakeHeapSnapshot(const FunctionCallbackInfo<Value>& args) {
+  Worker* w;
+  ASSIGN_OR_RETURN_UNWRAP(&w, args.This());
+
+  Debug(w, "Worker %llu taking heap snapshot", w->thread_id_);
+
+  Environment* env = w->env();
+  AsyncHooks::DefaultTriggerAsyncIdScope trigger_id_scope(w);
+  Local<Object> wrap;
+  if (!env->worker_heap_snapshot_taker_template()
+      ->NewInstance(env->context()).ToLocal(&wrap)) {
+    return;
+  }
+  BaseObjectPtr<WorkerHeapSnapshotTaker> taker =
+      MakeDetachedBaseObject<WorkerHeapSnapshotTaker>(env, wrap);
+
+  // Interrupt the worker thread and take a snapshot, then schedule a call
+  // on the parent thread that turns that snapshot into a readable stream.
+  bool scheduled = w->RequestInterrupt([taker, env](Environment* worker_env) {
+    heap::HeapSnapshotPointer snapshot {
+        worker_env->isolate()->GetHeapProfiler()->TakeHeapSnapshot() };
+    CHECK(snapshot);
+    env->SetImmediateThreadsafe(
+        [taker, snapshot = std::move(snapshot)](Environment* env) mutable {
+          HandleScope handle_scope(env->isolate());
+          Context::Scope context_scope(env->context());
+
+          AsyncHooks::DefaultTriggerAsyncIdScope trigger_id_scope(taker.get());
+          BaseObjectPtr<AsyncWrap> stream = heap::CreateHeapSnapshotStream(
+              env, std::move(snapshot));
+          Local<Value> args[] = { stream->object() };
+          taker->MakeCallback(env->ondone_string(), arraysize(args), args);
+        });
+  });
+  args.GetReturnValue().Set(scheduled ? taker->object() : Local<Object>());
+}
+
 namespace {
 
 // Return the MessagePort that is global for this Environment and communicates
@@ -730,7 +786,8 @@ void InitWorker(Local<Object> target,
   {
     Local<FunctionTemplate> w = env->NewFunctionTemplate(Worker::New);
 
-    w->InstanceTemplate()->SetInternalFieldCount(1);
+    w->InstanceTemplate()->SetInternalFieldCount(
+        Worker::kInternalFieldCount);
     w->Inherit(AsyncWrap::GetConstructorTemplate(env));
 
     env->SetProtoMethod(w, "startThread", Worker::StartThread);
@@ -738,6 +795,7 @@ void InitWorker(Local<Object> target,
     env->SetProtoMethod(w, "ref", Worker::Ref);
     env->SetProtoMethod(w, "unref", Worker::Unref);
     env->SetProtoMethod(w, "getResourceLimits", Worker::GetResourceLimits);
+    env->SetProtoMethod(w, "takeHeapSnapshot", Worker::TakeHeapSnapshot);
 
     Local<String> workerString =
         FIXED_ONE_BYTE_STRING(env->isolate(), "Worker");
@@ -745,6 +803,19 @@ void InitWorker(Local<Object> target,
     target->Set(env->context(),
                 workerString,
                 w->GetFunction(env->context()).ToLocalChecked()).Check();
+  }
+
+  {
+    Local<FunctionTemplate> wst = FunctionTemplate::New(env->isolate());
+
+    wst->InstanceTemplate()->SetInternalFieldCount(
+        WorkerHeapSnapshotTaker::kInternalFieldCount);
+    wst->Inherit(AsyncWrap::GetConstructorTemplate(env));
+
+    Local<String> wst_string =
+        FIXED_ONE_BYTE_STRING(env->isolate(), "WorkerHeapSnapshotTaker");
+    wst->SetClassName(wst_string);
+    env->set_worker_heap_snapshot_taker_template(wst->InstanceTemplate());
   }
 
   env->SetMethod(target, "getEnvMessagePort", GetEnvMessagePort);

@@ -1,5 +1,3 @@
-// Flags: --experimental-modules
-
 'use strict';
 const common = require('../common');
 const assert = require('assert');
@@ -44,6 +42,9 @@ function expectFsNamespace(result) {
 // For direct use of import expressions inside of CJS or ES modules, including
 // via eval, all kinds of specifiers should work without issue.
 (function testScriptOrModuleImport() {
+  common.expectWarning('ExperimentalWarning',
+                       'The ESM module loader is experimental.');
+
   // Importing another file, both direct & via eval
   // expectOkNamespace(import(relativePath));
   expectOkNamespace(eval(`import("${relativePath}")`));

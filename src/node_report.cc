@@ -1,4 +1,5 @@
 #include "env-inl.h"
+#include "json_utils.h"
 #include "node_report.h"
 #include "debug_utils-inl.h"
 #include "diagnosticfilename-inl.h"
@@ -16,6 +17,7 @@
 #include <dlfcn.h>
 #endif
 
+#include <iostream>
 #include <cstring>
 #include <ctime>
 #include <cwctype>
@@ -30,9 +32,9 @@ using node::arraysize;
 using node::ConditionVariable;
 using node::DiagnosticFilename;
 using node::Environment;
+using node::JSONWriter;
 using node::Mutex;
 using node::NativeSymbolDebuggingContext;
-using node::PerIsolateOptions;
 using node::TIME_TYPE;
 using node::worker::Worker;
 using v8::HeapSpaceStatistics;
@@ -45,6 +47,8 @@ using v8::String;
 using v8::V8;
 using v8::Value;
 
+namespace per_process = node::per_process;
+
 // Internal/static function declarations
 static void WriteNodeReport(Isolate* isolate,
                             Environment* env,
@@ -52,7 +56,8 @@ static void WriteNodeReport(Isolate* isolate,
                             const char* trigger,
                             const std::string& filename,
                             std::ostream& out,
-                            Local<String> stackstr);
+                            Local<String> stackstr,
+                            bool compact);
 static void PrintVersionInformation(JSONWriter* writer);
 static void PrintJavaScriptStack(JSONWriter* writer,
                                  Isolate* isolate,
@@ -69,8 +74,6 @@ static void PrintCpuInfo(JSONWriter* writer);
 static void PrintNetworkInterfaceInfo(JSONWriter* writer);
 
 // External function to trigger a report, writing to file.
-// The 'name' parameter is in/out: an input filename is used
-// if supplied, and the actual filename is returned.
 std::string TriggerNodeReport(Isolate* isolate,
                               Environment* env,
                               const char* message,
@@ -78,20 +81,25 @@ std::string TriggerNodeReport(Isolate* isolate,
                               const std::string& name,
                               Local<String> stackstr) {
   std::string filename;
-  std::shared_ptr<PerIsolateOptions> options;
-  if (env != nullptr) options = env->isolate_data()->options();
 
   // Determine the required report filename. In order of priority:
   //   1) supplied on API 2) configured on startup 3) default generated
   if (!name.empty()) {
     // Filename was specified as API parameter.
     filename = name;
-  } else if (env != nullptr && options->report_filename.length() > 0) {
-    // File name was supplied via start-up option.
-    filename = options->report_filename;
   } else {
-    filename = *DiagnosticFilename(env != nullptr ? env->thread_id() : 0,
-                                   "report", "json");
+    std::string report_filename;
+    {
+      Mutex::ScopedLock lock(per_process::cli_options_mutex);
+      report_filename = per_process::cli_options->report_filename;
+    }
+    if (report_filename.length() > 0) {
+      // File name was supplied via start-up option.
+      filename = report_filename;
+    } else {
+      filename = *DiagnosticFilename(env != nullptr ? env->thread_id() : 0,
+          "report", "json");
+    }
   }
 
   // Open the report file stream for writing. Supports stdout/err,
@@ -103,9 +111,14 @@ std::string TriggerNodeReport(Isolate* isolate,
   } else if (filename == "stderr") {
     outstream = &std::cerr;
   } else {
+    std::string report_directory;
+    {
+      Mutex::ScopedLock lock(per_process::cli_options_mutex);
+      report_directory = per_process::cli_options->report_directory;
+    }
     // Regular file. Append filename to directory path if one was specified
-    if (env != nullptr && options->report_directory.length() > 0) {
-      std::string pathname = options->report_directory;
+    if (report_directory.length() > 0) {
+      std::string pathname = report_directory;
       pathname += node::kPathSeparator;
       pathname += filename;
       outfile.open(pathname, std::ios::out | std::ios::binary);
@@ -116,8 +129,8 @@ std::string TriggerNodeReport(Isolate* isolate,
     if (!outfile.is_open()) {
       std::cerr << "\nFailed to open Node.js report file: " << filename;
 
-      if (env != nullptr && options->report_directory.length() > 0)
-        std::cerr << " directory: " << options->report_directory;
+      if (report_directory.length() > 0)
+        std::cerr << " directory: " << report_directory;
 
       std::cerr << " (errno: " << errno << ")" << std::endl;
       return "";
@@ -126,15 +139,23 @@ std::string TriggerNodeReport(Isolate* isolate,
     std::cerr << "\nWriting Node.js report to file: " << filename;
   }
 
+  bool compact;
+  {
+    Mutex::ScopedLock lock(per_process::cli_options_mutex);
+    compact = per_process::cli_options->report_compact;
+  }
   WriteNodeReport(isolate, env, message, trigger, filename, *outstream,
-                  stackstr);
+                  stackstr, compact);
 
   // Do not close stdout/stderr, only close files we opened.
   if (outfile.is_open()) {
     outfile.close();
   }
 
-  std::cerr << "\nNode.js report completed" << std::endl;
+  // Do not mix JSON and free-form text on stderr.
+  if (filename != "stderr") {
+    std::cerr << "\nNode.js report completed" << std::endl;
+  }
   return filename;
 }
 
@@ -145,7 +166,7 @@ void GetNodeReport(Isolate* isolate,
                    const char* trigger,
                    Local<String> stackstr,
                    std::ostream& out) {
-  WriteNodeReport(isolate, env, message, trigger, "", out, stackstr);
+  WriteNodeReport(isolate, env, message, trigger, "", out, stackstr, false);
 }
 
 // Internal function to coordinate and write the various
@@ -156,7 +177,8 @@ static void WriteNodeReport(Isolate* isolate,
                             const char* trigger,
                             const std::string& filename,
                             std::ostream& out,
-                            Local<String> stackstr) {
+                            Local<String> stackstr,
+                            bool compact) {
   // Obtain the current time and the pid.
   TIME_TYPE tm_struct;
   DiagnosticFilename::LocalTime(&tm_struct);
@@ -169,7 +191,7 @@ static void WriteNodeReport(Isolate* isolate,
   // File stream opened OK, now start printing the report content:
   // the title and header information (event, filename, timestamp and pid)
 
-  JSONWriter writer(out);
+  JSONWriter writer(out, compact);
   writer.json_start();
   writer.json_objectstart("header");
   writer.json_keyvalue("reportVersion", NODE_REPORT_VERSION);

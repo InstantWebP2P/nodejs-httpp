@@ -14,15 +14,16 @@ using v8::Context;
 using v8::EscapableHandleScope;
 using v8::FinalizationGroup;
 using v8::Function;
+using v8::FunctionCallbackInfo;
 using v8::HandleScope;
 using v8::Isolate;
 using v8::Local;
 using v8::MaybeLocal;
-using v8::MicrotasksPolicy;
 using v8::Null;
 using v8::Object;
 using v8::ObjectTemplate;
 using v8::Private;
+using v8::PropertyDescriptor;
 using v8::String;
 using v8::Value;
 
@@ -87,10 +88,34 @@ static void HostCleanupFinalizationGroupCallback(
 }
 
 void* NodeArrayBufferAllocator::Allocate(size_t size) {
+  void* ret;
   if (zero_fill_field_ || per_process::cli_options->zero_fill_all_buffers)
-    return UncheckedCalloc(size);
+    ret = UncheckedCalloc(size);
   else
-    return UncheckedMalloc(size);
+    ret = UncheckedMalloc(size);
+  if (LIKELY(ret != nullptr))
+    total_mem_usage_.fetch_add(size, std::memory_order_relaxed);
+  return ret;
+}
+
+void* NodeArrayBufferAllocator::AllocateUninitialized(size_t size) {
+  void* ret = node::UncheckedMalloc(size);
+  if (LIKELY(ret != nullptr))
+    total_mem_usage_.fetch_add(size, std::memory_order_relaxed);
+  return ret;
+}
+
+void* NodeArrayBufferAllocator::Reallocate(
+    void* data, size_t old_size, size_t size) {
+  void* ret = UncheckedRealloc<char>(static_cast<char*>(data), size);
+  if (LIKELY(ret != nullptr) || UNLIKELY(size == 0))
+    total_mem_usage_.fetch_add(size - old_size, std::memory_order_relaxed);
+  return ret;
+}
+
+void NodeArrayBufferAllocator::Free(void* data, size_t size) {
+  total_mem_usage_.fetch_sub(size, std::memory_order_relaxed);
+  free(data);
 }
 
 DebuggingArrayBufferAllocator::~DebuggingArrayBufferAllocator() {
@@ -140,11 +165,13 @@ void* DebuggingArrayBufferAllocator::Reallocate(void* data,
 
 void DebuggingArrayBufferAllocator::RegisterPointer(void* data, size_t size) {
   Mutex::ScopedLock lock(mutex_);
+  NodeArrayBufferAllocator::RegisterPointer(data, size);
   RegisterPointerInternal(data, size);
 }
 
 void DebuggingArrayBufferAllocator::UnregisterPointer(void* data, size_t size) {
   Mutex::ScopedLock lock(mutex_);
+  NodeArrayBufferAllocator::UnregisterPointer(data, size);
   UnregisterPointerInternal(data, size);
 }
 
@@ -356,7 +383,8 @@ MaybeLocal<Object> GetPerContextExports(Local<Context> context) {
     return handle_scope.Escape(existing_value.As<Object>());
 
   Local<Object> exports = Object::New(isolate);
-  if (context->Global()->SetPrivate(context, key, exports).IsNothing())
+  if (context->Global()->SetPrivate(context, key, exports).IsNothing() ||
+      !InitializePrimordials(context))
     return MaybeLocal<Object>();
   return handle_scope.Escape(exports);
 }
@@ -374,6 +402,10 @@ Local<Context> NewContext(Isolate* isolate,
   }
 
   return context;
+}
+
+void ProtoThrower(const FunctionCallbackInfo<Value>& info) {
+  THROW_ERR_PROTO_ACCESS(info.GetIsolate());
 }
 
 // This runs at runtime, regardless of whether the context
@@ -404,6 +436,32 @@ void InitializeContextRuntime(Local<Context> context) {
     Local<Object> atomics = atomics_v.As<Object>();
     atomics->Delete(context, wake_string).FromJust();
   }
+
+  // Remove __proto__
+  // https://github.com/nodejs/node/issues/31951
+  Local<String> object_string = FIXED_ONE_BYTE_STRING(isolate, "Object");
+  Local<String> prototype_string = FIXED_ONE_BYTE_STRING(isolate, "prototype");
+  Local<Object> prototype = context->Global()
+                                ->Get(context, object_string)
+                                .ToLocalChecked()
+                                .As<Object>()
+                                ->Get(context, prototype_string)
+                                .ToLocalChecked()
+                                .As<Object>();
+  Local<String> proto_string = FIXED_ONE_BYTE_STRING(isolate, "__proto__");
+  if (per_process::cli_options->disable_proto == "delete") {
+    prototype->Delete(context, proto_string).ToChecked();
+  } else if (per_process::cli_options->disable_proto == "throw") {
+    Local<Value> thrower =
+        Function::New(context, ProtoThrower).ToLocalChecked();
+    PropertyDescriptor descriptor(thrower, thrower);
+    descriptor.set_enumerable(false);
+    descriptor.set_configurable(true);
+    prototype->DefineProperty(context, proto_string, descriptor).ToChecked();
+  } else if (per_process::cli_options->disable_proto != "") {
+    // Validated in ProcessGlobalArgs
+    FatalError("InitializeContextRuntime()", "invalid --disable-proto mode");
+  }
 }
 
 bool InitializeContextForSnapshot(Local<Context> context) {
@@ -412,49 +470,50 @@ bool InitializeContextForSnapshot(Local<Context> context) {
 
   context->SetEmbedderData(ContextEmbedderIndex::kAllowWasmCodeGeneration,
                            True(isolate));
+  return InitializePrimordials(context);
+}
 
-  {
-    // Run per-context JS files.
-    Context::Scope context_scope(context);
-    Local<Object> exports;
+bool InitializePrimordials(Local<Context> context) {
+  // Run per-context JS files.
+  Isolate* isolate = context->GetIsolate();
+  Context::Scope context_scope(context);
+  Local<Object> exports;
 
-    Local<String> primordials_string =
-        FIXED_ONE_BYTE_STRING(isolate, "primordials");
-    Local<String> global_string = FIXED_ONE_BYTE_STRING(isolate, "global");
-    Local<String> exports_string = FIXED_ONE_BYTE_STRING(isolate, "exports");
+  Local<String> primordials_string =
+      FIXED_ONE_BYTE_STRING(isolate, "primordials");
+  Local<String> global_string = FIXED_ONE_BYTE_STRING(isolate, "global");
+  Local<String> exports_string = FIXED_ONE_BYTE_STRING(isolate, "exports");
 
-    // Create primordials first and make it available to per-context scripts.
-    Local<Object> primordials = Object::New(isolate);
-    if (!primordials->SetPrototype(context, Null(isolate)).FromJust() ||
-        !GetPerContextExports(context).ToLocal(&exports) ||
-        !exports->Set(context, primordials_string, primordials).FromJust()) {
+  // Create primordials first and make it available to per-context scripts.
+  Local<Object> primordials = Object::New(isolate);
+  if (!primordials->SetPrototype(context, Null(isolate)).FromJust() ||
+      !GetPerContextExports(context).ToLocal(&exports) ||
+      !exports->Set(context, primordials_string, primordials).FromJust()) {
+    return false;
+  }
+
+  static const char* context_files[] = {"internal/per_context/primordials",
+                                        "internal/per_context/domexception",
+                                        "internal/per_context/messageport",
+                                        nullptr};
+
+  for (const char** module = context_files; *module != nullptr; module++) {
+    std::vector<Local<String>> parameters = {
+        global_string, exports_string, primordials_string};
+    Local<Value> arguments[] = {context->Global(), exports, primordials};
+    MaybeLocal<Function> maybe_fn =
+        native_module::NativeModuleEnv::LookupAndCompile(
+            context, *module, &parameters, nullptr);
+    if (maybe_fn.IsEmpty()) {
       return false;
     }
-
-    static const char* context_files[] = {"internal/per_context/primordials",
-                                          "internal/per_context/domexception",
-                                          "internal/per_context/messageport",
-                                          nullptr};
-
-    for (const char** module = context_files; *module != nullptr; module++) {
-      std::vector<Local<String>> parameters = {
-          global_string, exports_string, primordials_string};
-      Local<Value> arguments[] = {context->Global(), exports, primordials};
-      MaybeLocal<Function> maybe_fn =
-          native_module::NativeModuleEnv::LookupAndCompile(
-              context, *module, &parameters, nullptr);
-      if (maybe_fn.IsEmpty()) {
-        return false;
-      }
-      Local<Function> fn = maybe_fn.ToLocalChecked();
-      MaybeLocal<Value> result =
-          fn->Call(context, Undefined(isolate),
-                   arraysize(arguments), arguments);
-      // Execution failed during context creation.
-      // TODO(joyeecheung): deprecate this signature and return a MaybeLocal.
-      if (result.IsEmpty()) {
-        return false;
-      }
+    Local<Function> fn = maybe_fn.ToLocalChecked();
+    MaybeLocal<Value> result =
+        fn->Call(context, Undefined(isolate), arraysize(arguments), arguments);
+    // Execution failed during context creation.
+    // TODO(joyeecheung): deprecate this signature and return a MaybeLocal.
+    if (result.IsEmpty()) {
+      return false;
     }
   }
 

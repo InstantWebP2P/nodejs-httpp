@@ -1,3 +1,4 @@
+#include "base_object-inl.h"
 #include "env-inl.h"
 #include "node_buffer.h"
 #include "node_crypto.h"
@@ -33,6 +34,7 @@ using v8::NewStringType;
 using v8::Null;
 using v8::Object;
 using v8::String;
+using v8::Undefined;
 using v8::Value;
 
 namespace crypto {
@@ -223,7 +225,7 @@ long VerifyPeerCertificate(  // NOLINT(runtime/int)
   return err;
 }
 
-int UseSNIContext(const SSLPointer& ssl, SecureContext* context) {
+int UseSNIContext(const SSLPointer& ssl, BaseObjectPtr<SecureContext> context) {
   SSL_CTX* ctx = context->ctx_.get();
   X509* x509 = SSL_CTX_get0_certificate(ctx);
   EVP_PKEY* pkey = SSL_CTX_get0_privatekey(ctx);
@@ -329,11 +331,15 @@ const char* X509ErrorCode(long err) {  // NOLINT(runtime/int)
 }
 
 MaybeLocal<Value> GetValidationErrorReason(Environment* env, int err) {
+  if (err == 0)
+    return Undefined(env->isolate());
   const char* reason = X509_verify_cert_error_string(err);
   return OneByteString(env->isolate(), reason);
 }
 
 MaybeLocal<Value> GetValidationErrorCode(Environment* env, int err) {
+  if (err == 0)
+    return Undefined(env->isolate());
   return OneByteString(env->isolate(), X509ErrorCode(err));
 }
 

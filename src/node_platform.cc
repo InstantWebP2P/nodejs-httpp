@@ -10,7 +10,6 @@
 namespace node {
 
 using v8::Isolate;
-using v8::Local;
 using v8::Object;
 using v8::Platform;
 using v8::Task;
@@ -223,7 +222,7 @@ int WorkerThreadsTaskRunner::NumberOfWorkerThreads() const {
 
 PerIsolatePlatformData::PerIsolatePlatformData(
     Isolate* isolate, uv_loop_t* loop)
-  : loop_(loop) {
+  : isolate_(isolate), loop_(loop) {
   flush_tasks_ = new uv_async_t();
   CHECK_EQ(0, uv_async_init(loop, flush_tasks_, FlushTasks));
   flush_tasks_->data = static_cast<void*>(this);
@@ -373,12 +372,12 @@ int NodePlatform::NumberOfWorkerThreads() {
 }
 
 void PerIsolatePlatformData::RunForegroundTask(std::unique_ptr<Task> task) {
-  Isolate* isolate = Isolate::GetCurrent();
-  DebugSealHandleScope scope(isolate);
-  Environment* env = Environment::GetCurrent(isolate);
+  DebugSealHandleScope scope(isolate_);
+  Environment* env = Environment::GetCurrent(isolate_);
   if (env != nullptr) {
-    InternalCallbackScope cb_scope(env, Local<Object>(), { 0, 0 },
-                                   InternalCallbackScope::kAllowEmptyResource);
+    v8::HandleScope scope(isolate_);
+    InternalCallbackScope cb_scope(env, Object::New(isolate_), { 0, 0 },
+                                   InternalCallbackScope::kNoFlags);
     task->Run();
   } else {
     task->Run();
@@ -396,8 +395,8 @@ void PerIsolatePlatformData::DeleteFromScheduledTasks(DelayedTask* task) {
 }
 
 void PerIsolatePlatformData::RunForegroundTask(uv_timer_t* handle) {
-  DelayedTask* delayed = static_cast<DelayedTask*>(handle->data);
-  RunForegroundTask(std::move(delayed->task));
+  DelayedTask* delayed = ContainerOf(&DelayedTask::timer, handle);
+  delayed->platform_data->RunForegroundTask(std::move(delayed->task));
   delayed->platform_data->DeleteFromScheduledTasks(delayed);
 }
 

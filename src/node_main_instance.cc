@@ -102,12 +102,8 @@ NodeMainInstance::~NodeMainInstance() {
   if (!owns_isolate_) {
     return;
   }
-  // TODO(addaleax): Reverse the order of these calls. The fact that we first
-  // dispose the Isolate is a temporary workaround for
-  // https://github.com/nodejs/node/issues/31752 -- V8 should not be posting
-  // platform tasks during Dispose(), but it does in some WASM edge cases.
-  isolate_->Dispose();
   platform_->UnregisterIsolate(isolate_);
+  isolate_->Dispose();
 }
 
 int NodeMainInstance::Run() {
@@ -122,15 +118,7 @@ int NodeMainInstance::Run() {
   Context::Scope context_scope(env->context());
 
   if (exit_code == 0) {
-    {
-      InternalCallbackScope callback_scope(
-          env.get(),
-          Local<Object>(),
-          { 1, 0 },
-          InternalCallbackScope::kAllowEmptyResource |
-              InternalCallbackScope::kSkipAsyncHooks);
-      LoadEnvironment(env.get());
-    }
+    LoadEnvironment(env.get());
 
     env->set_trace_sync_io(env->options()->trace_sync_io);
 

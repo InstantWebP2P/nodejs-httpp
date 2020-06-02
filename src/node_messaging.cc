@@ -515,10 +515,9 @@ MessagePort::MessagePort(Environment* env,
   CHECK_EQ(uv_async_init(env->event_loop(),
                          &async_,
                          onmessage), 0);
-  async_.data = nullptr;  // Reset later to indicate success of the constructor.
-  auto cleanup = OnScopeLeave([&]() {
-    if (async_.data == nullptr) Close();
-  });
+  // Reset later to indicate success of the constructor.
+  bool succeeded = false;
+  auto cleanup = OnScopeLeave([&]() { if (!succeeded) Close(); });
 
   Local<Value> fn;
   if (!wrap->Get(context, env->oninit_symbol()).ToLocal(&fn))
@@ -535,7 +534,7 @@ MessagePort::MessagePort(Environment* env,
     return;
   emit_message_fn_.Reset(env->isolate(), emit_message_fn);
 
-  async_.data = static_cast<void*>(this);
+  succeeded = true;
   Debug(this, "Created message port");
 }
 
@@ -896,7 +895,12 @@ void MessagePort::Drain(const FunctionCallbackInfo<Value>& args) {
 }
 
 void MessagePort::ReceiveMessage(const FunctionCallbackInfo<Value>& args) {
-  CHECK(args[0]->IsObject());
+  Environment* env = Environment::GetCurrent(args);
+  if (!args[0]->IsObject() ||
+      !env->message_port_constructor_template()->HasInstance(args[0])) {
+    return THROW_ERR_INVALID_ARG_TYPE(env,
+        "First argument needs to be a MessagePort instance");
+  }
   MessagePort* port = Unwrap<MessagePort>(args[0].As<Object>());
   if (port == nullptr) {
     // Return 'no messages' for a closed port.
@@ -963,7 +967,8 @@ Local<FunctionTemplate> GetMessagePortConstructorTemplate(Environment* env) {
   {
     Local<FunctionTemplate> m = env->NewFunctionTemplate(MessagePort::New);
     m->SetClassName(env->message_port_constructor_string());
-    m->InstanceTemplate()->SetInternalFieldCount(1);
+    m->InstanceTemplate()->SetInternalFieldCount(
+        MessagePort::kInternalFieldCount);
     m->Inherit(HandleWrap::GetConstructorTemplate(env));
 
     env->SetProtoMethod(m, "postMessage", MessagePort::PostMessage);

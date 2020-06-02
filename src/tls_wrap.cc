@@ -1091,11 +1091,14 @@ int TLSWrap::SelectSNIContextCallback(SSL* s, int* ad, void* arg) {
     return SSL_TLSEXT_ERR_NOACK;
   }
 
-  p->sni_context_.Reset(env->isolate(), ctx);
-
   SecureContext* sc = Unwrap<SecureContext>(ctx.As<Object>());
   CHECK_NOT_NULL(sc);
-  p->SetSNIContext(sc);
+  p->sni_context_ = BaseObjectPtr<SecureContext>(sc);
+
+  p->ConfigureSecureContext(sc);
+  CHECK_EQ(SSL_set_SSL_CTX(p->ssl_.get(), sc->ctx_.get()), sc->ctx_.get());
+  p->SetCACerts(sc);
+
   return SSL_TLSEXT_ERR_OK;
 }
 
@@ -1240,6 +1243,7 @@ void TLSWrap::GetWriteQueueSize(const FunctionCallbackInfo<Value>& info) {
 
 
 void TLSWrap::MemoryInfo(MemoryTracker* tracker) const {
+  SSLWrap<TLSWrap>::MemoryInfo(tracker);
   tracker->TrackField("error", error_);
   tracker->TrackFieldWithSize("pending_cleartext_input",
                               pending_cleartext_input_.size(),
@@ -1265,8 +1269,7 @@ void TLSWrap::Initialize(Local<Object> target,
   Local<String> tlsWrapString =
       FIXED_ONE_BYTE_STRING(env->isolate(), "TLSWrap");
   t->SetClassName(tlsWrapString);
-  t->InstanceTemplate()
-    ->SetInternalFieldCount(StreamBase::kStreamBaseFieldCount);
+  t->InstanceTemplate()->SetInternalFieldCount(StreamBase::kInternalFieldCount);
 
   Local<FunctionTemplate> get_write_queue_size =
       FunctionTemplate::New(env->isolate(),
