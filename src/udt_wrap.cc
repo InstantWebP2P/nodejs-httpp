@@ -78,8 +78,7 @@ void UDTWrap::Initialize(Local<Object> target,
   Local<FunctionTemplate> t = env->NewFunctionTemplate(New);
   Local<String> udtString = FIXED_ONE_BYTE_STRING(env->isolate(), "UDT");
   t->SetClassName(udtString);
-  t->InstanceTemplate()
-    ->SetInternalFieldCount(StreamBase::kStreamBaseFieldCount);
+  t->InstanceTemplate()->SetInternalFieldCount(StreamBase::kInternalFieldCount);
 
   // Init properties
   t->InstanceTemplate()->Set(FIXED_ONE_BYTE_STRING(env->isolate(), "reading"),

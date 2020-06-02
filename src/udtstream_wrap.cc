@@ -132,8 +132,7 @@ Local<FunctionTemplate> UDTStreamWrap::GetConstructorTemplate(
     tmpl->SetClassName(
         FIXED_ONE_BYTE_STRING(env->isolate(), "UDTStreamWrap"));
     tmpl->Inherit(HandleWrap::GetConstructorTemplate(env));
-    tmpl->InstanceTemplate()->SetInternalFieldCount(
-        StreamBase::kStreamBaseFieldCount);
+    tmpl->InstanceTemplate()->SetInternalFieldCount(StreamBase::kInternalFieldCount);
     Local<FunctionTemplate> get_write_queue_size =
         FunctionTemplate::New(env->isolate(),
                               GetWriteQueueSize,
