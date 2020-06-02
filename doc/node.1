@@ -143,6 +143,9 @@ keyword support in REPL.
 .It Fl -experimental-specifier-resolution
 Select extension resolution algorithm for ES Modules; either 'explicit' (default) or 'node'
 .
+.It Fl -experimental-top-level-await
+Enable experimental top-level await support in ES modules.
+.
 .It Fl -experimental-vm-modules
 Enable experimental ES module support in VM module.
 .
@@ -291,7 +294,7 @@ Write
 .Sy diagnostic reports
 in a compact format, single-line JSON.
 .
-.It Fl -report-directory
+.It Fl -report-dir Fl -report-directory
 Location at which the
 .Sy diagnostic report
 will be generated.
@@ -362,6 +365,10 @@ but the option is supported for compatibility with older Node.js versions.
 .It Fl -tls-min-v1.3
 Set default minVersion to 'TLSv1.3'. Use to disable support for TLSv1.2 in
 favour of TLSv1.3, which is more secure.
+.
+.It Fl -trace-atomics-wait
+Print short summaries of calls to
+.Sy Atomics.wait() .
 .
 .It Fl -trace-deprecation
 Print stack traces for deprecations.
@@ -560,6 +567,13 @@ The default path is
 .Sy ~/.node_repl_history ,
 which is overridden by this variable.
 Setting the value to an empty string ("" or " ") will disable persistent REPL history.
+.
+.It Ev NODE_SKIP_PLATFORM_CHECK
+When set to
+.Ar 1 ,
+the check for a supported platform is skipped during Node.js startup.
+Node.js might not execute correctly.
+Any issues encountered on unsupported platforms will not be fixed.
 .
 .It Ev NODE_TLS_REJECT_UNAUTHORIZED
 When set to

@@ -36,7 +36,7 @@
 
     # Reset this number to 0 on major V8 upgrades.
     # Increment by one for each non-official patch applied to deps/v8.
-    'v8_embedder_string': '-node.15',
+    'v8_embedder_string': '-node.17',
 
     ##### V8 defaults for Node.js #####
 
@@ -193,6 +193,11 @@
         ],
         'msvs_settings': {
           'VCCLCompilerTool': {
+            'conditions': [
+              ['target_arch=="arm64"', {
+                'FloatingPointModel': 1 # /fp:strict
+              }]
+            ],
             'EnableFunctionLevelLinking': 'true',
             'EnableIntrinsicFunctions': 'true',
             'FavorSizeOrSpeed': 1,          # /Ot, favor speed over size

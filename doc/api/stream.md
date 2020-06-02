@@ -93,6 +93,11 @@ A key goal of the `stream` API, particularly the [`stream.pipe()`][] method,
 is to limit the buffering of data to acceptable levels such that sources and
 destinations of differing speeds will not overwhelm the available memory.
 
+The `highWaterMark` option is a threshold, not a limit: it dictates the amount
+of data that a stream buffers before it stops asking for more data. It does not
+enforce a strict memory limitation in general. Specific stream implementations
+may choose to enforce stricter limits but doing so is optional.
+
 Because [`Duplex`][] and [`Transform`][] streams are both `Readable` and
 `Writable`, each maintains *two* separate internal buffers used for reading and
 writing, allowing each side to operate independently of the other while
@@ -545,8 +550,7 @@ added: v9.3.0
 
 * {number}
 
-Return the value of `highWaterMark` passed when constructing this
-`Writable`.
+Return the value of `highWaterMark` passed when creating this `Writable`.
 
 ##### `writable.writableLength`
 <!-- YAML
@@ -891,7 +895,7 @@ The `'readable'` event is emitted when there is data available to be read from
 the stream. In some cases, attaching a listener for the `'readable'` event will
 cause some amount of data to be read into an internal buffer.
 
-```javascript
+```js
 const readable = getReadableStreamSomehow();
 readable.on('readable', function() {
   // There is some data to read now.
@@ -1188,8 +1192,7 @@ added: v9.3.0
 
 * {number}
 
-Returns the value of `highWaterMark` passed when constructing this
-`Readable`.
+Returns the value of `highWaterMark` passed when creating this `Readable`.
 
 ##### `readable.readableLength`
 <!-- YAML
@@ -1666,14 +1669,15 @@ The `pipeline` API also supports async generators:
 
 ```js
 const pipeline = util.promisify(stream.pipeline);
-const fs = require('fs').promises;
+const fs = require('fs');
 
 async function run() {
   await pipeline(
     fs.createReadStream('lowercase.txt'),
     async function* (source) {
+      source.setEncoding('utf8');  // Work with strings rather than `Buffer`s.
       for await (const chunk of source) {
-        yield String(chunk).toUpperCase();
+        yield chunk.toUpperCase();
       }
     },
     fs.createWriteStream('uppercase.txt')
@@ -1786,7 +1790,7 @@ expectations.
 added: v1.2.0
 -->
 
-For many simple cases, it is possible to construct a stream without relying on
+For many simple cases, it is possible to create a stream without relying on
 inheritance. This can be accomplished by directly creating instances of the
 `stream.Writable`, `stream.Readable`, `stream.Duplex` or `stream.Transform`
 objects and passing appropriate methods as constructor options.
@@ -1795,8 +1799,14 @@ objects and passing appropriate methods as constructor options.
 const { Writable } = require('stream');
 
 const myWritable = new Writable({
+  construct(callback) {
+    // Initialize state and load resources...
+  },
   write(chunk, encoding, callback) {
     // ...
+  },
+  destroy() {
+    // Free resources...
   }
 });
 ```
@@ -1855,6 +1865,8 @@ changes:
     [`stream._destroy()`][writable-_destroy] method.
   * `final` {Function} Implementation for the
     [`stream._final()`][stream-_final] method.
+  * `construct` {Function} Implementation for the
+    [`stream._construct()`][writable-_construct] method.
   * `autoDestroy` {boolean} Whether this stream should automatically call
     `.destroy()` on itself after ending. **Default:** `true`.
 
@@ -1898,6 +1910,56 @@ const myWritable = new Writable({
     // ...
   }
 });
+```
+
+#### `writable._construct(callback)`
+<!-- YAML
+added: REPLACEME
+-->
+
+* `callback` {Function} Call this function (optionally with an error
+  argument) when the stream has finished initializing.
+
+The `_construct()` method MUST NOT be called directly. It may be implemented
+by child classes, and if so, will be called by the internal `Writable`
+class methods only.
+
+This optional function will be called in a tick after the stream constructor
+has returned, delaying any `_write`, `_final` and `_destroy` calls until
+`callback` is called. This is useful to initialize state or asynchronously
+initialize resources before the stream can be used.
+
+```js
+const { Writable } = require('stream');
+const fs = require('fs');
+
+class WriteStream extends Writable {
+  constructor(filename) {
+    super();
+    this.filename = filename;
+    this.fd = fd;
+  }
+  _construct(callback) {
+    fs.open(this.filename, (fd, err) => {
+      if (err) {
+        callback(err);
+      } else {
+        this.fd = fd;
+        callback();
+      }
+    });
+  }
+  _write(chunk, encoding, callback) {
+    fs.write(this.fd, chunk, callback);
+  }
+  _destroy(err, callback) {
+    if (this.fd) {
+      fs.close(this.fd, (er) => callback(er || err));
+    } else {
+      callback(err);
+    }
+  }
+}
 ```
 
 #### `writable._write(chunk, encoding, callback)`
@@ -2124,6 +2186,8 @@ changes:
     method.
   * `destroy` {Function} Implementation for the
     [`stream._destroy()`][readable-_destroy] method.
+  * `construct` {Function} Implementation for the
+    [`stream._construct()`][readable-_construct] method.
   * `autoDestroy` {boolean} Whether this stream should automatically call
     `.destroy()` on itself after ending. **Default:** `true`.
 
@@ -2164,6 +2228,63 @@ const myReadable = new Readable({
     // ...
   }
 });
+```
+
+#### `readable._construct(callback)`
+<!-- YAML
+added: REPLACEME
+-->
+
+* `callback` {Function} Call this function (optionally with an error
+  argument) when the stream has finished initializing.
+
+The `_construct()` method MUST NOT be called directly. It may be implemented
+by child classes, and if so, will be called by the internal `Readable`
+class methods only.
+
+This optional function will be scheduled in the next tick by the stream
+constructor, delaying any `_read` and `_destroy` calls until `callback` is
+called. This is useful to initialize state or asynchronously initialize
+resources before the stream can be used.
+
+```js
+const { Readable } = require('stream');
+const fs = require('fs');
+
+class ReadStream extends Readable {
+  constructor(filename) {
+    super();
+    this.filename = filename;
+    this.fd = null;
+  }
+  _construct(callback) {
+    fs.open(this.filename, (fd, err) => {
+      if (err) {
+        callback(err);
+      } else {
+        this.fd = fd;
+        callback();
+      }
+    });
+  }
+  _read(n) {
+    const buf = Buffer.alloc(n);
+    fs.read(this.fd, buf, 0, n, null, (err, bytesRead) => {
+      if (err) {
+        this.destroy(err);
+      } else {
+        this.push(bytesRead > 0 ? buf.slice(0, bytesRead) : null);
+      }
+    });
+  }
+  _destroy(err, callback) {
+    if (this.fd) {
+      fs.close(this.fd, (er) => callback(er || err));
+    } else {
+      callback(err);
+    }
+  }
+}
 ```
 
 #### `readable._read(size)`
@@ -2419,6 +2540,46 @@ const myDuplex = new Duplex({
     // ...
   }
 });
+```
+
+When using pipeline:
+
+```js
+const { Transform, pipeline } = require('stream');
+const fs = require('fs');
+
+pipeline(
+  fs.createReadStream('object.json')
+    .setEncoding('utf-8'),
+  new Transform({
+    decodeStrings: false, // Accept string input rather than Buffers
+    construct(callback) {
+      this.data = '';
+      callback();
+    },
+    transform(chunk, encoding, callback) {
+      this.data += chunk;
+      callback();
+    },
+    flush(callback) {
+      try {
+        // Make sure is valid json.
+        JSON.parse(this.data);
+        this.push(this.data);
+      } catch (err) {
+        callback(err);
+      }
+    }
+  }),
+  fs.createWriteStream('valid-object.json'),
+  (err) => {
+    if (err) {
+      console.error('failed', err);
+    } else {
+      console.log('completed');
+    }
+  }
+);
 ```
 
 #### An Example Duplex Stream
@@ -2700,8 +2861,8 @@ unhandled post-destroy errors.
 
 #### Creating Readable Streams with Async Generators
 
-We can construct a Node.js Readable Stream from an asynchronous generator
-using the `Readable.from()` utility method:
+A Node.js Readable Stream can be created from an asynchronous generator using
+the `Readable.from()` utility method:
 
 ```js
 const { Readable } = require('stream');
@@ -2954,6 +3115,7 @@ contain multi-byte characters.
 [http-incoming-message]: http.html#http_class_http_incomingmessage
 [hwm-gotcha]: #stream_highwatermark_discrepancy_after_calling_readable_setencoding
 [object-mode]: #stream_object_mode
+[readable-_construct]: #stream_readable_construct_callback
 [readable-_destroy]: #stream_readable_destroy_err_callback
 [readable-destroy]: #stream_readable_destroy_error
 [stream-_final]: #stream_writable_final_callback
@@ -2970,6 +3132,7 @@ contain multi-byte characters.
 [stream-uncork]: #stream_writable_uncork
 [stream-write]: #stream_writable_write_chunk_encoding_callback
 [Stream Three States]: #stream_three_states
+[writable-_construct]: #stream_writable_construct_callback
 [writable-_destroy]: #stream_writable_destroy_err_callback
 [writable-destroy]: #stream_writable_destroy_error
 [writable-new]: #stream_constructor_new_stream_writable_options

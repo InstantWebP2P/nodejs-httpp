@@ -77,6 +77,9 @@ const customTypesMap = {
   'import.meta': 'esm.html#esm_import_meta',
 
   'EventEmitter': 'events.html#events_class_eventemitter',
+  'EventTarget': 'events.html#events_class_eventtarget',
+  'Event': 'events.html#events_class_event',
+  'EventListener': 'events.html#events_event_listener',
 
   'FileHandle': 'fs.html#fs_class_filehandle',
   'fs.Dir': 'fs.html#fs_class_fs_dir',
@@ -84,6 +87,7 @@ const customTypesMap = {
   'fs.FSWatcher': 'fs.html#fs_class_fs_fswatcher',
   'fs.ReadStream': 'fs.html#fs_class_fs_readstream',
   'fs.Stats': 'fs.html#fs_class_fs_stats',
+  'fs.StatWatcher': 'fs.html#fs_class_fs_statwatcher',
   'fs.WriteStream': 'fs.html#fs_class_fs_writestream',
 
   'http.Agent': 'http.html#http_class_http_agent',
@@ -118,6 +122,9 @@ const customTypesMap = {
   'net.Server': 'net.html#net_class_net_server',
   'net.Socket': 'net.html#net_class_net_socket',
 
+  'NodeEventTarget':
+    'events.html#events_class_nodeeventtarget_extends_eventtarget',
+
   'os.constants.dlopen': 'os.html#os_dlopen_constants',
 
   'Histogram': 'perf_hooks.html#perf_hooks_class_histogram',
@@ -125,7 +132,7 @@ const customTypesMap = {
   'PerformanceNodeTiming':
     'perf_hooks.html#perf_hooks_class_performancenodetiming_extends_performanceentry', // eslint-disable-line max-len
   'PerformanceObserver':
-    'perf_hooks.html#perf_hooks_class_performanceobserver',
+    'perf_hooks.html#perf_hooks_class_perf_hooks_performanceobserver',
   'PerformanceObserverEntryList':
     'perf_hooks.html#perf_hooks_class_performanceobserverentrylist',
 
@@ -153,7 +160,6 @@ const customTypesMap = {
   'URLSearchParams': 'url.html#url_class_urlsearchparams',
 
   'vm.Module': 'vm.html#vm_class_vm_module',
-  'vm.Script': 'vm.html#vm_class_vm_script',
   'vm.SourceTextModule': 'vm.html#vm_class_vm_sourcetextmodule',
 
   'MessagePort': 'worker_threads.html#worker_threads_class_messageport',

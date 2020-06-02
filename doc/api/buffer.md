@@ -14,7 +14,7 @@ into the JavaScript language. A number of additional methods are supported
 that cover additional use cases. Node.js APIs accept plain [`Uint8Array`][]s
 wherever `Buffer`s are supported as well.
 
-Instances of the `Buffer` class, and [`Uint8Array`][]s in general,
+Instances of `Buffer`, and instances of [`Uint8Array`][] in general,
 are similar to arrays of integers from `0` to `255`, but correspond to
 fixed-sized blocks of memory and cannot contain any other values.
 The size of a `Buffer` is established when it is created and cannot be changed.
@@ -657,11 +657,8 @@ added: v8.2.0
 -->
 
 * `object` {Object} An object supporting `Symbol.toPrimitive` or `valueOf()`.
-* `offsetOrEncoding` {integer|string} A byte-offset or encoding, depending on
-  the value returned either by `object.valueOf()` or
-  `object[Symbol.toPrimitive]()`.
-* `length` {integer} A length, depending on the value returned either by
-  `object.valueOf()` or `object[Symbol.toPrimitive]()`.
+* `offsetOrEncoding` {integer|string} A byte-offset or encoding.
+* `length` {integer} A length.
 
 For objects whose `valueOf()` function returns a value not strictly equal to
 `object`, returns `Buffer.from(object.valueOf(), offsetOrEncoding, length)`.
@@ -672,7 +669,7 @@ const buf = Buffer.from(new String('this is a test'));
 ```
 
 For objects that support `Symbol.toPrimitive`, returns
-`Buffer.from(object[Symbol.toPrimitive](), offsetOrEncoding, length)`.
+`Buffer.from(object[Symbol.toPrimitive]('string'), offsetOrEncoding)`.
 
 ```js
 class Foo {

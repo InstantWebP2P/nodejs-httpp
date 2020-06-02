@@ -149,7 +149,7 @@ the `require.resolve()` function.
 Putting together all of the above, here is the high-level algorithm
 in pseudocode of what `require()` does:
 
-```txt
+```text
 require(X) from module at path Y
 1. If X is a core module,
    a. return the core module
@@ -208,9 +208,9 @@ LOAD_SELF_REFERENCE(X, START)
 1. Find the closest package scope to START.
 2. If no scope was found, return.
 3. If the `package.json` has no "exports", return.
-4. If the name in `package.json` isn't a prefix of X, throw "not found".
-5. Otherwise, load the remainder of X relative to this package as if it
-  was loaded via `LOAD_NODE_MODULES` with a name in `package.json`.
+4. If the name in `package.json` is a prefix of X, then
+   a. Load the remainder of X relative to this package as if it was
+      loaded via `LOAD_NODE_MODULES` with a name in `package.json`.
 
 LOAD_PACKAGE_EXPORTS(DIR, X)
 1. Try to interpret X as a combination of name and subpath where the name
@@ -409,7 +409,7 @@ example, then `require('./some-library')` would attempt to load:
 If these attempts fail, then Node.js will report the entire module as missing
 with the default error:
 
-```txt
+```console
 Error: Cannot find module 'some-library'
 ```
 
@@ -680,7 +680,7 @@ In `entry.js` script:
 console.log(require.main);
 ```
 
-```sh
+```bash
 node entry.js
 ```
 
@@ -688,8 +688,8 @@ node entry.js
 ```js
 Module {
   id: '.',
+  path: '/absolute/path/to',
   exports: {},
-  parent: null,
   filename: '/absolute/path/to/entry.js',
   loaded: false,
   children: [],
@@ -893,11 +893,27 @@ loading.
 ### `module.parent`
 <!-- YAML
 added: v0.1.16
+deprecated: REPLACEME
 -->
 
-* {module}
+> Stability: 0 - Deprecated: Please use [`require.main`][] and
+> [`module.children`][] instead.
 
-The module that first required this one.
+* {module | null | undefined}
+
+The module that first required this one, or `null` if the current module is the
+entry point of the current process, or `undefined` if the module was loaded by
+something that is not a CommonJS module (E.G.: REPL or `import`). Read only.
+
+### `module.path`
+<!-- YAML
+added: v11.14.0
+-->
+
+* {string}
+
+The directory name of the module. This is usually the same as the
+[`path.dirname()`][] of the [`module.id`][].
 
 ### `module.paths`
 <!-- YAML
@@ -1026,7 +1042,9 @@ import('fs').then((esmFS) => {
 
 ## Source Map V3 Support
 <!-- YAML
-added: v13.7.0
+added:
+ - v13.7.0
+ - v12.17.0
 -->
 
 > Stability: 1 - Experimental
@@ -1045,7 +1063,9 @@ const { findSourceMap, SourceMap } = require('module');
 
 ### `module.findSourceMap(path[, error])`
 <!-- YAML
-added: v13.7.0
+added:
+ - v13.7.0
+ - v12.17.0
 -->
 
 * `path` {string}
@@ -1063,7 +1083,9 @@ will be associated with the `error` instance along with the `path`.
 
 ### Class: `module.SourceMap`
 <!-- YAML
-added: v13.7.0
+added:
+ - v13.7.0
+ - v12.17.0
 -->
 
 #### `new SourceMap(payload)`
@@ -1110,6 +1132,8 @@ consists of the following keys:
 [`__filename`]: #modules_filename
 [`createRequire()`]: #modules_module_createrequire_filename
 [`module` object]: #modules_the_module_object
+[`module.id`]: #modules_module_id
+[`module.children`]: #modules_module_children
 [`path.dirname()`]: path.html#path_path_dirname_path
 [ECMAScript Modules]: esm.html
 [an error]: errors.html#errors_err_require_esm
@@ -1117,6 +1141,7 @@ consists of the following keys:
 [module resolution]: #modules_all_together
 [module wrapper]: #modules_the_module_wrapper
 [native addons]: addons.html
+[`require.main`]: #modules_require_main
 [source map include directives]: https://sourcemaps.info/spec.html#h.lmz475t4mvbx
 [`--enable-source-maps`]: cli.html#cli_enable_source_maps
 [`NODE_V8_COVERAGE=dir`]: cli.html#cli_node_v8_coverage_dir

@@ -240,7 +240,9 @@ undefined
 
 ### Reverse-i-search
 <!-- YAML
-added: v13.6.0
+added:
+ - v13.6.0
+ - v12.17.0
 -->
 
 The REPL supports bi-directional reverse-i-search similar to [ZSH][]. It is
@@ -540,11 +542,22 @@ by default. However, this is not the case when creating a REPL
 programmatically. Use this method to initialize a history log file when working
 with REPL instances programmatically.
 
+## `repl.builtinModules`
+<!-- YAML
+added: REPLACEME
+-->
+
+* {string[]}
+
+A list of the names of all Node.js modules, e.g., `'http'`.
+
 ## `repl.start([options])`
 <!-- YAML
 added: v0.1.91
 changes:
-  - version: v13.4.0
+  - version:
+     - v13.4.0
+     - v12.17.0
     pr-url: https://github.com/nodejs/node/pull/30811
     description: The `preview` option is now available.
   - version: v12.0.0

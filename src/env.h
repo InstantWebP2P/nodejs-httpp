@@ -29,6 +29,7 @@
 #include "inspector_agent.h"
 #include "inspector_profiler.h"
 #endif
+#include "callback_queue.h"
 #include "debug_utils.h"
 #include "handle_wrap.h"
 #include "node.h"
@@ -155,11 +156,14 @@ constexpr size_t kFsStatsBufferLength =
 // Symbols are per-isolate primitives but Environment proxies them
 // for the sake of convenience.
 #define PER_ISOLATE_SYMBOL_PROPERTIES(V)                                       \
+  V(async_id_symbol, "async_id_symbol")                                        \
   V(handle_onclose_symbol, "handle_onclose")                                   \
   V(no_message_symbol, "no_message_symbol")                                    \
   V(oninit_symbol, "oninit")                                                   \
-  V(owner_symbol, "owner")                                                     \
+  V(owner_symbol, "owner_symbol")                                              \
   V(onpskexchange_symbol, "onpskexchange")                                     \
+  V(resource_symbol, "resource_symbol")                                        \
+  V(trigger_async_id_symbol, "trigger_async_id_symbol")                        \
 
 // Strings are per-isolate primitives but Environment proxies them
 // for the sake of convenience.  Strings should be ASCII-only.
@@ -456,6 +460,7 @@ constexpr size_t kFsStatsBufferLength =
   V(prepare_stack_trace_callback, v8::Function)                                \
   V(process_object, v8::Object)                                                \
   V(primordials, v8::Object)                                                   \
+  V(promise_hook_handler, v8::Function)                                        \
   V(promise_reject_callback, v8::Function)                                     \
   V(script_data_constructor_function, v8::Function)                            \
   V(source_map_cache_getter, v8::Function)                                     \
@@ -467,6 +472,7 @@ constexpr size_t kFsStatsBufferLength =
   V(url_constructor_function, v8::Function)
 
 class Environment;
+struct AllocatedBuffer;
 
 class IsolateData : public MemoryRetainer {
  public:
@@ -552,38 +558,6 @@ struct ContextInfo {
 };
 
 class EnabledDebugList;
-
-// A unique-pointer-ish object that is compatible with the JS engine's
-// ArrayBuffer::Allocator.
-struct AllocatedBuffer {
- public:
-  explicit inline AllocatedBuffer(Environment* env = nullptr);
-  inline AllocatedBuffer(Environment* env, uv_buf_t buf);
-  inline ~AllocatedBuffer();
-  inline void Resize(size_t len);
-
-  inline uv_buf_t release();
-  inline char* data();
-  inline const char* data() const;
-  inline size_t size() const;
-  inline void clear();
-
-  inline v8::MaybeLocal<v8::Object> ToBuffer();
-  inline v8::Local<v8::ArrayBuffer> ToArrayBuffer();
-
-  inline AllocatedBuffer(AllocatedBuffer&& other);
-  inline AllocatedBuffer& operator=(AllocatedBuffer&& other);
-  AllocatedBuffer(const AllocatedBuffer& other) = delete;
-  AllocatedBuffer& operator=(const AllocatedBuffer& other) = delete;
-
- private:
-  Environment* env_;
-  // We do not pass this to libuv directly, but uv_buf_t is a convenient way
-  // to represent a chunk of memory, and plays nicely with other parts of core.
-  uv_buf_t buffer_;
-
-  friend class Environment;
-};
 
 class KVStore {
  public:
@@ -952,15 +926,6 @@ class Environment : public MemoryRetainer {
 
   inline IsolateData* isolate_data() const;
 
-  // Utilities that allocate memory using the Isolate's ArrayBuffer::Allocator.
-  // In particular, using AllocateManaged() will provide a RAII-style object
-  // with easy conversion to `Buffer` and `ArrayBuffer` objects.
-  inline AllocatedBuffer AllocateManaged(size_t size, bool checked = true);
-  inline char* Allocate(size_t size);
-  inline char* AllocateUnchecked(size_t size);
-  char* Reallocate(char* data, size_t old_size, size_t size);
-  inline void Free(char* data, size_t size);
-
   inline bool printed_error() const;
   inline void set_printed_error(bool value);
 
@@ -1054,6 +1019,9 @@ class Environment : public MemoryRetainer {
   inline bool emit_insecure_umask_warning() const;
   inline void set_emit_insecure_umask_warning(bool on);
 
+  inline void set_source_maps_enabled(bool on);
+  inline bool source_maps_enabled() const;
+
   inline void ThrowError(const char* errmsg);
   inline void ThrowTypeError(const char* errmsg);
   inline void ThrowRangeError(const char* errmsg);
@@ -1098,14 +1066,10 @@ class Environment : public MemoryRetainer {
                                          const char* name,
                                          v8::FunctionCallback callback);
 
-  void BeforeExit(void (*cb)(void* arg), void* arg);
-  void RunBeforeExitCallbacks();
   void AtExit(void (*cb)(void* arg), void* arg);
   void RunAtExitCallbacks();
 
-  void RegisterFinalizationGroupForCleanup(v8::Local<v8::FinalizationGroup> fg);
   void RunWeakRefCleanup();
-  void CleanupFinalizationGroups();
 
   // Strings and private symbols are shared across shared contexts
   // The getters simply proxy to the per-isolate primitive.
@@ -1162,12 +1126,12 @@ class Environment : public MemoryRetainer {
   // Unlike the JS setImmediate() function, nested SetImmediate() calls will
   // be run without returning control to the event loop, similar to nextTick().
   template <typename Fn>
-  inline void SetImmediate(Fn&& cb);
-  template <typename Fn>
-  inline void SetUnrefImmediate(Fn&& cb);
+  inline void SetImmediate(
+      Fn&& cb, CallbackFlags::Flags flags = CallbackFlags::kRefed);
   template <typename Fn>
   // This behaves like SetImmediate() but can be called from any thread.
-  inline void SetImmediateThreadsafe(Fn&& cb);
+  inline void SetImmediateThreadsafe(
+      Fn&& cb, CallbackFlags::Flags flags = CallbackFlags::kRefed);
   // This behaves like V8's Isolate::RequestInterrupt(), but also accounts for
   // the event loop (i.e. combines the V8 function with SetImmediate()).
   // The passed callback may not throw exceptions.
@@ -1249,10 +1213,10 @@ class Environment : public MemoryRetainer {
   void RunAndClearNativeImmediates(bool only_refed = false);
   void RunAndClearInterrupts();
 
- private:
-  template <typename Fn>
-  inline void CreateImmediate(Fn&& cb, bool ref);
+  inline std::unordered_map<char*, std::unique_ptr<v8::BackingStore>>*
+      released_allocated_buffers();
 
+ private:
   inline void ThrowError(v8::Local<v8::Value> (*fun)(v8::Local<v8::String>),
                          const char* errmsg);
 
@@ -1279,6 +1243,8 @@ class Environment : public MemoryRetainer {
   bool emit_err_name_warning_ = true;
   bool emit_filehandle_warning_ = true;
   bool emit_insecure_umask_warning_ = true;
+  bool source_maps_enabled_ = false;
+
   size_t async_callback_scope_depth_ = 0;
   std::vector<double> destroy_async_id_list_;
 
@@ -1330,8 +1296,6 @@ class Environment : public MemoryRetainer {
   uint64_t thread_id_;
   std::unordered_set<worker::Worker*> sub_worker_contexts_;
 
-  std::deque<v8::Global<v8::FinalizationGroup>> cleanup_finalization_groups_;
-
   static void* const kNodeContextTagPtr;
   static int const kNodeContextTag;
 
@@ -1364,53 +1328,10 @@ class Environment : public MemoryRetainer {
     void (*cb_)(void* arg);
     void* arg_;
   };
-  std::list<ExitCallback> before_exit_functions_;
 
   std::list<ExitCallback> at_exit_functions_;
 
-  class NativeImmediateCallback {
-   public:
-    explicit inline NativeImmediateCallback(bool refed);
-
-    virtual ~NativeImmediateCallback() = default;
-    virtual void Call(Environment* env) = 0;
-
-    inline bool is_refed() const;
-    inline std::unique_ptr<NativeImmediateCallback> get_next();
-    inline void set_next(std::unique_ptr<NativeImmediateCallback> next);
-
-   private:
-    bool refed_;
-    std::unique_ptr<NativeImmediateCallback> next_;
-  };
-
-  template <typename Fn>
-  class NativeImmediateCallbackImpl final : public NativeImmediateCallback {
-   public:
-    NativeImmediateCallbackImpl(Fn&& callback, bool refed);
-    void Call(Environment* env) override;
-
-   private:
-    Fn callback_;
-  };
-
-  class NativeImmediateQueue {
-   public:
-    inline std::unique_ptr<NativeImmediateCallback> Shift();
-    inline void Push(std::unique_ptr<NativeImmediateCallback> cb);
-    // ConcatMove adds elements from 'other' to the end of this list, and clears
-    // 'other' afterwards.
-    inline void ConcatMove(NativeImmediateQueue&& other);
-
-    // size() is atomic and may be called from any thread.
-    inline size_t size() const;
-
-   private:
-    std::atomic<size_t> size_ {0};
-    std::unique_ptr<NativeImmediateCallback> head_;
-    NativeImmediateCallback* tail_ = nullptr;
-  };
-
+  typedef CallbackQueue<void, Environment*> NativeImmediateQueue;
   NativeImmediateQueue native_immediates_;
   Mutex native_immediates_threadsafe_mutex_;
   NativeImmediateQueue native_immediates_threadsafe_;
@@ -1455,6 +1376,11 @@ class Environment : public MemoryRetainer {
   // We should probably find a way to just use plain `v8::String`s created from
   // the source passed to LoadEnvironment() directly instead.
   std::unique_ptr<v8::String::Value> main_utf16_;
+
+  // Used by AllocatedBuffer::release() to keep track of the BackingStore for
+  // a given pointer.
+  std::unordered_map<char*, std::unique_ptr<v8::BackingStore>>
+      released_allocated_buffers_;
 };
 
 }  // namespace node

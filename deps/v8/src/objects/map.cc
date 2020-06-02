@@ -21,8 +21,10 @@
 #include "src/objects/oddball.h"
 #include "src/objects/property.h"
 #include "src/objects/transitions-inl.h"
+#include "src/roots/roots.h"
 #include "src/utils/ostreams.h"
 #include "src/zone/zone-containers.h"
+#include "torque-generated/field-offsets-tq.h"
 
 namespace v8 {
 namespace internal {
@@ -73,14 +75,20 @@ void Map::PrintReconfiguration(Isolate* isolate, FILE* file,
   os << "]\n";
 }
 
-Map Map::GetStructMap(Isolate* isolate, InstanceType type) {
+Map Map::GetInstanceTypeMap(ReadOnlyRoots roots, InstanceType type) {
   Map map;
   switch (type) {
-#define MAKE_CASE(TYPE, Name, name)            \
-  case TYPE:                                   \
-    map = ReadOnlyRoots(isolate).name##_map(); \
+#define MAKE_CASE(TYPE, Name, name) \
+  case TYPE:                        \
+    map = roots.name##_map();       \
     break;
     STRUCT_LIST(MAKE_CASE)
+#undef MAKE_CASE
+#define MAKE_CASE(_, TYPE, Name, name) \
+  case TYPE:                           \
+    map = roots.name##_map();          \
+    break;
+    TORQUE_INTERNAL_CLASS_LIST_GENERATOR(MAKE_CASE, _)
 #undef MAKE_CASE
     default:
       UNREACHABLE();
@@ -259,6 +267,9 @@ VisitorId Map::GetVisitorId(Map map) {
     case UNCOMPILED_DATA_WITH_PREPARSE_DATA_TYPE:
       return kVisitUncompiledDataWithPreparseData;
 
+    case COVERAGE_INFO_TYPE:
+      return kVisitCoverageInfo;
+
     case JS_OBJECT_TYPE:
     case JS_ERROR_TYPE:
     case JS_ARGUMENTS_OBJECT_TYPE:
@@ -284,8 +295,8 @@ VisitorId Map::GetVisitorId(Map map) {
     case JS_PROMISE_TYPE:
     case JS_REG_EXP_TYPE:
     case JS_REG_EXP_STRING_ITERATOR_TYPE:
-    case JS_FINALIZATION_GROUP_CLEANUP_ITERATOR_TYPE:
-    case JS_FINALIZATION_GROUP_TYPE:
+    case JS_FINALIZATION_REGISTRY_CLEANUP_ITERATOR_TYPE:
+    case JS_FINALIZATION_REGISTRY_TYPE:
 #ifdef V8_INTL_SUPPORT
     case JS_V8_BREAK_ITERATOR_TYPE:
     case JS_COLLATOR_TYPE:
@@ -355,6 +366,12 @@ VisitorId Map::GetVisitorId(Map map) {
       return kVisitSourceTextModule;
     case SYNTHETIC_MODULE_TYPE:
       return kVisitSyntheticModule;
+
+#define MAKE_TQ_CASE(TYPE, Name) \
+  case TYPE:                     \
+    return kVisit##Name;
+      TORQUE_BODY_DESCRIPTOR_LIST(MAKE_TQ_CASE)
+#undef MAKE_TQ_CASE
 
     default:
       UNREACHABLE();
@@ -594,10 +611,10 @@ void Map::DeprecateTransitionTree(Isolate* isolate) {
   DCHECK(!constructor_or_backpointer().IsFunctionTemplateInfo());
   set_is_deprecated(true);
   if (FLAG_trace_maps) {
-    LOG(isolate, MapEvent("Deprecate", *this, Map()));
+    LOG(isolate, MapEvent("Deprecate", handle(*this, isolate), Handle<Map>()));
   }
   dependent_code().DeoptimizeDependentCodeGroup(
-      isolate, DependentCode::kTransitionGroup);
+      DependentCode::kTransitionGroup);
   NotifyLeafMapLayoutChange(isolate);
 }
 
@@ -638,7 +655,7 @@ Map Map::FindRootMap(Isolate* isolate) const {
     if (back.IsUndefined(isolate)) {
       // Initial map must not contain descriptors in the descriptors array
       // that do not belong to the map.
-      DCHECK_EQ(result.NumberOfOwnDescriptors(),
+      DCHECK_LE(result.NumberOfOwnDescriptors(),
                 result.instance_descriptors().number_of_descriptors());
       return result;
     }
@@ -778,7 +795,7 @@ void Map::GeneralizeField(Isolate* isolate, Handle<Map> map,
   field_owner->UpdateFieldType(isolate, modify_index, name, new_constness,
                                new_representation, wrapped_type);
   field_owner->dependent_code().DeoptimizeDependentCodeGroup(
-      isolate, DependentCode::kFieldOwnerGroup);
+      DependentCode::kFieldOwnerGroup);
 
   if (FLAG_trace_generalization) {
     map->PrintGeneralization(
@@ -1188,7 +1205,7 @@ Map Map::FindElementsKindTransitionedMap(Isolate* isolate,
   DisallowHeapAllocation no_allocation;
   DisallowDeoptimization no_deoptimization(isolate);
 
-  if (is_prototype_map()) return Map();
+  if (IsDetached(isolate)) return Map();
 
   ElementsKind kind = elements_kind();
   bool packed = IsFastPackedElementsKind(kind);
@@ -1321,7 +1338,7 @@ static Handle<Map> AddMissingElementsTransitions(Isolate* isolate,
 
   ElementsKind kind = map->elements_kind();
   TransitionFlag flag;
-  if (map->is_prototype_map()) {
+  if (map->IsDetached(isolate)) {
     flag = OMIT_TRANSITION;
   } else {
     flag = INSERT_TRANSITION;
@@ -1511,7 +1528,7 @@ Handle<Map> Map::Normalize(Isolate* isolate, Handle<Map> fast_map,
     }
   }
   if (FLAG_trace_maps) {
-    LOG(isolate, MapEvent("Normalize", *fast_map, *new_map, reason));
+    LOG(isolate, MapEvent("Normalize", fast_map, new_map, reason));
   }
   fast_map->NotifyLeafMapLayoutChange(isolate);
   return new_map;
@@ -1688,21 +1705,21 @@ void Map::ConnectTransition(Isolate* isolate, Handle<Map> parent,
                  child->may_have_interesting_symbols());
   if (!parent->GetBackPointer().IsUndefined(isolate)) {
     parent->set_owns_descriptors(false);
-  } else {
+  } else if (!parent->IsDetached(isolate)) {
     // |parent| is initial map and it must not contain descriptors in the
     // descriptors array that do not belong to the map.
     DCHECK_EQ(parent->NumberOfOwnDescriptors(),
               parent->instance_descriptors().number_of_descriptors());
   }
-  if (parent->is_prototype_map()) {
-    DCHECK(child->is_prototype_map());
+  if (parent->IsDetached(isolate)) {
+    DCHECK(child->IsDetached(isolate));
     if (FLAG_trace_maps) {
-      LOG(isolate, MapEvent("Transition", *parent, *child, "prototype", *name));
+      LOG(isolate, MapEvent("Transition", parent, child, "prototype", name));
     }
   } else {
     TransitionsAccessor(isolate, parent).Insert(name, child, flag);
     if (FLAG_trace_maps) {
-      LOG(isolate, MapEvent("Transition", *parent, *child, "", *name));
+      LOG(isolate, MapEvent("Transition", parent, child, "", name));
     }
   }
 }
@@ -1722,7 +1739,9 @@ Handle<Map> Map::CopyReplaceDescriptors(
     result->set_may_have_interesting_symbols(true);
   }
 
-  if (!map->is_prototype_map()) {
+  if (map->is_prototype_map()) {
+    result->InitializeDescriptors(isolate, *descriptors, *layout_descriptor);
+  } else {
     if (flag == INSERT_TRANSITION &&
         TransitionsAccessor(isolate, map).CanHaveMoreTransitions()) {
       result->InitializeDescriptors(isolate, *descriptors, *layout_descriptor);
@@ -1733,23 +1752,15 @@ Handle<Map> Map::CopyReplaceDescriptors(
       descriptors->GeneralizeAllFields();
       result->InitializeDescriptors(isolate, *descriptors,
                                     LayoutDescriptor::FastPointerLayout());
-      // If we were trying to insert a transition but failed because there are
-      // too many transitions already, mark the object as a prototype to avoid
-      // tracking transitions from the detached map.
-      if (flag == INSERT_TRANSITION) {
-        result->set_is_prototype_map(true);
-      }
     }
-  } else {
-    result->InitializeDescriptors(isolate, *descriptors, *layout_descriptor);
   }
   if (FLAG_trace_maps &&
       // Mirror conditions above that did not call ConnectTransition().
-      (map->is_prototype_map() ||
+      (map->IsDetached(isolate) ||
        !(flag == INSERT_TRANSITION &&
          TransitionsAccessor(isolate, map).CanHaveMoreTransitions()))) {
-    LOG(isolate, MapEvent("ReplaceDescriptors", *map, *result, reason,
-                          maybe_name.is_null() ? Name() : *name));
+    LOG(isolate, MapEvent("ReplaceDescriptors", map, result, reason,
+                          maybe_name.is_null() ? Handle<HeapObject>() : name));
   }
   return result;
 }
@@ -1927,7 +1938,7 @@ Handle<Map> Map::AsLanguageMode(Isolate* isolate, Handle<Map> initial_map,
 }
 
 Handle<Map> Map::CopyForElementsTransition(Isolate* isolate, Handle<Map> map) {
-  DCHECK(!map->is_prototype_map());
+  DCHECK(!map->IsDetached(isolate));
   Handle<Map> new_map = CopyDropDescriptors(isolate, map);
 
   if (map->owns_descriptors()) {
@@ -2128,7 +2139,7 @@ Handle<Map> Map::TransitionToDataProperty(Isolate* isolate, Handle<Map> map,
                                           StoreOrigin store_origin) {
   RuntimeCallTimerScope stats_scope(
       isolate,
-      map->is_prototype_map()
+      map->IsDetached(isolate)
           ? RuntimeCallCounterId::kPrototypeMap_TransitionToDataProperty
           : RuntimeCallCounterId::kMap_TransitionToDataProperty);
 
@@ -2193,7 +2204,7 @@ Handle<Map> Map::TransitionToDataProperty(Isolate* isolate, Handle<Map> map,
 
       // Deoptimize all code that embeds the previous initial map.
       initial_map->dependent_code().DeoptimizeDependentCodeGroup(
-          isolate, DependentCode::kInitialMapChangedGroup);
+          DependentCode::kInitialMapChangedGroup);
       if (!result->EquivalentToForNormalization(*map,
                                                 CLEAR_INOBJECT_PROPERTIES)) {
         result =
@@ -2242,7 +2253,7 @@ Handle<Map> Map::TransitionToAccessorProperty(Isolate* isolate, Handle<Map> map,
                                               PropertyAttributes attributes) {
   RuntimeCallTimerScope stats_scope(
       isolate,
-      map->is_prototype_map()
+      map->IsDetached(isolate)
           ? RuntimeCallCounterId::kPrototypeMap_TransitionToAccessorProperty
           : RuntimeCallCounterId::kMap_TransitionToAccessorProperty);
 

@@ -48,6 +48,7 @@
       'lib/cluster.js',
       'lib/dgram.js',
       'lib/dns.js',
+      'lib/dns/promises.js',
       'lib/domain.js',
       'lib/events.js',
       'lib/fs.js',
@@ -129,6 +130,7 @@
       'lib/internal/encoding.js',
       'lib/internal/errors.js',
       'lib/internal/error-serdes.js',
+      'lib/internal/event_target.js',
       'lib/internal/fixed_queue.js',
       'lib/internal/freelist.js',
       'lib/internal/freeze_intrinsics.js',
@@ -158,6 +160,7 @@
       'lib/internal/main/run_third_party_main.js',
       'lib/internal/main/worker_thread.js',
       'lib/internal/modules/run_main.js',
+      'lib/internal/modules/package_json_reader.js',
       'lib/internal/modules/cjs/helpers.js',
       'lib/internal/modules/cjs/loader.js',
       'lib/internal/modules/esm/loader.js',
@@ -378,6 +381,9 @@
       'conditions': [
         [ 'error_on_warn=="true"', {
           'cflags': ['-Werror'],
+          'xcode_settings': {
+            'WARNING_CFLAGS': [ '-Werror' ],
+          },
         }],
         [ 'node_intermediate_lib_type=="static_library" and '
             'node_shared=="true" and OS=="aix"', {
@@ -637,11 +643,15 @@
         'src/aliased_buffer.h',
         'src/aliased_struct.h',
         'src/aliased_struct-inl.h',
+        'src/allocated_buffer.h',
+        'src/allocated_buffer-inl.h',
         'src/async_wrap.h',
         'src/async_wrap-inl.h',
         'src/base_object.h',
         'src/base_object-inl.h',
         'src/base64.h',
+        'src/callback_queue.h',
+        'src/callback_queue-inl.h',
         'src/connect_wrap.h',
         'src/connection_wrap.h',
         'src/debug_utils.h',
@@ -755,6 +765,9 @@
       'conditions': [
         [ 'error_on_warn=="true"', {
           'cflags': ['-Werror'],
+          'xcode_settings': {
+            'WARNING_CFLAGS': [ '-Werror' ],
+          },
         }],
         [ 'node_builtin_modules_path!=""', {
           'defines': [ 'NODE_BUILTIN_MODULES_PATH="<(node_builtin_modules_path)"' ]

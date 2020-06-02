@@ -20,7 +20,7 @@
 // USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 'use strict';
-if (module.parent) {
+if (module !== require.main) {
   // Signal we've been loaded as a module.
   // The following console.log() is part of the test.
   console.log('Loaded as a module, exiting with status code 42.');
@@ -245,9 +245,10 @@ child.exec(
 // Assert that "42\n" is written to stdout with print option.
 child.exec(
   `${nodejs} ${execOptions} --print --eval "42"`,
-  common.mustCall((err, stdout) => {
-    assert.ifError(err);
-    assert.strictEqual(stdout, '42\n');
+  common.mustCall((err, stdout, stderr) => {
+    assert.ok(err);
+    assert.strictEqual(stdout, '');
+    assert.ok(stderr.includes('--print cannot be used with ESM input'));
   }));
 
 // Assert that error is written to stderr on invalid input.

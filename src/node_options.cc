@@ -18,7 +18,6 @@ using v8::Local;
 using v8::Map;
 using v8::Number;
 using v8::Object;
-using v8::String;
 using v8::Undefined;
 using v8::Value;
 
@@ -435,6 +434,10 @@ EnvironmentOptionsParser::EnvironmentOptionsParser() {
             "throw an exception on deprecations",
             &EnvironmentOptions::throw_deprecation,
             kAllowedInEnvironment);
+  AddOption("--trace-atomics-wait",
+            "trace Atomics.wait() operations",
+            &EnvironmentOptions::trace_atomics_wait,
+            kAllowedInEnvironment);
   AddOption("--trace-deprecation",
             "show stack traces on deprecations",
             &EnvironmentOptions::trace_deprecation,
@@ -593,6 +596,14 @@ PerIsolateOptionsParser::PerIsolateOptionsParser(
             kAllowedInEnvironment);
   Implies("--report-signal", "--report-on-signal");
 
+  AddOption("--experimental-top-level-await",
+            "enable experimental support for ECMAScript Top-Level Await",
+            &PerIsolateOptions::experimental_top_level_await,
+            kAllowedInEnvironment);
+  AddOption("--harmony-top-level-await", "", V8Option{});
+  Implies("--experimental-top-level-await", "--harmony-top-level-await");
+  Implies("--harmony-top-level-await", "--experimental-top-level-await");
+
   Insert(eop, &PerIsolateOptions::get_per_env_options);
 }
 
@@ -653,11 +664,12 @@ PerProcessOptionsParser::PerProcessOptionsParser(
             "output compact single-line JSON",
             &PerProcessOptions::report_compact,
             kAllowedInEnvironment);
-  AddOption("--report-directory",
+  AddOption("--report-dir",
             "define custom report pathname."
-            " (default: current working directory of Node.js process)",
+            " (default: current working directory)",
             &PerProcessOptions::report_directory,
             kAllowedInEnvironment);
+  AddAlias("--report-directory", "--report-dir");
   AddOption("--report-filename",
             "define custom report file name."
             " (default: YYYYMMDD.HHMMSS.PID.SEQUENCE#.txt)",

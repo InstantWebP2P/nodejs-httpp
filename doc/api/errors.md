@@ -285,7 +285,7 @@ console.error(err.message);
 The `error.stack` property is a string describing the point in the code at which
 the `Error` was instantiated.
 
-```txt
+```console
 Error: Things keep happening!
    at /home/gbusey/file.js:525:2
    at Frobnicator.refrobulate (/home/gbusey/business-logic.js:424:21)
@@ -855,6 +855,15 @@ An unknown Diffie-Hellman group name was given. See
 
 The [`fs.Dir`][] was previously closed.
 
+<a id="ERR_DIR_CONCURRENT_OPERATION"></a>
+### `ERR_DIR_CONCURRENT_OPERATION`
+<!-- YAML
+added: v14.3.0
+-->
+
+A synchronous read or close call was attempted on an [`fs.Dir`][] which has
+ongoing asynchronous operations.
+
 <a id="ERR_DNS_SET_SERVERS_FAILED"></a>
 ### `ERR_DNS_SET_SERVERS_FAILED`
 
@@ -888,6 +897,16 @@ provided.
 
 Encoding provided to `TextDecoder()` API was not one of the
 [WHATWG Supported Encodings][].
+
+<a id="ERR_EVAL_ESM_CANNOT_PRINT"></a>
+### `ERR_EVAL_ESM_CANNOT_PRINT`
+
+`--print` cannot be used with ESM input.
+
+<a id="ERR_EVENT_RECURSION"></a>
+### `ERR_EVENT_RECURSION`
+
+Thrown when an attempt is made to recursively dispatch an event on `EventTarget`.
 
 <a id="ERR_EXECUTION_ENVIRONMENT_NOT_AVAILABLE"></a>
 ### `ERR_EXECUTION_ENVIRONMENT_NOT_AVAILABLE`
@@ -928,6 +947,11 @@ An invalid HTTP header value was specified.
 ### `ERR_HTTP_INVALID_STATUS_CODE`
 
 Status code was outside the regular status code range (100-999).
+
+<a id="ERR_HTTP_SOCKET_ENCODING"></a>
+### `ERR_HTTP_SOCKET_ENCODING`
+
+Changing the socket encoding is not allowed per [RFC 7230 Section 3][].
 
 <a id="ERR_HTTP_TRAILER_INVALID"></a>
 ### `ERR_HTTP_TRAILER_INVALID`
@@ -1209,6 +1233,13 @@ time.
 
 The `--input-type` flag was used to attempt to execute a file. This flag can
 only be used with input via `--eval`, `--print` or `STDIN`.
+
+<a id="ERR_INSPECTOR_ALREADY_ACTIVATED"></a>
+### `ERR_INSPECTOR_ALREADY_ACTIVATED`
+
+While using the `inspector` module, an attempt was made to activate the
+inspector when it already started to listen on a port. Use `inspector.close()`
+before activating it on a different address.
 
 <a id="ERR_INSPECTOR_ALREADY_CONNECTED"></a>
 ### `ERR_INSPECTOR_ALREADY_CONNECTED`
@@ -1549,14 +1580,6 @@ strict compliance with the API specification (which in some cases may accept
 `func(undefined)` and `func()` are treated identically, and the
 [`ERR_INVALID_ARG_TYPE`][] error code may be used instead.
 
-<a id="ERR_MISSING_DYNAMIC_INSTANTIATE_HOOK"></a>
-### `ERR_MISSING_DYNAMIC_INSTANTIATE_HOOK`
-
-> Stability: 1 - Experimental
-
-An [ES Module][] loader hook specified `format: 'dynamic'` but did not provide
-a `dynamicInstantiate` hook.
-
 <a id="ERR_MISSING_OPTION"></a>
 ### `ERR_MISSING_OPTION`
 
@@ -1879,7 +1902,9 @@ The context must be a `SecureContext`.
 <a id="ERR_TLS_INVALID_STATE"></a>
 ### `ERR_TLS_INVALID_STATE`
 <!-- YAML
-added: v13.10.0
+added:
+ - v13.10.0
+ - v12.17.0
 -->
 
 The TLS socket must be connected and securily established. Ensure the 'secure'
@@ -2030,6 +2055,20 @@ An attempt was made to load a module with an unknown or unsupported format.
 
 An invalid or unknown process signal was passed to an API expecting a valid
 signal (such as [`subprocess.kill()`][]).
+
+<a id="ERR_UNSUPPORTED_DIR_IMPORT"></a>
+### `ERR_UNSUPPORTED_DIR_IMPORT`
+
+`import` a directory URL is unsupported. Instead, you can
+[self-reference a package using its name][] and [define a custom subpath][] in
+the `"exports"` field of the `package.json` file.
+
+<!-- eslint-skip -->
+```js
+import './'; // unsupported
+import './index.js'; // supported
+import 'package-name'; // supported
+```
 
 <a id="ERR_UNSUPPORTED_ESM_URL_SCHEME"></a>
 ### `ERR_UNSUPPORTED_ESM_URL_SCHEME`
@@ -2484,12 +2523,6 @@ while trying to read and parse it.
 
 The `--entry-type=...` flag is not compatible with the Node.js REPL.
 
-<a id="ERR_MISSING_DYNAMIC_INSTANTIATE_HOOK"></a>
-#### `ERR_MISSING_DYNAMIC_INSTANTIATE_HOOK`
-
-Used when an [ES Module][] loader hook specifies `format: 'dynamic'` but does
-not provide a `dynamicInstantiate` hook.
-
 <a id="ERR_FEATURE_UNAVAILABLE_ON_PLATFORM"></a>
 #### `ERR_FEATURE_UNAVAILABLE_ON_PLATFORM`
 
@@ -2585,8 +2618,11 @@ such as `process.stdout.on('data')`.
 [exports]: esm.html#esm_package_entry_points
 [file descriptors]: https://en.wikipedia.org/wiki/File_descriptor
 [policy]: policy.html
+[RFC 7230 Section 3]: https://tools.ietf.org/html/rfc7230#section-3
 [stream-based]: stream.html
 [syscall]: http://man7.org/linux/man-pages/man2/syscalls.2.html
 [Subresource Integrity specification]: https://www.w3.org/TR/SRI/#the-integrity-attribute
 [try-catch]: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Statements/try...catch
 [vm]: vm.html
+[self-reference a package using its name]: esm.html#esm_self_referencing_a_package_using_its_name
+[define a custom subpath]: esm.html#esm_subpath_exports

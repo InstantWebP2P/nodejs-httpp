@@ -306,11 +306,6 @@ currently not considered public, but using the Embedder API, users can provide
 and document their own resource objects. For example, such a resource object
 could contain the SQL query being executed.
 
-In the case of Promises, the `resource` object will have an
-`isChainedPromise` property, set to `true` if the promise has a parent promise,
-and `false` otherwise. For example, in the case of `b = a.then(handler)`, `a` is
-considered a parent `Promise` of `b`. Here, `b` is considered a chained promise.
-
 In some cases the resource object is reused for performance reasons, it is
 thus not safe to use it as a key in a `WeakMap` or add properties to it.
 
@@ -467,7 +462,9 @@ init for PROMISE with id 6, trigger id: 5  # the Promise returned by then()
 #### `async_hooks.executionAsyncResource()`
 
 <!-- YAML
-added: v13.9.0
+added:
+ - v13.9.0
+ - v12.17.0
 -->
 
 * Returns: {Object} The resource representing the current execution.
@@ -869,7 +866,9 @@ for (let i = 0; i < 10; i++) {
 
 ## Class: `AsyncLocalStorage`
 <!-- YAML
-added: v13.10.0
+added:
+ - v13.10.0
+ - v12.17.0
 -->
 
 This class is used to create asynchronous state within callbacks and promise
@@ -918,7 +917,9 @@ from each other. It is safe to instantiate this class multiple times.
 
 ### `new AsyncLocalStorage()`
 <!-- YAML
-added: v13.10.0
+added:
+ - v13.10.0
+ - v12.17.0
 -->
 
 Creates a new instance of `AsyncLocalStorage`. Store is only provided within a
@@ -926,7 +927,9 @@ Creates a new instance of `AsyncLocalStorage`. Store is only provided within a
 
 ### `asyncLocalStorage.disable()`
 <!-- YAML
-added: v13.10.0
+added:
+ - v13.10.0
+ - v12.17.0
 -->
 
 This method disables the instance of `AsyncLocalStorage`. All subsequent calls
@@ -946,7 +949,9 @@ in the current process.
 
 ### `asyncLocalStorage.getStore()`
 <!-- YAML
-added: v13.10.0
+added:
+ - v13.10.0
+ - v12.17.0
 -->
 
 * Returns: {any}
@@ -957,7 +962,9 @@ calling `asyncLocalStorage.run`, it will return `undefined`.
 
 ### `asyncLocalStorage.enterWith(store)`
 <!-- YAML
-added: v13.11.0
+added:
+ - v13.11.0
+ - v12.17.0
 -->
 
 * `store` {any}
@@ -999,7 +1006,9 @@ asyncLocalStorage.getStore(); // Returns the same object
 
 ### `asyncLocalStorage.run(store, callback[, ...args])`
 <!-- YAML
-added: v13.10.0
+added:
+ - v13.10.0
+ - v12.17.0
 -->
 
 * `store` {any}
@@ -1034,7 +1043,9 @@ try {
 
 ### `asyncLocalStorage.exit(callback[, ...args])`
 <!-- YAML
-added: v13.10.0
+added:
+ - v13.10.0
+ - v12.17.0
 -->
 
 * `callback` {Function}

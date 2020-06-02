@@ -25,7 +25,6 @@ using v8::Local;
 using v8::Maybe;
 using v8::MaybeLocal;
 using v8::Message;
-using v8::Number;
 using v8::Object;
 using v8::ScriptOrigin;
 using v8::StackFrame;
@@ -56,6 +55,16 @@ static std::string GetErrorSource(Isolate* isolate,
   MaybeLocal<String> source_line_maybe = message->GetSourceLine(context);
   node::Utf8Value encoded_source(isolate, source_line_maybe.ToLocalChecked());
   std::string sourceline(*encoded_source, encoded_source.length());
+
+  // If source maps have been enabled, the exception line will instead be
+  // added in the JavaScript context:
+  Environment* env = Environment::GetCurrent(isolate);
+  const bool has_source_map_url =
+      !message->GetScriptOrigin().SourceMapUrl().IsEmpty();
+  if (has_source_map_url && env->source_maps_enabled()) {
+    *added_exception_line = false;
+    return sourceline;
+  }
 
   if (sourceline.find("node-do-not-add-exception-line") != std::string::npos) {
     *added_exception_line = false;
@@ -802,6 +811,11 @@ void SetPrepareStackTraceCallback(const FunctionCallbackInfo<Value>& args) {
   env->set_prepare_stack_trace_callback(args[0].As<Function>());
 }
 
+static void EnableSourceMaps(const FunctionCallbackInfo<Value>& args) {
+  Environment* env = Environment::GetCurrent(args);
+  env->set_source_maps_enabled(true);
+}
+
 static void SetEnhanceStackForFatalException(
     const FunctionCallbackInfo<Value>& args) {
   Environment* env = Environment::GetCurrent(args);
@@ -840,6 +854,7 @@ void Initialize(Local<Object> target,
   Environment* env = Environment::GetCurrent(context);
   env->SetMethod(
       target, "setPrepareStackTraceCallback", SetPrepareStackTraceCallback);
+  env->SetMethod(target, "enableSourceMaps", EnableSourceMaps);
   env->SetMethod(target,
                  "setEnhanceStackForFatalException",
                  SetEnhanceStackForFatalException);

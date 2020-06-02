@@ -17,6 +17,7 @@ GNUMAKEFLAGS += --no-print-directory
 GCOV ?= gcov
 PWD = $(CURDIR)
 BUILD_WITH ?= make
+FIND ?= find
 
 ifdef JOBS
 	PARALLEL_ARGS = -j $(JOBS)
@@ -168,7 +169,7 @@ uninstall: ## Uninstalls node from $PREFIX (default=/usr/local).
 clean: ## Remove build artifacts.
 	$(RM) -r out/Makefile $(NODE_EXE) $(NODE_G_EXE) out/$(BUILDTYPE)/$(NODE_EXE) \
 		out/$(BUILDTYPE)/node.exp
-	@if [ -d out ]; then find out/ -name '*.o' -o -name '*.a' -o -name '*.d' | xargs $(RM) -r; fi
+	@if [ -d out ]; then $(FIND) out/ -name '*.o' -o -name '*.a' -o -name '*.d' | xargs $(RM) -r; fi
 	$(RM) -r node_modules
 	@if [ -d deps/icu ]; then echo deleting deps/icu; $(RM) -r deps/icu; fi
 	$(RM) test.tap
@@ -737,7 +738,7 @@ out/doc/api/assets:
 
 # If it's not a source tarball, we need to copy assets from doc/api_assets
 out/doc/api/assets/%: doc/api_assets/% out/doc/api/assets
-	@cp $< $@
+	@cp $< $@ ; $(RM) out/doc/api/assets/README.md
 
 
 run-npm-ci = $(PWD)/$(NPM) ci
@@ -771,6 +772,11 @@ out/doc/api/all.json: $(apidocs_json) tools/doc/alljson.js
 .PHONY: docopen
 docopen: $(apidocs_html)
 	@$(PYTHON) -mwebbrowser file://$(PWD)/out/doc/api/all.html
+
+.PHONY: docserve
+docserve: $(apidocs_html)
+	@$(PYTHON) -mwebbrowser http://localhost:8000/all.html
+	@$(PYTHON) -m http.server -d $(PWD)/out/doc/api
 
 .PHONY: docclean
 docclean:
@@ -1199,7 +1205,7 @@ LINT_MD_NEWER = -newer tools/.mdlintstamp
 endif
 
 LINT_MD_TARGETS = doc src lib benchmark test tools/doc tools/icu $(wildcard *.md)
-LINT_MD_FILES = $(shell find $(LINT_MD_TARGETS) -type f \
+LINT_MD_FILES = $(shell $(FIND) $(LINT_MD_TARGETS) -type f \
 	! -path '*node_modules*' ! -path 'test/fixtures/*' -name '*.md' \
 	$(LINT_MD_NEWER))
 run-lint-md = tools/lint-md.js -q -f --no-stdout $(LINT_MD_FILES)
@@ -1322,13 +1328,13 @@ else
 CPPLINT_QUIET = --quiet
 endif
 .PHONY: lint-cpp
-# Lints the C++ code with cpplint.py and check-imports.py.
+# Lints the C++ code with cpplint.py and checkimports.py.
 lint-cpp: tools/.cpplintstamp
 
 tools/.cpplintstamp: $(LINT_CPP_FILES)
 	@echo "Running C++ linter..."
 	@$(PYTHON) tools/cpplint.py $(CPPLINT_QUIET) $?
-	@$(PYTHON) tools/check-imports.py
+	@$(PYTHON) tools/checkimports.py
 	@touch $@
 
 .PHONY: lint-addon-docs
@@ -1378,7 +1384,7 @@ CONFLICT_RE=^>>>>>>> [0-9A-Fa-f]+|^<<<<<<< [A-Za-z]+
 # Related CI job: node-test-linter
 lint-ci: lint-js-ci lint-cpp lint-py lint-md lint-addon-docs
 	@if ! ( grep -IEqrs "$(CONFLICT_RE)" benchmark deps doc lib src test tools ) \
-		&& ! ( find . -maxdepth 1 -type f | xargs grep -IEqs "$(CONFLICT_RE)" ); then \
+		&& ! ( $(FIND) . -maxdepth 1 -type f | xargs grep -IEqs "$(CONFLICT_RE)" ); then \
 		exit 0 ; \
 	else \
 		echo "" >&2 ; \

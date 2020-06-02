@@ -1409,6 +1409,10 @@ and will throw an error.
 #### `http2stream.respond([headers[, options]])`
 <!-- YAML
 added: v8.4.0
+changes:
+  - version: REPLACEME
+    pr-url: https://github.com/nodejs/node/pull/33160
+    description: Allow explicity setting date headers.
 -->
 
 * `headers` {HTTP/2 Headers Object}
@@ -1453,6 +1457,9 @@ server.on('stream', (stream) => {
 <!-- YAML
 added: v8.4.0
 changes:
+  - version: REPLACEME
+    pr-url: https://github.com/nodejs/node/pull/33160
+    description: Allow explicity setting date headers.
   - version: v12.12.0
     pr-url: https://github.com/nodejs/node/pull/29876
     description: The `fd` option may now be a `FileHandle`.
@@ -1551,6 +1558,9 @@ server.on('stream', (stream) => {
 <!-- YAML
 added: v8.4.0
 changes:
+  - version: REPLACEME
+    pr-url: https://github.com/nodejs/node/pull/33160
+    description: Allow explicity setting date headers.
   - version: v10.0.0
     pr-url: https://github.com/nodejs/node/pull/18936
     description: Any readable file, not necessarily a
@@ -1992,6 +2002,12 @@ value only affects new connections to the server, not any existing connections.
 added: v8.4.0
 changes:
   - version:
+     - v14.4.0
+     - v12.18.0
+     - v10.21.0
+    pr-url: https://github.com/nodejs-private/node-private/pull/204
+    description: Added `maxSettings` option with a default of 32.
+  - version:
      - v13.3.0
      - v12.16.0
     pr-url: https://github.com/nodejs/node/pull/30534
@@ -2027,6 +2043,8 @@ changes:
 * `options` {Object}
   * `maxDeflateDynamicTableSize` {number} Sets the maximum dynamic table size
     for deflating header fields. **Default:** `4Kib`.
+  * `maxSettings` {number} Sets the maximum number of settings entries per
+    `SETTINGS` frame. The minimum value allowed is `1`. **Default:** `32`.
   * `maxSessionMemory`{number} Sets the maximum memory that the `Http2Session`
     is permitted to use. The value is expressed in terms of number of megabytes,
     e.g. `1` equal 1 megabyte. The minimum value allowed is `1`.
@@ -2123,6 +2141,12 @@ server.listen(80);
 added: v8.4.0
 changes:
   - version:
+     - v14.4.0
+     - v12.18.0
+     - v10.21.0
+    pr-url: https://github.com/nodejs-private/node-private/pull/204
+    description: Added `maxSettings` option with a default of 32.
+  - version:
      - v13.3.0
      - v12.16.0
     pr-url: https://github.com/nodejs/node/pull/30534
@@ -2158,6 +2182,8 @@ changes:
     **Default:** `false`.
   * `maxDeflateDynamicTableSize` {number} Sets the maximum dynamic table size
     for deflating header fields. **Default:** `4Kib`.
+  * `maxSettings` {number} Sets the maximum number of settings entries per
+    `SETTINGS` frame. The minimum value allowed is `1`. **Default:** `32`.
   * `maxSessionMemory`{number} Sets the maximum memory that the `Http2Session`
     is permitted to use. The value is expressed in terms of number of megabytes,
     e.g. `1` equal 1 megabyte. The minimum value allowed is `1`. This is a
@@ -2240,6 +2266,12 @@ server.listen(80);
 <!-- YAML
 added: v8.4.0
 changes:
+  - version:
+     - v14.4.0
+     - v12.18.0
+     - v10.21.0
+    pr-url: https://github.com/nodejs-private/node-private/pull/204
+    description: Added `maxSettings` option with a default of 32.
   - version: v13.0.0
     pr-url: https://github.com/nodejs/node/pull/29144
     description: The `PADDING_STRATEGY_CALLBACK` has been made equivalent to
@@ -2263,6 +2295,8 @@ changes:
 * `options` {Object}
   * `maxDeflateDynamicTableSize` {number} Sets the maximum dynamic table size
     for deflating header fields. **Default:** `4Kib`.
+  * `maxSettings` {number} Sets the maximum number of settings entries per
+    `SETTINGS` frame. The minimum value allowed is `1`. **Default:** `32`.
   * `maxSessionMemory`{number} Sets the maximum memory that the `Http2Session`
     is permitted to use. The value is expressed in terms of number of megabytes,
     e.g. `1` equal 1 megabyte. The minimum value allowed is `1`.
@@ -2994,7 +3028,7 @@ added: v8.4.0
 Request URL string. This contains only the URL that is
 present in the actual HTTP request. If the request is:
 
-```txt
+```http
 GET /status?name=ryan HTTP/1.1\r\n
 Accept: text/plain\r\n
 \r\n
@@ -3010,7 +3044,7 @@ Then `request.url` will be:
 To parse the url into its parts `require('url').parse(request.url)`
 can be used:
 
-```txt
+```console
 $ node
 > require('url').parse('/status?name=ryan')
 Url {

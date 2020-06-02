@@ -92,6 +92,22 @@ The following methods from the `dns` module are available:
 * [`resolver.reverse()`][`dns.reverse()`]
 * [`resolver.setServers()`][`dns.setServers()`]
 
+### `Resolver([options])`
+<!-- YAML
+added: v8.3.0
+changes:
+  - version: REPLACEME
+    pr-url: https://github.com/nodejs/node/pull/33472
+    description: The constructor now accepts an `options` object.
+                 The single supported option is `timeout`.
+-->
+
+Create a new resolver.
+
+* `options` {Object}
+  * `timeout` {integer} Query timeout in milliseconds, or `-1` to use the
+    default timeout.
+
 ### `resolver.cancel()`
 <!-- YAML
 added: v8.3.0
@@ -202,7 +218,9 @@ is not set to `true`, it returns a `Promise` for an `Object` with `address` and
 ### Supported getaddrinfo flags
 <!-- YAML
 changes:
-  - version: v13.13.0
+  - version:
+     - v13.13.0
+     - v12.17.0
     pr-url: https://github.com/nodejs/node/pull/32183
     description: Added support for the `dns.ALL` flag.
 -->
@@ -611,7 +629,7 @@ earlier ones time out or result in some other error.
 
 The `dns.promises` API provides an alternative set of asynchronous DNS methods
 that return `Promise` objects rather than using callbacks. The API is accessible
-via `require('dns').promises`.
+via `require('dns').promises` or `require('dns/promises')`.
 
 ### Class: `dnsPromises.Resolver`
 <!-- YAML

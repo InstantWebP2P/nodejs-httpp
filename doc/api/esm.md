@@ -13,6 +13,27 @@ ECMAScript modules are [the official standard format][] to package JavaScript
 code for reuse. Modules are defined using a variety of [`import`][] and
 [`export`][] statements.
 
+The following example of an ES module exports a function:
+
+```js
+// addTwo.mjs
+function addTwo(num) {
+  return num + 2;
+}
+
+export { addTwo };
+```
+
+The following example of an ES module imports the function from `addTwo.mjs`:
+
+```js
+// app.mjs
+import { addTwo } from './addTwo.mjs';
+
+// Prints: 6
+console.log(addTwo(4));
+```
+
 Node.js fully supports ECMAScript modules as they are currently specified and
 provides limited interoperability between them and the existing module format,
 [CommonJS][].
@@ -36,8 +57,8 @@ initial input, or when referenced by `import` statements within ES module code:
 * Files ending in `.js` when the nearest parent `package.json` file contains a
   top-level field `"type"` with a value of `"module"`.
 
-* Strings passed in as an argument to `--eval` or `--print`, or piped to
-  `node` via `STDIN`, with the flag `--input-type=module`.
+* Strings passed in as an argument to `--eval`, or piped to `node` via `STDIN`,
+  with the flag `--input-type=module`.
 
 Node.js will treat as CommonJS all other forms of input, such as `.js` files
 where the nearest parent `package.json` file contains no top-level `"type"`
@@ -52,8 +73,8 @@ or when referenced by `import` statements within ES module code:
 * Files ending in `.js` when the nearest parent `package.json` file contains a
   top-level field `"type"` with a value of `"commonjs"`.
 
-* Strings passed in as an argument to `--eval` or `--print`, or piped to
-  `node` via `STDIN`, with the flag `--input-type=commonjs`.
+* Strings passed in as an argument to `--eval` or `--print`, or piped to `node`
+  via `STDIN`, with the flag `--input-type=commonjs`.
 
 ### `package.json` `"type"` field
 
@@ -73,7 +94,7 @@ until the root of the volume is reached.
 }
 ```
 
-```sh
+```bash
 # In same folder as above package.json
 node my-app.js # Runs as ES module
 ```
@@ -159,11 +180,11 @@ package scope:
 
 ### `--input-type` flag
 
-Strings passed in as an argument to `--eval` or `--print` (or `-e` or `-p`), or
-piped to `node` via `STDIN`, will be treated as ES modules when the
-`--input-type=module` flag is set.
+Strings passed in as an argument to `--eval` (or `-e`), or piped to `node` via
+`STDIN`, will be treated as ES modules when the `--input-type=module` flag is
+set.
 
-```sh
+```bash
 node --input-type=module --eval "import { sep } from 'path'; console.log(sep);"
 
 echo "import { sep } from 'path'; console.log(sep);" | node --input-type=module
@@ -1076,6 +1097,32 @@ node --experimental-wasm-modules index.mjs
 
 would provide the exports interface for the instantiation of `module.wasm`.
 
+## Experimental Top-Level `await`
+
+When the `--experimental-top-level-await` flag is provided, `await` may be used
+in the top level (outside of async functions) within modules. This implements
+the [ECMAScript Top-Level `await` proposal][].
+
+Assuming an `a.mjs` with
+
+<!-- eslint-skip -->
+```js
+export const five = await Promise.resolve(5);
+```
+
+And a `b.mjs` with
+
+```js
+import { five } from './a.mjs';
+
+console.log(five); // Logs `5`
+```
+
+```bash
+node b.mjs # fails
+node --experimental-top-level-await b.mjs # works
+```
+
 ## Experimental Loaders
 
 **Note: This API is currently being redesigned and will still change.**
@@ -1149,16 +1196,26 @@ export async function resolve(specifier, context, defaultResolve) {
 > signature may change. Do not rely on the API described below.
 
 The `getFormat` hook provides a way to define a custom method of determining how
-a URL should be interpreted. This can be one of the following:
+a URL should be interpreted. The `format` returned also affects what the
+acceptable forms of source values are for a module when parsing. This can be one
+of the following:
 
-| `format` | Description |
-| --- | --- |
-| `'builtin'` | Load a Node.js builtin module |
-| `'commonjs'` | Load a Node.js CommonJS module |
-| `'dynamic'` | Use a [dynamic instantiate hook][] |
-| `'json'` | Load a JSON file |
-| `'module'` | Load a standard JavaScript module (ES module) |
-| `'wasm'` | Load a WebAssembly module |
+| `format` | Description | Acceptable Types For `source` Returned by `getSource` or `transformSource` |
+| --- | --- | --- |
+| `'builtin'` | Load a Node.js builtin module | Not applicable |
+| `'commonjs'` | Load a Node.js CommonJS module | Not applicable |
+| `'json'` | Load a JSON file | { [ArrayBuffer][], [string][], [TypedArray][] } |
+| `'module'` | Load an ES module | { [ArrayBuffer][], [string][], [TypedArray][] } |
+| `'wasm'` | Load a WebAssembly module | { [ArrayBuffer][], [string][], [TypedArray][] } |
+
+Note: These types all correspond to classes defined in ECMAScript.
+
+* The specific [ArrayBuffer][] object is a [SharedArrayBuffer][].
+* The specific [string][] object is not the class constructor, but an instance.
+* The specific [TypedArray][] object is a [Uint8Array][].
+
+Note: If the source value of a text-based format (i.e., `'json'`, `'module'`) is
+not a string, it will be converted to a string using [`util.TextDecoder`][].
 
 ```js
 /**
@@ -1286,38 +1343,6 @@ const require = createRequire(process.cwd() + '/<preload>');
 `;
 }
 ```
-
-#### <code>dynamicInstantiate</code> hook
-
-> Note: The loaders API is being redesigned. This hook may disappear or its
-> signature may change. Do not rely on the API described below.
-
-To create a custom dynamic module that doesn't correspond to one of the
-existing `format` interpretations, the `dynamicInstantiate` hook can be used.
-This hook is called only for modules that return `format: 'dynamic'` from
-the [`getFormat` hook][].
-
-```js
-/**
- * @param {string} url
- * @returns {object} response
- * @returns {array} response.exports
- * @returns {function} response.execute
- */
-export async function dynamicInstantiate(url) {
-  return {
-    exports: ['customExportName'],
-    execute: (exports) => {
-      // Get and set functions provided for pre-allocated export names
-      exports.customExportName.set('value');
-    }
-  };
-}
-```
-
-With the list of module exports provided upfront, the `execute` function will
-then be called at the exact point of module evaluation order for that module
-in the import tree.
 
 ### Examples
 
@@ -1556,8 +1581,9 @@ The resolver can throw the following errors:
 > 1. If _resolvedURL_ contains any percent encodings of _"/"_ or _"\\"_ (_"%2f"_
 >    and _"%5C"_ respectively), then
 >    1. Throw an _Invalid Module Specifier_ error.
-> 1. If _resolvedURL_ does not end with a trailing _"/"_ and the file at
->    _resolvedURL_ does not exist, then
+> 1. If the file at _resolvedURL_ is a directory, then
+>    1. Throw an _Unsupported Directory Import_ error.
+> 1. If the file at _resolvedURL_ does not exist, then
 >    1. Throw a _Module Not Found_ error.
 > 1. Set _resolvedURL_ to the real path of _resolvedURL_.
 > 1. Let _format_ be the result of **ESM_FORMAT**(_resolvedURL_).
@@ -1779,6 +1805,7 @@ success!
 [Conditional Exports]: #esm_conditional_exports
 [Dynamic `import()`]: https://wiki.developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Statements/import#Dynamic_Imports
 [ECMAScript-modules implementation]: https://github.com/nodejs/modules/blob/master/doc/plan-for-new-modules-implementation.md
+[ECMAScript Top-Level `await` proposal]: https://github.com/tc39/proposal-top-level-await/
 [ES Module Integration Proposal for Web Assembly]: https://github.com/webassembly/esm-integration
 [Node.js EP for ES Modules]: https://github.com/nodejs/node-eps/blob/master/002-es-modules.md
 [Terminology]: #esm_terminology
@@ -1786,14 +1813,18 @@ success!
 [`data:` URLs]: https://developer.mozilla.org/en-US/docs/Web/HTTP/Basics_of_HTTP/Data_URIs
 [`esm`]: https://github.com/standard-things/esm#readme
 [`export`]: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Statements/export
-[`getFormat` hook]: #esm_code_getformat_code_hook
 [`import()`]: #esm_import_expressions
 [`import.meta.url`]: #esm_import_meta
 [`import`]: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Statements/import
 [`module.createRequire()`]: modules.html#modules_module_createrequire_filename
 [`module.syncBuiltinESMExports()`]: modules.html#modules_module_syncbuiltinesmexports
 [`transformSource` hook]: #esm_code_transformsource_code_hook
-[dynamic instantiate hook]: #esm_code_dynamicinstantiate_code_hook
+[ArrayBuffer]: http://www.ecma-international.org/ecma-262/6.0/#sec-arraybuffer-constructor
+[SharedArrayBuffer]: https://tc39.es/ecma262/#sec-sharedarraybuffer-constructor
+[string]: http://www.ecma-international.org/ecma-262/6.0/#sec-string-constructor
+[TypedArray]: http://www.ecma-international.org/ecma-262/6.0/#sec-typedarray-objects
+[Uint8Array]: http://www.ecma-international.org/ecma-262/6.0/#sec-uint8array
+[`util.TextDecoder`]: util.html#util_class_util_textdecoder
 [import an ES or CommonJS module for its side effects only]: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Statements/import#Import_a_module_for_its_side_effects_only
 [special scheme]: https://url.spec.whatwg.org/#special-scheme
 [the full specifier path]: #esm_mandatory_file_extensions

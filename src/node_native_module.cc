@@ -7,14 +7,11 @@ namespace native_module {
 using v8::Context;
 using v8::EscapableHandleScope;
 using v8::Function;
-using v8::HandleScope;
 using v8::Integer;
 using v8::Isolate;
 using v8::Local;
-using v8::Maybe;
 using v8::MaybeLocal;
 using v8::Object;
-using v8::Script;
 using v8::ScriptCompiler;
 using v8::ScriptOrigin;
 using v8::String;
@@ -292,14 +289,14 @@ MaybeLocal<Function> NativeModuleLoader::LookupAndCompile(
 
   // This could fail when there are early errors in the native modules,
   // e.g. the syntax errors
-  if (maybe_fun.IsEmpty()) {
+  Local<Function> fun;
+  if (!maybe_fun.ToLocal(&fun)) {
     // In the case of early errors, v8 is already capable of
     // decorating the stack for us - note that we use CompileFunctionInContext
     // so there is no need to worry about wrappers.
     return MaybeLocal<Function>();
   }
 
-  Local<Function> fun = maybe_fun.ToLocalChecked();
   // XXX(joyeecheung): this bookkeeping is not exactly accurate because
   // it only starts after the Environment is created, so the per_context.js
   // will never be in any of these two sets, but the two sets are only for

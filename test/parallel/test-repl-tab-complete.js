@@ -30,6 +30,7 @@ const {
 const assert = require('assert');
 const path = require('path');
 const fixtures = require('../common/fixtures');
+const { builtinModules } = require('module');
 const hasInspector = process.features.inspector;
 
 if (!common.isMainThread)
@@ -65,6 +66,19 @@ testMe.complete('inner.o', getNoResultsFunction());
 
 testMe.complete('console.lo', common.mustCall(function(error, data) {
   assert.deepStrictEqual(data, [['console.log'], 'console.lo']);
+}));
+
+testMe.complete('console?.lo', common.mustCall((error, data) => {
+  assert.deepStrictEqual(data, [['console?.log'], 'console?.lo']);
+}));
+
+testMe.complete('console?.zzz', common.mustCall((error, data) => {
+  assert.deepStrictEqual(data, [[], 'console?.zzz']);
+}));
+
+testMe.complete('console?.', common.mustCall((error, data) => {
+  assert(data[0].includes('console?.log'));
+  assert.strictEqual(data[1], 'console?.');
 }));
 
 // Tab Complete will return globally scoped variables
@@ -222,29 +236,61 @@ putIn.run(['.clear']);
 
 testMe.complete('require(\'', common.mustCall(function(error, data) {
   assert.strictEqual(error, null);
-  repl._builtinLibs.forEach(function(lib) {
-    assert(data[0].includes(lib), `${lib} not found`);
+  builtinModules.forEach((lib) => {
+    assert(
+      data[0].includes(lib) || lib.startsWith('_') || lib.includes('/'),
+      `${lib} not found`
+    );
   });
+  const newModule = 'foobar';
+  assert(!builtinModules.includes(newModule));
+  repl.builtinModules.push(newModule);
+  testMe.complete('require(\'', common.mustCall((_, [modules]) => {
+    assert.strictEqual(data[0].length + 1, modules.length);
+    assert(modules.includes(newModule));
+  }));
 }));
 
-testMe.complete('require(\'n', common.mustCall(function(error, data) {
+testMe.complete("require\t( 'n", common.mustCall(function(error, data) {
   assert.strictEqual(error, null);
   assert.strictEqual(data.length, 2);
   assert.strictEqual(data[1], 'n');
-  assert(data[0].includes('net'));
+  // There is only one Node.js module that starts with n:
+  assert.strictEqual(data[0][0], 'net');
+  assert.strictEqual(data[0][1], '');
   // It's possible to pick up non-core modules too
-  data[0].forEach(function(completion) {
-    if (completion)
-      assert(/^n/.test(completion));
+  data[0].slice(2).forEach((completion) => {
+    assert.match(completion, /^n/);
   });
 }));
 
 {
   const expected = ['@nodejsscope', '@nodejsscope/'];
+  // Require calls should handle all types of quotation marks.
+  for (const quotationMark of ["'", '"', '`']) {
+    putIn.run(['.clear']);
+    testMe.complete('require(`@nodejs', common.mustCall((err, data) => {
+      assert.strictEqual(err, null);
+      assert.deepStrictEqual(data, [expected, '@nodejs']);
+    }));
+
+    putIn.run(['.clear']);
+    // Completions should not be greedy in case the quotation ends.
+    const input = `require(${quotationMark}@nodejsscope${quotationMark}`;
+    testMe.complete(input, common.mustCall((err, data) => {
+      assert.strictEqual(err, null);
+      assert.deepStrictEqual(data, [[], undefined]);
+    }));
+  }
+}
+
+{
   putIn.run(['.clear']);
-  testMe.complete('require(\'@nodejs', common.mustCall((err, data) => {
+  // Completions should find modules and handle whitespace after the opening
+  // bracket.
+  testMe.complete('require \t("no_ind', common.mustCall((err, data) => {
     assert.strictEqual(err, null);
-    assert.deepStrictEqual(data, [expected, '@nodejs']);
+    assert.deepStrictEqual(data, [['no_index', 'no_index/'], 'no_ind']);
   }));
 }
 

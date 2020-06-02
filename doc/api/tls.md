@@ -21,7 +21,7 @@ Private keys can be generated in multiple ways. The example below illustrates
 use of the OpenSSL command-line interface to generate a 2048-bit RSA private
 key:
 
-```sh
+```bash
 openssl genrsa -out ryans-key.pem 2048
 ```
 
@@ -35,7 +35,7 @@ step to obtaining a certificate is to create a *Certificate Signing Request*
 The OpenSSL command-line interface can be used to generate a CSR for a private
 key:
 
-```sh
+```bash
 openssl req -new -sha256 -key ryans-key.pem -out ryans-csr.pem
 ```
 
@@ -45,14 +45,14 @@ Authority for signing or used to generate a self-signed certificate.
 Creating a self-signed certificate using the OpenSSL command-line interface
 is illustrated in the example below:
 
-```sh
+```bash
 openssl x509 -req -in ryans-csr.pem -signkey ryans-key.pem -out ryans-cert.pem
 ```
 
 Once the certificate is generated, it can be used to generate a `.pfx` or
 `.p12` file:
 
-```sh
+```bash
 openssl pkcs12 -export -in ryans-cert.pem -inkey ryans-key.pem \
       -certfile ca-cert.pem -out ryans.pfx
 ```
@@ -95,7 +95,7 @@ to generate Diffie-Hellman parameters and specify them with the `dhparam`
 option to [`tls.createSecureContext()`][]. The following illustrates the use of
 the OpenSSL command-line interface to generate such parameters:
 
-```sh
+```bash
 openssl dhparam -outform PEM -out dhparam.pem 2048
 ```
 
@@ -250,7 +250,7 @@ failures, it is easy to not notice unnecessarily poor TLS performance. The
 OpenSSL CLI can be used to verify that servers are resuming sessions. Use the
 `-reconnect` option to `openssl s_client`, for example:
 
-```sh
+```console
 $ openssl s_client -connect localhost:443 -reconnect
 ```
 
@@ -272,7 +272,7 @@ Reused, TLSv1.2, Cipher is ECDHE-RSA-AES128-GCM-SHA256
 Node.js is built with a default suite of enabled and disabled TLS ciphers.
 Currently, the default cipher suite is:
 
-```txt
+```text
 TLS_AES_256_GCM_SHA384:
 TLS_CHACHA20_POLY1305_SHA256:
 TLS_AES_128_GCM_SHA256:
@@ -304,7 +304,7 @@ line switch (directly, or via the [`NODE_OPTIONS`][] environment variable). For
 instance, the following makes `ECDHE-RSA-AES128-GCM-SHA256:!RC4` the default TLS
 cipher suite:
 
-```sh
+```bash
 node --tls-cipher-list="ECDHE-RSA-AES128-GCM-SHA256:!RC4" server.js
 
 export NODE_OPTIONS=--tls-cipher-list="ECDHE-RSA-AES128-GCM-SHA256:!RC4"
@@ -580,18 +580,6 @@ The `server.close()` method stops the server from accepting new connections.
 This function operates asynchronously. The `'close'` event will be emitted
 when the server has no more open connections.
 
-### `server.connections`
-<!-- YAML
-added: v0.3.2
-deprecated: v0.9.7
--->
-
-> Stability: 0 - Deprecated: Use [`server.getConnections()`][] instead.
-
-* {number}
-
-Returns the current number of concurrent connections on the server.
-
 ### `server.getTicketKeys()`
 <!-- YAML
 added: v3.0.0
@@ -701,7 +689,7 @@ added:
 
 * `line` {Buffer} Line of ASCII text, in NSS `SSLKEYLOGFILE` format.
 
-The `keylog` event is emitted on a client `tls.TLSSocket` when key material
+The `keylog` event is emitted on a `tls.TLSSocket` when key material
 is generated or received by the socket. This keying material can be stored
 for debugging, as it allows captured TLS traffic to be decrypted. It may
 be emitted multiple times, before or after the handshake completes.
@@ -1102,7 +1090,9 @@ for more information.
 
 ### `tlsSocket.exportKeyingMaterial(length, label[, context])`
 <!-- YAML
-added: v13.10.0
+added:
+ - v13.10.0
+ - v12.17.0
 -->
 
 * `length` {number} number of bytes to retrieve from keying material
@@ -1791,8 +1781,10 @@ added: v12.3.0
 * {string[]}
 
 An immutable array of strings representing the root certificates (in PEM format)
-used for verifying peer certificates. This is the default value of the `ca`
-option to [`tls.createSecureContext()`][].
+from the bundled Mozilla CA store as supplied by current Node.js version.
+
+The bundled CA store, as supplied by Node.js, is a snapshot of Mozilla CA store
+that is fixed at release time. It is identical on all supported platforms.
 
 ## `tls.DEFAULT_ECDH_CURVE`
 <!-- YAML
@@ -1959,7 +1951,6 @@ where `secureSocket` has the same API as `pair.cleartext`.
 [`net.Server`]: net.html#net_class_net_server
 [`net.Socket`]: net.html#net_class_net_socket
 [`server.addContext()`]: #tls_server_addcontext_hostname_context
-[`server.getConnections()`]: net.html#net_server_getconnections_callback
 [`server.getTicketKeys()`]: #tls_server_getticketkeys
 [`server.listen()`]: net.html#net_server_listen
 [`server.setTicketKeys()`]: #tls_server_setticketkeys_keys

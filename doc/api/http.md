@@ -110,6 +110,11 @@ http.get({
 ### `new Agent([options])`
 <!-- YAML
 added: v0.3.4
+changes:
+  - version: REPLACEME
+    pr-url: https://github.com/nodejs/node/pull/33278
+    description: Add `scheduling` option to specify the free socket
+                 scheduling strategy.
 -->
 
 * `options` {Object} Set of configurable options to set on the agent.
@@ -132,6 +137,18 @@ added: v0.3.4
   * `maxFreeSockets` {number} Maximum number of sockets to leave open
     in a free state. Only relevant if `keepAlive` is set to `true`.
     **Default:** `256`.
+  * `scheduling` {string} Scheduling strategy to apply when picking
+    the next free socket to use. It can be `'fifo'` or `'lifo'`.
+    The main difference between the two scheduling strategies is that `'lifo'`
+    selects the most recently used socket, while `'fifo'` selects
+    the least recently used socket.
+    In case of a low rate of request per second, the `'lifo'` scheduling
+    will lower the risk of picking a socket that might have been closed
+    by the server due to inactivity.
+    In case of a high rate of request per second,
+    the `'fifo'` scheduling will maximize the number of open sockets,
+    while the `'lifo'` scheduling will keep it as low as possible.
+    **Default:** `'fifo'`.
   * `timeout` {number} Socket timeout in milliseconds.
     This will set the timeout when the socket is created.
 
@@ -333,9 +350,8 @@ Until the data is consumed, the `'end'` event will not fire. Also, until
 the data is read it will consume memory that can eventually lead to a
 'process out of memory' error.
 
-Unlike the `request` object, if the response closes prematurely, the
-`response` object does not emit an `'error'` event but instead emits the
-`'aborted'` event.
+For backward compatibility, `res` will only emit `'error'` if there is an
+`'error'` listener registered.
 
 Node.js does not check whether Content-Length and the length of the
 body which has been transmitted are equal or not.
@@ -631,6 +647,11 @@ is finished.
 ### `request.destroy([error])`
 <!-- YAML
 added: v0.3.0
+changes:
+  - version: REPLACEME
+    pr-url: https://github.com/nodejs/node/pull/32789
+    description: The function returns `this` for consistency with other Readable
+                 streams.
 -->
 
 * `error` {Error} Optional, an error to emit with `'error'` event.
@@ -1040,6 +1061,21 @@ ensure the response is a properly formatted HTTP response message.
 * `bytesParsed`: the bytes count of request packet that Node.js may have parsed
   correctly;
 * `rawPacket`: the raw packet of current request.
+
+In some cases, the client has already received the response and/or the socket
+has already been destroyed, like in case of `ECONNRESET` errors. Before
+trying to send data to the socket, it is better to check that it is still
+writable.
+
+```js
+server.on('clientError', (err, socket) => {
+  if (err.code === 'ECONNRESET' || !socket.writable) {
+    return;
+  }
+
+  socket.end('HTTP/1.1 400 Bad Request\r\n\r\n');
+});
+```
 
 ### Event: `'close'`
 <!-- YAML
@@ -1847,9 +1883,15 @@ const req = http.request({
 ### `message.destroy([error])`
 <!-- YAML
 added: v0.3.0
+changes:
+  - version: REPLACEME
+    pr-url: https://github.com/nodejs/node/pull/32789
+    description: The function returns `this` for consistency with other Readable
+                 streams.
 -->
 
 * `error` {Error}
+* Returns: {this}
 
 Calls `destroy()` on the socket that received the `IncomingMessage`. If `error`
 is provided, an `'error'` event is emitted on the socket and `error` is passed
@@ -2021,7 +2063,7 @@ added: v0.1.90
 Request URL string. This contains only the URL that is
 present in the actual HTTP request. If the request is:
 
-```txt
+```http
 GET /status?name=ryan HTTP/1.1\r\n
 Accept: text/plain\r\n
 \r\n
@@ -2406,6 +2448,8 @@ the following events will be emitted in the following order:
   * `'data'` any number of times, on the `res` object
 * (connection closed here)
 * `'aborted'` on the `res` object
+* `'error'` on the `res` object with an error with message
+  `'Error: aborted'` and code `'ECONNRESET'`.
 * `'close'`
 * `'close'` on the `res` object
 
@@ -2434,6 +2478,8 @@ events will be emitted in the following order:
   * `'data'` any number of times, on the `res` object
 * (`req.destroy()` called here)
 * `'aborted'` on the `res` object
+* `'error'` on the `res` object with an error with message
+  `'Error: aborted'` and code `'ECONNRESET'`.
 * `'close'`
 * `'close'` on the `res` object
 
@@ -2463,11 +2509,83 @@ events will be emitted in the following order:
 * (`req.abort()` called here)
 * `'abort'`
 * `'aborted'` on the `res` object
+* `'error'` on the `res` object with an error with message
+  `'Error: aborted'` and code `'ECONNRESET'`.
 * `'close'`
 * `'close'` on the `res` object
 
 Setting the `timeout` option or using the `setTimeout()` function will
 not abort the request or do anything besides add a `'timeout'` event.
+
+## `http.validateHeaderName(name)`
+<!-- YAML
+added: v14.3.0
+-->
+
+* `name` {string}
+
+Performs the low-level validations on the provided `name` that are done when
+`res.setHeader(name, value)` is called.
+
+Passing illegal value as `name` will result in a [`TypeError`][] being thrown,
+identified by `code: 'ERR_INVALID_HTTP_TOKEN'`.
+
+It is not necessary to use this method before passing headers to an HTTP request
+or response. The HTTP module will automatically validate such headers.
+Examples:
+
+Example:
+```js
+const { validateHeaderName } = require('http');
+
+try {
+  validateHeaderName('');
+} catch (err) {
+  err instanceof TypeError; // --> true
+  err.code; // --> 'ERR_INVALID_HTTP_TOKEN'
+  err.message; // --> 'Header name must be a valid HTTP token [""]'
+}
+```
+
+## `http.validateHeaderValue(name, value)`
+<!-- YAML
+added: v14.3.0
+-->
+
+* `name` {string}
+* `value` {any}
+
+Performs the low-level validations on the provided `value` that are done when
+`res.setHeader(name, value)` is called.
+
+Passing illegal value as `value` will result in a [`TypeError`][] being thrown.
+* Undefined value error is identified by `code: 'ERR_HTTP_INVALID_HEADER_VALUE'`.
+* Invalid value character error is identified by `code: 'ERR_INVALID_CHAR'`.
+
+It is not necessary to use this method before passing headers to an HTTP request
+or response. The HTTP module will automatically validate such headers.
+
+Examples:
+
+```js
+const { validateHeaderValue } = require('http');
+
+try {
+  validateHeaderValue('x-my-header', undefined);
+} catch (err) {
+  err instanceof TypeError; // --> true
+  err.code === 'ERR_HTTP_INVALID_HEADER_VALUE'; // --> true
+  err.message; // --> 'Invalid value "undefined" for header "x-my-header"'
+}
+
+try {
+  validateHeaderValue('x-my-header', 'oʊmɪɡə');
+} catch (err) {
+  err instanceof TypeError; // --> true
+  err.code === 'ERR_INVALID_CHAR'; // --> true
+  err.message; // --> 'Invalid character in header content ["x-my-header"]'
+}
+```
 
 [`--insecure-http-parser`]: cli.html#cli_insecure_http_parser
 [`--max-http-header-size`]: cli.html#cli_max_http_header_size_size

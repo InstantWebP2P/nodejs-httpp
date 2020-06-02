@@ -481,6 +481,9 @@ This behavior has been removed.
 ### DEP0020: `Server.connections`
 <!-- YAML
 changes:
+  - version: REPLACEME
+    pr-url: https://github.com/nodejs/node/pull/33647
+    description: Server.connections has been removed.
   - version:
     - v4.8.6
     - v6.12.0
@@ -491,10 +494,10 @@ changes:
     description: Runtime deprecation.
 -->
 
-Type: Runtime
+Type: End-of-life
 
-The [`Server.connections`][] property is deprecated. Please use the
-[`Server.getConnections()`][] method instead.
+The `Server.connections` property was deprecated in Node.js v0.9.7 and has
+been removed. Please use the [`Server.getConnections()`][] method instead.
 
 <a id="DEP0021"></a>
 ### DEP0021: `Server.listenFD`
@@ -1435,12 +1438,15 @@ an officially supported API.
 ### DEP0068: `node debug`
 <!-- YAML
 changes:
+  - version: REPLACEME
+    pr-url: https://github.com/nodejs/node/pull/33648
+    description: The legacy `node debug` command was removed.
   - version: v8.0.0
     pr-url: https://github.com/nodejs/node/pull/11441
     description: Runtime deprecation.
 -->
 
-Type: Runtime
+Type: End-of-life
 
 `node debug` corresponds to the legacy CLI debugger which has been replaced with
 a V8-inspector based CLI debugger available through `node inspect`.
@@ -1547,12 +1553,15 @@ code, no replacement API is provided.
 ### DEP0074: `REPLServer.bufferedCommand`
 <!-- YAML
 changes:
+  - version: REPLACEME
+    pr-url: https://github.com/nodejs/node/pull/33286
+    description: End-of-Life.
   - version: v9.0.0
     pr-url: https://github.com/nodejs/node/pull/13687
     description: Runtime deprecation.
 -->
 
-Type: Runtime
+Type: End-of-Life
 
 The `REPLServer.bufferedCommand` property was deprecated in favor of
 [`REPLServer.clearBufferedCommand()`][].
@@ -1561,12 +1570,15 @@ The `REPLServer.bufferedCommand` property was deprecated in favor of
 ### DEP0075: `REPLServer.parseREPLKeyword()`
 <!-- YAML
 changes:
+  - version: REPLACEME
+    pr-url: https://github.com/nodejs/node/pull/33286
+    description: End-of-Life.
   - version: v9.0.0
     pr-url: https://github.com/nodejs/node/pull/14223
     description: Runtime deprecation.
 -->
 
-Type: Runtime
+Type: End-of-Life
 
 `REPLServer.parseREPLKeyword()` was removed from userland visibility.
 
@@ -1595,7 +1607,7 @@ querystring.parse(str, '\n', '=');
 This function is not completely equivalent to `querystring.parse()`. One
 difference is that `querystring.parse()` does url decoding:
 
-```sh
+```console
 > querystring.parse('%E5%A5%BD=1', '\n', '=');
 { '好': '1' }
 > tls.parseCertString('%E5%A5%BD=1');
@@ -1622,12 +1634,15 @@ supported API.
 ### DEP0078: `REPLServer.turnOffEditorMode()`
 <!-- YAML
 changes:
+  - version: REPLACEME
+    pr-url: https://github.com/nodejs/node/pull/33286
+    description: End-of-Life.
   - version: v9.0.0
     pr-url: https://github.com/nodejs/node/pull/15136
     description: Runtime deprecation.
 -->
 
-Type: Runtime
+Type: End-of-Life
 
 `REPLServer.turnOffEditorMode()` was removed from userland visibility.
 
@@ -1687,12 +1702,15 @@ file descriptors.
 ### DEP0082: `REPLServer.prototype.memory()`
 <!-- YAML
 changes:
+  - version: REPLACEME
+    pr-url: https://github.com/nodejs/node/pull/33286
+    description: End-of-Life.
   - version: v9.0.0
     pr-url: https://github.com/nodejs/node/pull/16242
     description: Runtime deprecation.
 -->
 
-Type: Runtime
+Type: End-of-Life
 
 `REPLServer.prototype.memory()` is only necessary for the internal mechanics of
 the `REPLServer` itself. Do not use this function.
@@ -2385,12 +2403,15 @@ Setting the TLS ServerName to an IP address is not permitted by
 ### DEP0124: using `REPLServer.rli`
 <!-- YAML
 changes:
+  - version: REPLACEME
+    pr-url: https://github.com/nodejs/node/pull/33286
+    description: End-of-Life.
   - version: v12.0.0
     pr-url: https://github.com/nodejs/node/pull/26260
     description: Runtime deprecation.
 -->
 
-Type: Runtime
+Type: End-of-Life
 
 This property is a reference to the instance itself.
 
@@ -2668,6 +2689,68 @@ Type: Documentation-only
 
 Use [`request.destroy()`][] instead of [`request.abort()`][].
 
+<a id="DEP0141"></a>
+### DEP0141: `repl.inputStream` and `repl.outputStream`
+<!-- YAML
+changes:
+  - version: v14.3.0
+    pr-url: https://github.com/nodejs/node/pull/33294
+    description: Documentation-only (supports [`--pending-deprecation`][]).
+-->
+
+Type: Documentation-only (supports [`--pending-deprecation`][])
+
+The `repl` module exported the input and output stream twice. Use `.input`
+instead of `.inputStream` and `.output` instead of `.outputStream`.
+
+<a id="DEP0142"></a>
+### DEP0142: `repl._builtinLibs`
+<!-- YAML
+changes:
+  - version: v14.3.0
+    pr-url: https://github.com/nodejs/node/pull/33294
+    description: Documentation-only (supports [`--pending-deprecation`][]).
+-->
+
+Type: Documentation-only
+
+The `repl` module exports a `_builtinLibs` property that contains an array with
+native modules. It was incomplete so far and instead it's better to rely upon
+`require('module').builtinModules`.
+
+<a id="DEP0143"></a>
+### DEP0143: `module.parent`
+<!-- YAML
+changes:
+  - version: REPLACEME
+    pr-url: https://github.com/nodejs/node/pull/32217
+    description: Documentation-only deprecation.
+-->
+
+Type: Documentation-only (supports [`--pending-deprecation`][])
+
+A CommonJS module can access the first module that required it using
+`module.parent`. This feature is deprecated because it does not work
+consistently in the presence of ECMAScript modules and because it gives an
+inaccurate representation of the CommonJS module graph.
+
+Some modules use it to check if they are the entry point of the current process.
+Instead, it is recommended to compare `require.main` and `module`:
+
+```js
+if (require.main === module) {
+  // Code section that will run only if current file is the entry point.
+}
+```
+
+When looking for the CommonJS modules that have required the current one,
+`require.cache` and `module.children` can be used:
+
+```js
+const moduleParents = Object.values(require.cache)
+  .filter((m) => m.children.includes(module));
+```
+
 [`--pending-deprecation`]: cli.html#cli_pending_deprecation
 [`--throw-deprecation`]: cli.html#cli_throw_deprecation
 [`Buffer.allocUnsafeSlow(size)`]: buffer.html#buffer_class_method_buffer_allocunsafeslow_size
@@ -2679,7 +2762,6 @@ Use [`request.destroy()`][] instead of [`request.abort()`][].
 [`EventEmitter.listenerCount(emitter, eventName)`]: events.html#events_eventemitter_listenercount_emitter_eventname
 [`REPLServer.clearBufferedCommand()`]: repl.html#repl_replserver_clearbufferedcommand
 [`ReadStream.open()`]: fs.html#fs_class_fs_readstream
-[`Server.connections`]: net.html#net_server_connections
 [`Server.getConnections()`]: net.html#net_server_getconnections_callback
 [`Server.listen({fd: <number>})`]: net.html#net_server_listen_handle_backlog_callback
 [`SlowBuffer`]: buffer.html#buffer_class_slowbuffer

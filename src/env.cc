@@ -1,5 +1,5 @@
 #include "env.h"
-
+#include "allocated_buffer-inl.h"
 #include "async_wrap.h"
 #include "base_object-inl.h"
 #include "debug_utils-inl.h"
@@ -31,7 +31,6 @@ using v8::ArrayBuffer;
 using v8::Boolean;
 using v8::Context;
 using v8::EmbedderGraph;
-using v8::FinalizationGroup;
 using v8::Function;
 using v8::FunctionTemplate;
 using v8::HandleScope;
@@ -374,13 +373,6 @@ Environment::Environment(IsolateData* isolate_data,
   }
 
   destroy_async_id_list_.reserve(512);
-  BeforeExit(
-      [](void* arg) {
-        Environment* env = static_cast<Environment*>(arg);
-        if (!env->destroy_async_id_list()->empty())
-          AsyncWrap::DestroyAsyncIdsCallback(env);
-      },
-      this);
 
   performance_state_ =
       std::make_unique<performance::PerformanceState>(isolate());
@@ -523,7 +515,6 @@ void Environment::InitializeLibuv(bool start_profiler_idle_notifier) {
       [](uv_async_t* async) {
         Environment* env = ContainerOf(
             &Environment::task_queues_async_, async);
-        env->CleanupFinalizationGroups();
         env->RunAndClearNativeImmediates();
       });
   uv_unref(reinterpret_cast<uv_handle_t*>(&idle_prepare_handle_));
@@ -569,30 +560,15 @@ void Environment::RegisterHandleCleanups() {
     });
   };
 
-  RegisterHandleCleanup(
-      reinterpret_cast<uv_handle_t*>(timer_handle()),
-      close_and_finish,
-      nullptr);
-  RegisterHandleCleanup(
-      reinterpret_cast<uv_handle_t*>(immediate_check_handle()),
-      close_and_finish,
-      nullptr);
-  RegisterHandleCleanup(
-      reinterpret_cast<uv_handle_t*>(immediate_idle_handle()),
-      close_and_finish,
-      nullptr);
-  RegisterHandleCleanup(
-      reinterpret_cast<uv_handle_t*>(&idle_prepare_handle_),
-      close_and_finish,
-      nullptr);
-  RegisterHandleCleanup(
-      reinterpret_cast<uv_handle_t*>(&idle_check_handle_),
-      close_and_finish,
-      nullptr);
-  RegisterHandleCleanup(
-      reinterpret_cast<uv_handle_t*>(&task_queues_async_),
-      close_and_finish,
-      nullptr);
+  auto register_handle = [&](uv_handle_t* handle) {
+    RegisterHandleCleanup(handle, close_and_finish, nullptr);
+  };
+  register_handle(reinterpret_cast<uv_handle_t*>(timer_handle()));
+  register_handle(reinterpret_cast<uv_handle_t*>(immediate_check_handle()));
+  register_handle(reinterpret_cast<uv_handle_t*>(immediate_idle_handle()));
+  register_handle(reinterpret_cast<uv_handle_t*>(&idle_prepare_handle_));
+  register_handle(reinterpret_cast<uv_handle_t*>(&idle_check_handle_));
+  register_handle(reinterpret_cast<uv_handle_t*>(&task_queues_async_));
 }
 
 void Environment::CleanupHandles() {
@@ -604,7 +580,7 @@ void Environment::CleanupHandles() {
   Isolate::DisallowJavascriptExecutionScope disallow_js(isolate(),
       Isolate::DisallowJavascriptExecutionScope::THROW_ON_FAILURE);
 
-  RunAndClearNativeImmediates(true /* skip SetUnrefImmediate()s */);
+  RunAndClearNativeImmediates(true /* skip unrefed SetImmediate()s */);
 
   for (ReqWrapBase* request : req_wrap_queue_)
     request->Cancel();
@@ -694,19 +670,6 @@ void Environment::RunCleanup() {
   }
 }
 
-void Environment::RunBeforeExitCallbacks() {
-  TraceEventScope trace_scope(TRACING_CATEGORY_NODE1(environment),
-                              "BeforeExit", this);
-  for (ExitCallback before_exit : before_exit_functions_) {
-    before_exit.cb_(before_exit.arg_);
-  }
-  before_exit_functions_.clear();
-}
-
-void Environment::BeforeExit(void (*cb)(void* arg), void* arg) {
-  before_exit_functions_.push_back(ExitCallback{cb, arg});
-}
-
 void Environment::RunAtExitCallbacks() {
   TraceEventScope trace_scope(TRACING_CATEGORY_NODE1(environment),
                               "AtExit", this);
@@ -729,7 +692,7 @@ void Environment::RunAndClearInterrupts() {
     }
     DebugSealHandleScope seal_handle_scope(isolate());
 
-    while (std::unique_ptr<NativeImmediateCallback> head = queue.Shift())
+    while (auto head = queue.Shift())
       head->Call(this);
   }
 }
@@ -743,24 +706,15 @@ void Environment::RunAndClearNativeImmediates(bool only_refed) {
   // exceptions, so we do not need to handle that.
   RunAndClearInterrupts();
 
-  // It is safe to check .size() first, because there is a causal relationship
-  // between pushes to the threadsafe and this function being called.
-  // For the common case, it's worth checking the size first before establishing
-  // a mutex lock.
-  if (native_immediates_threadsafe_.size() > 0) {
-    Mutex::ScopedLock lock(native_immediates_threadsafe_mutex_);
-    native_immediates_.ConcatMove(std::move(native_immediates_threadsafe_));
-  }
-
-  auto drain_list = [&]() {
+  auto drain_list = [&](NativeImmediateQueue* queue) {
     TryCatchScope try_catch(this);
     DebugSealHandleScope seal_handle_scope(isolate());
-    while (std::unique_ptr<NativeImmediateCallback> head =
-               native_immediates_.Shift()) {
-      if (head->is_refed())
+    while (auto head = queue->Shift()) {
+      bool is_refed = head->flags() & CallbackFlags::kRefed;
+      if (is_refed)
         ref_count++;
 
-      if (head->is_refed() || !only_refed)
+      if (is_refed || !only_refed)
         head->Call(this);
 
       head.reset();  // Destroy now so that this is also observed by try_catch.
@@ -774,12 +728,26 @@ void Environment::RunAndClearNativeImmediates(bool only_refed) {
     }
     return false;
   };
-  while (drain_list()) {}
+  while (drain_list(&native_immediates_)) {}
 
   immediate_info()->ref_count_dec(ref_count);
 
   if (immediate_info()->ref_count() == 0)
     ToggleImmediateRef(false);
+
+  // It is safe to check .size() first, because there is a causal relationship
+  // between pushes to the threadsafe immediate list and this function being
+  // called. For the common case, it's worth checking the size first before
+  // establishing a mutex lock.
+  // This is intentionally placed after the `ref_count` handling, because when
+  // refed threadsafe immediates are created, they are not counted towards the
+  // count in immediate_info() either.
+  NativeImmediateQueue threadsafe_immediates;
+  if (native_immediates_threadsafe_.size() > 0) {
+    Mutex::ScopedLock lock(native_immediates_threadsafe_mutex_);
+    threadsafe_immediates.ConcatMove(std::move(native_immediates_threadsafe_));
+  }
+  while (drain_list(&threadsafe_immediates)) {}
 }
 
 void Environment::RequestInterruptFromV8() {
@@ -1136,47 +1104,8 @@ void Environment::MemoryInfo(MemoryTracker* tracker) const {
   // node, we shift its sizeof() size out of the Environment node.
 }
 
-char* Environment::Reallocate(char* data, size_t old_size, size_t size) {
-  if (old_size == size) return data;
-  // If we know that the allocator is our ArrayBufferAllocator, we can let
-  // if reallocate directly.
-  if (isolate_data()->uses_node_allocator()) {
-    return static_cast<char*>(
-        isolate_data()->node_allocator()->Reallocate(data, old_size, size));
-  }
-  // Generic allocators do not provide a reallocation method; we need to
-  // allocate a new chunk of memory and copy the data over.
-  char* new_data = AllocateUnchecked(size);
-  if (new_data == nullptr) return nullptr;
-  memcpy(new_data, data, std::min(size, old_size));
-  if (size > old_size)
-    memset(new_data + old_size, 0, size - old_size);
-  Free(data, old_size);
-  return new_data;
-}
-
 void Environment::RunWeakRefCleanup() {
   isolate()->ClearKeptObjects();
-}
-
-void Environment::CleanupFinalizationGroups() {
-  HandleScope handle_scope(isolate());
-  Context::Scope context_scope(context());
-  TryCatchScope try_catch(this);
-
-  while (!cleanup_finalization_groups_.empty() && can_call_into_js()) {
-    Local<FinalizationGroup> fg =
-        cleanup_finalization_groups_.front().Get(isolate());
-    cleanup_finalization_groups_.pop_front();
-    if (!FinalizationGroup::Cleanup(fg).FromMaybe(false)) {
-      if (try_catch.HasCaught() && !try_catch.HasTerminated())
-        errors::TriggerUncaughtException(isolate(), try_catch);
-      // Re-schedule the execution of the remainder of the queue.
-      CHECK(task_queues_async_initialized_);
-      uv_async_send(&task_queues_async_);
-      return;
-    }
-  }
 }
 
 // Not really any better place than env.cc at this moment.
