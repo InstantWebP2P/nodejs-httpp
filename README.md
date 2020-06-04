@@ -45,23 +45,15 @@
 
   building:
   
-    ./appbld ./configure --prefix=/appins
-    ./appbld make -j 6
-    ./appbld make install
+    ./appbld
     
   packaging and start Node.js REPL:
     
-    ./apppkg
+    ./appkg
     
 ### To build on other platforms
 
-Prerequisites (Unix only):
-
-    * Python 2.6 or 2.7
-    * GNU Make 3.81 or newer
-    * libexecinfo (FreeBSD and OpenBSD only)
-
-Unix/Macintosh:
+Unix/MacOs:
 
     ./configure
     make
