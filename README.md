@@ -1,4 +1,4 @@
-### nodejs-httpp - Run HTTP over UDP and Bring Web in Peer or P2P styles
+### nodejs-httpp - Run HTTP over UDT over UDP and Bring Web in Peer or P2P styles
 
 ![test-linux](https://github.com/InstantWebP2P/nodejs-httpp/workflows/test-linux/badge.svg?branch=v12.x-httpp)
 ![test-macOS](https://github.com/InstantWebP2P/nodejs-httpp/workflows/test-macOS/badge.svg?branch=v12.x-httpp)
@@ -11,7 +11,8 @@
 ### Features
 
 * Node.js v12.x API compatible
-* Run HTTP and HTTPS over UDP, taking UDP high performance
+* Support UDT(UDP transport) protocol
+* Run HTTP and HTTPS over UDT over UDP, taking UDP high performance
 * Support multi-process/thread UDP server by utilizing multi-cores' CPU
 * Configurable Congestion Control
 * Per-Socket network performance monitor
