@@ -1,4 +1,4 @@
-### nodejs-httpp - Run HTTP over UDT over UDP and Bring Web in Peer or P2P styles
+### nodejs-httpp - Run HTTP over UDP based transport and Bring Web in Peer or P2P styles
 
 ![test-linux](https://github.com/InstantWebP2P/nodejs-httpp/workflows/test-linux/badge.svg?branch=v12.x-httpp)
 ![test-macOS](https://github.com/InstantWebP2P/nodejs-httpp/workflows/test-macOS/badge.svg?branch=v12.x-httpp)
