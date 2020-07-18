@@ -11,7 +11,7 @@
 ### Features
 
 * Node.js v12.x API compatible
-* Support UDT(UDP transport) protocol
+* Support UDT(UDP-based transport) protocol
 * Run HTTP and HTTPS over UDT over UDP, taking UDP high performance
 * Support multi-process/thread UDP server by utilizing multi-cores' CPU
 * Configurable Congestion Control
