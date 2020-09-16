@@ -166,6 +166,7 @@
       'lib/internal/main/run_third_party_main.js',
       'lib/internal/main/worker_thread.js',
       'lib/internal/modules/run_main.js',
+      'lib/internal/modules/package_json_reader.js',
       'lib/internal/modules/cjs/helpers.js',
       'lib/internal/modules/cjs/loader.js',
       'lib/internal/modules/esm/loader.js',
@@ -582,7 +583,6 @@
         'src/node_contextify.cc',
         'src/node_credentials.cc',
         'src/node_dir.cc',
-        'src/node_domain.cc',
         'src/node_env_var.cc',
         'src/node_errors.cc',
         'src/node_file.cc',
@@ -652,6 +652,8 @@
         'src/base_object.h',
         'src/base_object-inl.h',
         'src/base64.h',
+        'src/callback_queue.h',
+        'src/callback_queue-inl.h',
         'src/connect_wrap.h',
         'src/connection_wrap.h',
         'src/debug_utils.h',
@@ -753,6 +755,7 @@
 
       'variables': {
         'openssl_system_ca_path%': '',
+        'openssl_default_cipher_list%': '',
       },
 
       'defines': [
@@ -769,6 +772,11 @@
       'msvs_disabled_warnings!': [4244],
 
       'conditions': [
+        [ 'openssl_default_cipher_list!=""', {
+          'defines': [
+            'NODE_OPENSSL_DEFAULT_CIPHER_LIST="<(openssl_default_cipher_list)"'
+           ]
+        }],
         [ 'node_builtin_modules_path!=""', {
           'defines': [ 'NODE_BUILTIN_MODULES_PATH="<(node_builtin_modules_path)"' ]
         }],
