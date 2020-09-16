@@ -16,14 +16,15 @@ using v8::Local;
 using v8::Locker;
 using v8::MaybeLocal;
 using v8::SealHandleScope;
-using v8::Value;
 using v8::V8;
+using v8::Value;
 
 static int RunNodeInstance(MultiIsolatePlatform* platform,
                            const std::vector<std::string>& args,
                            const std::vector<std::string>& exec_args);
 
 int main(int argc, char** argv) {
+  argv = uv_setup_args(argc, argv);
   std::vector<std::string> args(argv, argv + argc);
   std::vector<std::string> exec_args;
   std::vector<std::string> errors;
@@ -93,6 +94,7 @@ int RunNodeInstance(MultiIsolatePlatform* platform,
         "const publicRequire ="
         "  require('module').createRequire(process.cwd() + '/');"
         "globalThis.require = publicRequire;"
+        "globalThis.embedVars = { nön_ascıı: '🏳️‍🌈' };"
         "require('vm').runInThisContext(process.argv[1]);");
 
     if (loadenv_ret.IsEmpty())  // There has been a JS exception.

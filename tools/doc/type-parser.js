@@ -26,6 +26,9 @@ const customTypesMap = {
 
   'this': `${jsDocPrefix}Reference/Operators/this`,
 
+  'AbortController': 'globals.html#globals_class_abortcontroller',
+  'AbortSignal': 'globals.html#globals_class_abortsignal',
+
   'ArrayBufferView':
     'https://developer.mozilla.org/en-US/docs/Web/API/ArrayBufferView',
 
@@ -114,27 +117,32 @@ const customTypesMap = {
   'module': 'modules.html#modules_the_module_object',
 
   'module.SourceMap':
-    'modules.html#modules_class_module_sourcemap',
+    'modules_module.html#modules_module_class_module_sourcemap',
 
   'require': 'modules.html#modules_require_id',
 
   'Handle': 'net.html#net_server_listen_handle_backlog_callback',
+  'net.BlockList': 'net.html#net_class_net_blocklist',
   'net.Server': 'net.html#net_class_net_server',
   'net.Socket': 'net.html#net_class_net_socket',
 
   'NodeEventTarget':
-    'events.html#events_class_nodeeventtarget_extends_eventtarget',
+    'events.html#events_class_nodeeventtarget',
 
   'os.constants.dlopen': 'os.html#os_dlopen_constants',
 
   'Histogram': 'perf_hooks.html#perf_hooks_class_histogram',
   'PerformanceEntry': 'perf_hooks.html#perf_hooks_class_performanceentry',
   'PerformanceNodeTiming':
-    'perf_hooks.html#perf_hooks_class_performancenodetiming_extends_performanceentry', // eslint-disable-line max-len
+    'perf_hooks.html#perf_hooks_class_performancenodetiming',
   'PerformanceObserver':
     'perf_hooks.html#perf_hooks_class_perf_hooks_performanceobserver',
   'PerformanceObserverEntryList':
     'perf_hooks.html#perf_hooks_class_performanceobserverentrylist',
+  'QuicEndpoint': 'quic.html#quic_class_quicendpoint',
+  'QuicSession': 'quic.html#quic_class_quicserversession_extends_quicsession',
+  'QuicSocket': 'quic.html#quic_net_createquicsocket_options',
+  'QuicStream': 'quic.html#quic_class_quicstream_extends_stream_duplex',
 
   'readline.Interface': 'readline.html#readline_class_interface',
 

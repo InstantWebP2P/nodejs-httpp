@@ -4,6 +4,8 @@
 
 > Stability: 2 - Stable
 
+<!-- source_link=lib/url.js -->
+
 The `url` module provides utilities for URL resolution and parsing. It can be
 accessed using:
 
@@ -11,7 +13,7 @@ accessed using:
 const url = require('url');
 ```
 
-## URL Strings and URL Objects
+## URL strings and URL objects
 
 A URL string is a structured string containing multiple meaningful components.
 When parsed, a URL object is returned containing properties for each of these
@@ -89,7 +91,7 @@ using the `delete` keyword on any properties of `URL` objects (e.g. `delete
 myURL.protocol`, `delete myURL.pathname`, etc) has no effect but will still
 return `true`.
 
-#### Constructor: `new URL(input[, base])`
+#### `new URL(input[, base])`
 
 * `input` {string} The absolute or relative input URL to parse. If `input`
   is relative, then `base` is required. If `input` is absolute, the `base`
@@ -242,6 +244,13 @@ If the value assigned to the `href` property is not a valid URL, a `TypeError`
 will be thrown.
 
 #### `url.origin`
+<!-- YAML
+changes:
+  - version: REPLACEME
+    pr-url: https://github.com/nodejs/node/pull/33325
+    description: The scheme "gopher" is no longer special and `url.origin` now
+                 returns `'null'` for it.
+-->
 
 * {string}
 
@@ -305,6 +314,12 @@ to percent-encode may vary somewhat from what the [`url.parse()`][] and
 [`url.format()`][] methods would produce.
 
 #### `url.port`
+<!-- YAML
+changes:
+  - version: REPLACEME
+    pr-url: https://github.com/nodejs/node/pull/33325
+    description: The scheme "gopher" is no longer special.
+-->
 
 * {string}
 
@@ -322,7 +337,6 @@ the protocol/scheme:
 | -------- | ---- |
 | "ftp"    | 21   |
 | "file"   |      |
-| "gopher" | 70   |
 | "http"   | 80   |
 | "https"  | 443  |
 | "ws"     | 80   |
@@ -406,7 +420,13 @@ console.log(myURL.href);
 
 Invalid URL protocol values assigned to the `protocol` property are ignored.
 
-##### Special Schemes
+##### Special schemes
+<!-- YAML
+changes:
+  - version: REPLACEME
+    pr-url: https://github.com/nodejs/node/pull/33325
+    description: The scheme "gopher" is no longer special.
+-->
 
 The [WHATWG URL Standard][] considers a handful of URL protocol schemes to be
 _special_ in terms of how they are parsed and serialized. When a URL is
@@ -444,7 +464,7 @@ console.log(u.href);
 ```
 
 According to the WHATWG URL Standard, special protocol schemes are `ftp`,
-`file`, `gopher`, `http`, `https`, `ws`, and `wss`.
+`file`, `http`, `https`, `ws`, and `wss`.
 
 #### `url.search`
 
@@ -600,11 +620,11 @@ console.log(myURL.href);
 // Prints https://example.org/?a=b&a=c
 ```
 
-#### Constructor: `new URLSearchParams()`
+#### `new URLSearchParams()`
 
 Instantiate a new empty `URLSearchParams` object.
 
-#### Constructor: `new URLSearchParams(string)`
+#### `new URLSearchParams(string)`
 
 * `string` {string} A query string
 
@@ -625,7 +645,7 @@ console.log(params.toString());
 // Prints 'user=abc&query=xyz'
 ```
 
-#### Constructor: `new URLSearchParams(obj)`
+#### `new URLSearchParams(obj)`
 <!-- YAML
 added:
   - v7.10.0
@@ -652,7 +672,7 @@ console.log(params.toString());
 // Prints 'user=abc&query=first%2Csecond'
 ```
 
-#### Constructor: `new URLSearchParams(iterable)`
+#### `new URLSearchParams(iterable)`
 <!-- YAML
 added:
   - v7.10.0
@@ -1004,8 +1024,9 @@ pathToFileURL('/some/path%.c');    // Correct:   file:///some/path%25.c (POSIX)
 ```
 
 ## Legacy URL API
-
-> Stability: 0 - Deprecated: Use the WHATWG URL API instead.
+<!-- YAML
+deprecated: v11.0.0
+-->
 
 ### Legacy `urlObject`
 <!-- YAML
@@ -1014,6 +1035,8 @@ changes:
     pr-url: https://github.com/nodejs/node/pull/22715
     description: The Legacy URL API is deprecated. Use the WHATWG URL API.
 -->
+
+> Stability: 0 - Deprecated: Use the WHATWG URL API instead.
 
 The legacy `urlObject` (`require('url').Url`) is created and returned by the
 `url.parse()` function.
@@ -1125,10 +1148,12 @@ changes:
   - version: v7.0.0
     pr-url: https://github.com/nodejs/node/pull/7234
     description: URLs with a `file:` scheme will now always use the correct
-                 number of slashes regardless of `slashes` option. A false-y
+                 number of slashes regardless of `slashes` option. A falsy
                  `slashes` option with no protocol is now also respected at all
                  times.
 -->
+
+> Stability: 0 - Deprecated: Use the WHATWG URL API instead.
 
 * `urlObject` {Object|string} A URL object (as returned by `url.parse()` or
   constructed otherwise). If a string, it is converted to an object by passing
@@ -1224,6 +1249,8 @@ changes:
                  when no query string is present.
 -->
 
+> Stability: 0 - Deprecated: Use the WHATWG URL API instead.
+
 * `urlString` {string} The URL string to parse.
 * `parseQueryString` {boolean} If `true`, the `query` property will always
   be set to an object returned by the [`querystring`][] module's `parse()`
@@ -1241,6 +1268,12 @@ object.
 A `TypeError` is thrown if `urlString` is not a string.
 
 A `URIError` is thrown if the `auth` property is present but cannot be decoded.
+
+Use of the legacy `url.parse()` method is discouraged. Users should
+use the WHATWG `URL` API. Because the `url.parse()` method uses a
+lenient, non-standard algorithm for parsing URL strings, security
+issues can be introduced. Specifically, issues with [host name spoofing][] and
+incorrect handling of usernames and passwords have been identified.
 
 ### `url.resolve(from, to)`
 <!-- YAML
@@ -1262,6 +1295,8 @@ changes:
                  contains a hostname.
 -->
 
+> Stability: 0 - Deprecated: Use the WHATWG URL API instead.
+
 * `from` {string} The Base URL being resolved against.
 * `to` {string} The HREF URL being resolved.
 
@@ -1276,7 +1311,7 @@ url.resolve('http://example.com/one', '/two'); // 'http://example.com/two'
 ```
 
 <a id="whatwg-percent-encoding"></a>
-## Percent-Encoding in URLs
+## Percent-encoding in URLs
 
 URLs are permitted to only contain a certain range of characters. Any character
 falling outside of that range must be encoded. How such characters are encoded,
@@ -1341,7 +1376,7 @@ console.log(myURL.origin);
 [`TypeError`]: errors.html#errors_class_typeerror
 [`URLSearchParams`]: #url_class_urlsearchparams
 [`array.toString()`]: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Array/toString
-[`new URL()`]: #url_constructor_new_url_input_base
+[`new URL()`]: #url_new_url_input_base
 [`querystring`]: querystring.html
 [`require('url').format()`]: #url_url_format_url_options
 [`url.domainToASCII()`]: #url_url_domaintoascii_domain
@@ -1359,6 +1394,7 @@ console.log(myURL.origin);
 [WHATWG URL Standard]: https://url.spec.whatwg.org/
 [WHATWG URL]: #url_the_whatwg_url_api
 [examples of parsed URLs]: https://url.spec.whatwg.org/#example-url-parsing
+[host name spoofing]: https://hackerone.com/reports/678487
 [legacy `urlObject`]: #url_legacy_urlobject
 [percent-encoded]: #whatwg-percent-encoding
 [stable sorting algorithm]: https://en.wikipedia.org/wiki/Sorting_algorithm#Stability

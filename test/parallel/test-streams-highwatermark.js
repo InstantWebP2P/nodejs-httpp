@@ -3,6 +3,7 @@ const common = require('../common');
 
 const assert = require('assert');
 const stream = require('stream');
+const { inspect } = require('util');
 
 {
   // This test ensures that the stream implementation correctly handles values
@@ -25,9 +26,9 @@ const stream = require('stream');
         type({ highWaterMark: invalidHwm });
       }, {
         name: 'TypeError',
-        code: 'ERR_INVALID_OPT_VALUE',
-        message:
-          `The value "${invalidHwm}" is invalid for option "highWaterMark"`
+        code: 'ERR_INVALID_ARG_VALUE',
+        message: "The property 'options.highWaterMark' is invalid. " +
+          `Received ${inspect(invalidHwm)}`
       });
     }
   }

@@ -51,6 +51,7 @@ namespace node {
   V(HTTPINCOMINGMESSAGE)                                                      \
   V(HTTPCLIENTREQUEST)                                                        \
   V(JSSTREAM)                                                                 \
+  V(JSUDPWRAP)                                                                \
   V(MESSAGEPORT)                                                              \
   V(PIPECONNECTWRAP)                                                          \
   V(PIPESERVERWRAP)                                                           \
@@ -58,6 +59,12 @@ namespace node {
   V(PROCESSWRAP)                                                              \
   V(PROMISE)                                                                  \
   V(QUERYWRAP)                                                                \
+  V(QLOGSTREAM)                                                               \
+  V(QUICCLIENTSESSION)                                                        \
+  V(QUICSERVERSESSION)                                                        \
+  V(QUICSENDWRAP)                                                             \
+  V(QUICSOCKET)                                                               \
+  V(QUICSTREAM)                                                               \
   V(SHUTDOWNWRAP)                                                             \
   V(SIGNALWRAP)                                                               \
   V(STATWATCHER)                                                              \
@@ -99,6 +106,7 @@ namespace node {
 
 class Environment;
 class DestroyParam;
+class ExternalReferenceRegistry;
 
 class AsyncWrap : public BaseObject {
  public:
@@ -128,6 +136,7 @@ class AsyncWrap : public BaseObject {
   static v8::Local<v8::FunctionTemplate> GetConstructorTemplate(
       Environment* env);
 
+  static void RegisterExternalReferences(ExternalReferenceRegistry* registry);
   static void Initialize(v8::Local<v8::Object> target,
                          v8::Local<v8::Value> unused,
                          v8::Local<v8::Context> context,
@@ -136,9 +145,15 @@ class AsyncWrap : public BaseObject {
   static void GetAsyncId(const v8::FunctionCallbackInfo<v8::Value>& args);
   static void PushAsyncContext(const v8::FunctionCallbackInfo<v8::Value>& args);
   static void PopAsyncContext(const v8::FunctionCallbackInfo<v8::Value>& args);
+  static void ExecutionAsyncResource(
+      const v8::FunctionCallbackInfo<v8::Value>& args);
+  static void ClearAsyncIdStack(
+      const v8::FunctionCallbackInfo<v8::Value>& args);
   static void AsyncReset(const v8::FunctionCallbackInfo<v8::Value>& args);
   static void GetProviderType(const v8::FunctionCallbackInfo<v8::Value>& args);
   static void QueueDestroyAsyncId(
+    const v8::FunctionCallbackInfo<v8::Value>& args);
+  static void SetCallbackTrampoline(
     const v8::FunctionCallbackInfo<v8::Value>& args);
 
   static void EmitAsyncInit(Environment* env,

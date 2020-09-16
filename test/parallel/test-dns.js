@@ -218,9 +218,9 @@ assert.deepStrictEqual(dns.getServers(), []);
   */
   const hints = (dns.V4MAPPED | dns.ADDRCONFIG | dns.ALL) + 1;
   const err = {
-    code: 'ERR_INVALID_OPT_VALUE',
+    code: 'ERR_INVALID_ARG_VALUE',
     name: 'TypeError',
-    message: /The value "\d+" is invalid for option "hints"/
+    message: /The argument 'hints' is invalid\. Received \d+/
   };
 
   assert.throws(() => {
@@ -276,7 +276,7 @@ dns.lookup('', {
   await dnsPromises.lookup('', {
     hints: dns.ADDRCONFIG | dns.V4MAPPED | dns.ALL
   });
-})();
+})().then(common.mustCall());
 
 {
   const err = {
@@ -294,9 +294,9 @@ dns.lookup('', {
 {
   const invalidAddress = 'fasdfdsaf';
   const err = {
-    code: 'ERR_INVALID_OPT_VALUE',
+    code: 'ERR_INVALID_ARG_VALUE',
     name: 'TypeError',
-    message: `The value "${invalidAddress}" is invalid for option "address"`
+    message: `The argument 'address' is invalid. Received '${invalidAddress}'`
   };
 
   assert.throws(() => {
@@ -450,7 +450,7 @@ assert.throws(() => {
         cases.shift();
         nextCase();
       }));
-    })();
+    })().then(common.mustCall());
 
   }));
 }

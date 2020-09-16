@@ -1,6 +1,12 @@
 name: linters
 
-on: [push, pull_request]
+on:
+  pull_request:
+  push:
+    branches:
+      - master
+      - v[0-9]+.x-staging
+      - v[0-9]+.x
 
 env:
   PYTHON_VERSION: 3.8
@@ -71,3 +77,11 @@ jobs:
         run: |
           make lint-py-build || true
           NODE=$(which node) make lint-py
+
+  lint-codeowners:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - uses: mszostok/codeowners-validator@v0.4.0
+        with:
+          checks: "files,duppatterns"

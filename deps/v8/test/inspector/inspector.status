@@ -14,15 +14,12 @@
 
   # https://crbug.com/v8/9029
   'debugger/script-on-after-compile-snapshot': [SKIP],
-}],  # ALWAYS
 
-##############################################################################
-['variant == future', {
   # https://crbug.com/v8/10356
   # This test worked in the wasm interpreter, but fails when using Liftoff for
   # debugging.
   'debugger/wasm-anyref-global': [FAIL],
-}],
+}],  # ALWAYS
 
 ##############################################################################
 ['system == android', {
@@ -36,6 +33,7 @@
   'debugger/eval-scopes': [PASS, FAIL],
   'debugger/scope-skip-variables-with-empty-name': [PASS, FAIL],
   'debugger/update-call-frame-scopes': [PASS, FAIL],
+  'debugger/side-effect-free-coverage-enabled': [PASS, FAIL],
   'debugger/side-effect-free-debug-evaluate': [PASS, FAIL],
   'debugger/evaluate-on-call-frame-in-module': [PASS, FAIL],
 }],  # variant != default
@@ -78,11 +76,7 @@
 ##############################################################################
 ['arch == ppc or arch == ppc64', {
   # Liftoff needs to be enabled before running these tests.
-  'debugger/wasm-scope-info': [SKIP],
-  'debugger/wasm-scope-info-liftoff': [SKIP],
-  'debugger/wasm-set-breakpoint-liftoff': [SKIP],
-  'debugger/wasm-stepping-liftoff': [SKIP],
-  'debugger/wasm-inspect-many-registers': [SKIP],
+  'debugger/wasm-*': [SKIP],
 }],  # 'arch == ppc or arch == ppc64'
 
 ##############################################################################
@@ -90,13 +84,12 @@
   # Stack manipulations in LiveEdit is not implemented for this arch.
   'debugger/set-script-source-stack-padding': [SKIP],
   # Liftoff needs to be enabled before running these tests.
-  'debugger/wasm-scope-info': [SKIP],
-  'debugger/wasm-scope-info-liftoff': [SKIP],
-  'debugger/wasm-set-breakpoint-liftoff': [SKIP],
-  'debugger/wasm-stepping-liftoff': [SKIP],
-  'debugger/wasm-inspect-many-registers': [SKIP],
+  'debugger/wasm-*': [SKIP],
 }],  # 'arch == s390 or arch == s390x'
 
-##############################################################################
+################################################################################
+['variant == stress_snapshot', {
+  '*': [SKIP],  # only relevant for mjsunit tests.
+}],
 
 ]

@@ -1,5 +1,6 @@
 {
   'variables': {
+    'experimental_quic': 'false',
     'v8_use_siphash%': 0,
     'v8_trace_maps%': 0,
     'v8_enable_pointer_compression%': 0,
@@ -12,6 +13,7 @@
     'node_use_bundled_v8%': 'true',
     'node_shared%': 'false',
     'force_dynamic_crt%': 0,
+    'ossfuzz' : 'false',
     'node_module_version%': '',
     'node_shared_brotli%': 'false',
     'node_shared_zlib%': 'false',
@@ -19,6 +21,8 @@
     'node_shared_cares%': 'false',
     'node_shared_libuv%': 'false',
     'node_shared_nghttp2%': 'false',
+    'node_shared_ngtcp2%': 'false',
+    'node_shared_nghttp3%': 'false',
     'node_use_openssl%': 'true',
     'node_shared_openssl%': 'false',
     'node_v8_options%': '',
@@ -40,6 +44,7 @@
       'lib/internal/per_context/messageport.js',
       'lib/async_hooks.js',
       'lib/assert.js',
+      'lib/assert/strict.js',
       'lib/buffer.js',
       'lib/child_process.js',
       'lib/console.js',
@@ -74,6 +79,7 @@
       'lib/readline.js',
       'lib/repl.js',
       'lib/stream.js',
+      'lib/stream/promises.js',
       'lib/_stream_readable.js',
       'lib/_stream_writable.js',
       'lib/_stream_duplex.js',
@@ -82,6 +88,7 @@
       'lib/_stream_wrap.js',
       'lib/string_decoder.js',
       'lib/sys.js',
+      'lib/timers/promises.js',
       'lib/timers.js',
       'lib/tls.js',
       'lib/_tls_common.js',
@@ -95,10 +102,12 @@
       'lib/wasi.js',
       'lib/worker_threads.js',
       'lib/zlib.js',
+      'lib/internal/abort_controller.js',
       'lib/internal/assert.js',
       'lib/internal/assert/assertion_error.js',
       'lib/internal/assert/calltracker.js',
       'lib/internal/async_hooks.js',
+      'lib/internal/blocklist.js',
       'lib/internal/buffer.js',
       'lib/internal/cli_table.js',
       'lib/internal/child_process.js',
@@ -129,7 +138,7 @@
       'lib/internal/dtrace.js',
       'lib/internal/encoding.js',
       'lib/internal/errors.js',
-      'lib/internal/error-serdes.js',
+      'lib/internal/error_serdes.js',
       'lib/internal/event_target.js',
       'lib/internal/fixed_queue.js',
       'lib/internal/freelist.js',
@@ -157,7 +166,6 @@
       'lib/internal/main/prof_process.js',
       'lib/internal/main/repl.js',
       'lib/internal/main/run_main_module.js',
-      'lib/internal/main/run_third_party_main.js',
       'lib/internal/main/worker_thread.js',
       'lib/internal/modules/run_main.js',
       'lib/internal/modules/package_json_reader.js',
@@ -189,6 +197,8 @@
       'lib/internal/process/task_queues.js',
       'lib/internal/querystring.js',
       'lib/internal/readline/utils.js',
+      'lib/internal/quic/core.js',
+      'lib/internal/quic/util.js',
       'lib/internal/repl.js',
       'lib/internal/repl/await.js',
       'lib/internal/repl/history.js',
@@ -219,9 +229,9 @@
       'lib/internal/vm/module.js',
       'lib/internal/worker.js',
       'lib/internal/worker/io.js',
+      'lib/internal/worker/js_transferable.js',
       'lib/internal/watchdog.js',
       'lib/internal/streams/lazy_transform.js',
-      'lib/internal/streams/async_iterator.js',
       'lib/internal/streams/buffer_list.js',
       'lib/internal/streams/duplexpair.js',
       'lib/internal/streams/from.js',
@@ -572,6 +582,7 @@
         'src/js_native_api_v8_internals.h',
         'src/js_stream.cc',
         'src/json_utils.cc',
+        'src/js_udp_wrap.cc',
         'src/module_wrap.cc',
         'src/node.cc',
         'src/node_api.cc',
@@ -582,9 +593,9 @@
         'src/node_contextify.cc',
         'src/node_credentials.cc',
         'src/node_dir.cc',
-        'src/node_domain.cc',
         'src/node_env_var.cc',
         'src/node_errors.cc',
+        'src/node_external_reference.cc',
         'src/node_file.cc',
         'src/node_http_parser.cc',
         'src/node_http2.cc',
@@ -630,6 +641,7 @@
         'src/string_decoder.cc',
         'src/tcp_wrap.cc',
         'src/timers.cc',
+        'src/timer_wrap.cc',
         'src/tracing/agent.cc',
         'src/tracing/node_trace_buffer.cc',
         'src/tracing/node_trace_writer.cc',
@@ -678,6 +690,7 @@
         'src/node_contextify.h',
         'src/node_dir.h',
         'src/node_errors.h',
+        'src/node_external_reference.h',
         'src/node_file.h',
         'src/node_file-inl.h',
         'src/node_http_common.h',
@@ -733,6 +746,7 @@
         'src/tracing/trace_event.h',
         'src/tracing/trace_event_common.h',
         'src/tracing/traced_value.h',
+        'src/timer_wrap.h',
         'src/tty_wrap.h',
         'src/udp_wrap.h',
         'src/util.h',
@@ -747,6 +761,7 @@
 
       'variables': {
         'openssl_system_ca_path%': '',
+        'openssl_default_cipher_list%': '',
       },
 
       'defines': [
@@ -763,6 +778,11 @@
       'msvs_disabled_warnings!': [4244],
 
       'conditions': [
+        [ 'openssl_default_cipher_list!=""', {
+          'defines': [
+            'NODE_OPENSSL_DEFAULT_CIPHER_LIST="<(openssl_default_cipher_list)"'
+           ]
+        }],
         [ 'error_on_warn=="true"', {
           'cflags': ['-Werror'],
           'xcode_settings': {
@@ -893,6 +913,38 @@
           'target_arch=="x64" and '
           'node_target_type=="executable"', {
           'defines': [ 'NODE_ENABLE_LARGE_CODE_PAGES=1' ],
+        }],
+        [
+          # We can only use QUIC if using our modified, static linked
+          # OpenSSL because we have patched in the QUIC support.
+          'node_use_openssl=="true" and node_shared_openssl=="false" and experimental_quic==1', {
+          'defines': ['NODE_EXPERIMENTAL_QUIC=1'],
+          'sources': [
+            'src/node_bob.h',
+            'src/node_bob-inl.h',
+            'src/quic/node_quic_buffer.h',
+            'src/quic/node_quic_buffer-inl.h',
+            'src/quic/node_quic_crypto.h',
+            'src/quic/node_quic_session.h',
+            'src/quic/node_quic_session-inl.h',
+            'src/quic/node_quic_socket.h',
+            'src/quic/node_quic_socket-inl.h',
+            'src/quic/node_quic_stream.h',
+            'src/quic/node_quic_stream-inl.h',
+            'src/quic/node_quic_util.h',
+            'src/quic/node_quic_util-inl.h',
+            'src/quic/node_quic_state.h',
+            'src/quic/node_quic_default_application.h',
+            'src/quic/node_quic_http3_application.h',
+            'src/quic/node_quic_buffer.cc',
+            'src/quic/node_quic_crypto.cc',
+            'src/quic/node_quic_session.cc',
+            'src/quic/node_quic_socket.cc',
+            'src/quic/node_quic_stream.cc',
+            'src/quic/node_quic.cc',
+            'src/quic/node_quic_default_application.cc',
+            'src/quic/node_quic_http3_application.cc'
+          ]
         }],
         [ 'use_openssl_def==1', {
           # TODO(bnoordhuis) Make all platforms export the same list of symbols.
@@ -1118,6 +1170,38 @@
         } ],
       ]
     }, # specialize_node_d
+    { # fuzz_url
+      'target_name': 'fuzz_url',
+      'type': 'executable',
+      'dependencies': [
+        '<(node_lib_target_name)',
+      ],
+      'includes': [
+        'node.gypi'
+      ],
+      'include_dirs': [
+        'src',
+      ],
+      'defines': [
+        'NODE_ARCH="<(target_arch)"',
+        'NODE_PLATFORM="<(OS)"',
+        'NODE_WANT_INTERNALS=1',
+      ],
+      'sources': [
+        'src/node_snapshot_stub.cc',
+        'src/node_code_cache_stub.cc',
+        'test/fuzzers/fuzz_url.cc',
+      ],
+      'conditions': [
+        ['OS=="linux"', {
+          'ldflags': [ '-fsanitize=fuzzer' ]
+        }],
+        # Ensure that ossfuzz flag has been set and that we are on Linux
+        [ 'OS!="linux" or ossfuzz!="true"', {
+          'type': 'none',
+        }],
+      ],
+    }, # fuzz_url
     {
       'target_name': 'cctest',
       'type': 'executable',
@@ -1178,6 +1262,15 @@
           'defines': [
             'HAVE_OPENSSL=1',
           ],
+        }],
+        [ 'node_use_openssl=="true" and experimental_quic==1', {
+          'defines': [
+            'NODE_EXPERIMENTAL_QUIC=1',
+          ],
+          'sources': [
+            'test/cctest/test_quic_buffer.cc',
+            'test/cctest/test_quic_cid.cc'
+          ]
         }],
         ['v8_enable_inspector==1', {
           'sources': [
@@ -1316,6 +1409,11 @@
             'HAVE_OPENSSL=1',
           ],
         }],
+        [ 'node_use_openssl=="true" and experimental_quic==1', {
+          'defines': [
+            'NODE_EXPERIMENTAL_QUIC=1',
+          ],
+        }],
         ['v8_enable_inspector==1', {
           'defines': [
             'HAVE_INSPECTOR=1',
@@ -1368,6 +1466,11 @@
         [ 'node_use_openssl=="true"', {
           'defines': [
             'HAVE_OPENSSL=1',
+          ],
+        }],
+        [ 'node_use_openssl=="true" and experimental_quic==1', {
+          'defines': [
+            'NODE_EXPERIMENTAL_QUIC=1',
           ],
         }],
         ['v8_enable_inspector==1', {

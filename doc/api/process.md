@@ -3,6 +3,8 @@
 <!-- introduced_in=v0.10.0 -->
 <!-- type=global -->
 
+<!-- source_link=lib/process.js -->
+
 The `process` object is a `global` that provides information about, and control
 over, the current Node.js process. As a global, it is always available to
 Node.js applications without using `require()`. It can also be explicitly
@@ -12,7 +14,7 @@ accessed using `require()`:
 const process = require('process');
 ```
 
-## Process Events
+## Process events
 
 The `process` object is an instance of [`EventEmitter`][].
 
@@ -122,7 +124,7 @@ not be the same as what is originally sent.
 If the `serialization` option was set to `advanced` used when spawning the
 process, the `message` argument can contain data that JSON is not able
 to represent.
-See [Advanced Serialization for `child_process`][] for more details.
+See [Advanced serialization for `child_process`][] for more details.
 
 ### Event: `'multipleResolves'`
 <!-- YAML
@@ -457,7 +459,7 @@ The `*-deprecation` command line flags only affect warnings that use the name
 See the [`process.emitWarning()`][process_emit_warning] method for issuing
 custom or application-specific warnings.
 
-### Signal Events
+### Signal events
 
 <!--type=event-->
 <!--name=SIGINT, SIGHUP, etc.-->
@@ -558,7 +560,7 @@ environment variable.
 
 `process.allowedNodeEnvironmentFlags` extends `Set`, but overrides
 `Set.prototype.has` to recognize several different possible flag
-representations.  `process.allowedNodeEnvironmentFlags.has()` will
+representations. `process.allowedNodeEnvironmentFlags.has()` will
 return `true` in the following cases:
 
 * Flags may omit leading single (`-`) or double (`--`) dashes; e.g.,
@@ -1770,19 +1772,22 @@ tarball.
   builds of Node.js and will be missing on all other platforms._
 * `lts` {string} a string label identifying the [LTS][] label for this release.
   This property only exists for LTS releases and is `undefined` for all other
-  release types, including _Current_ releases. Currently the valid values are:
-  * `'Argon'` for the 4.x LTS line beginning with 4.2.0.
-  * `'Boron'` for the 6.x LTS line beginning with 6.9.0.
-  * `'Carbon'` for the 8.x LTS line beginning with 8.9.1.
+  release types, including _Current_ releases.
+  Valid values include the LTS Release Codenames (including those
+  that are no longer supported). A non-exhaustive example of
+  these codenames includes:
+  * `'Dubnium'` for the 10.x LTS line beginning with 10.13.0.
+  * `'Erbium'` for the 12.x LTS line beginning with 12.13.0.
+  For other LTS Release Codenames, see [Node.js Changelog Archive](https://github.com/nodejs/node/blob/master/doc/changelogs/CHANGELOG_ARCHIVE.md)
 
 <!-- eslint-skip -->
 ```js
 {
   name: 'node',
-  lts: 'Argon',
-  sourceUrl: 'https://nodejs.org/download/release/v4.4.5/node-v4.4.5.tar.gz',
-  headersUrl: 'https://nodejs.org/download/release/v4.4.5/node-v4.4.5-headers.tar.gz',
-  libUrl: 'https://nodejs.org/download/release/v4.4.5/win-x64/node.lib'
+  lts: 'Erbium',
+  sourceUrl: 'https://nodejs.org/download/release/v12.18.1/node-v12.18.1.tar.gz',
+  headersUrl: 'https://nodejs.org/download/release/v12.18.1/node-v12.18.1-headers.tar.gz',
+  libUrl: 'https://nodejs.org/download/release/v12.18.1/win-x64/node.lib'
 }
 ```
 
@@ -1798,7 +1803,7 @@ changes:
      - v13.12.0
      - v12.17.0
     pr-url: https://github.com/nodejs/node/pull/32242
-    description: This API is no longer considered experimental.
+    description: This API is no longer experimental.
 -->
 
 * {Object}
@@ -1832,7 +1837,7 @@ changes:
      - v13.12.0
      - v12.17.0
     pr-url: https://github.com/nodejs/node/pull/32242
-    description: This API is no longer considered experimental.
+    description: This API is no longer experimental.
 -->
 
 * {string}
@@ -1853,7 +1858,7 @@ changes:
      - v13.12.0
      - v12.17.0
     pr-url: https://github.com/nodejs/node/pull/32242
-    description: This API is no longer considered experimental.
+    description: This API is no longer experimental.
 -->
 
 * {string}
@@ -1874,7 +1879,7 @@ changes:
      - v13.12.0
      - v12.17.0
     pr-url: https://github.com/nodejs/node/pull/32242
-    description: This API is no longer considered experimental.
+    description: This API is no longer experimental.
 -->
 
 * `err` {Error} A custom error used for reporting the JavaScript stack.
@@ -1919,7 +1924,7 @@ changes:
      - v13.12.0
      - v12.17.0
     pr-url: https://github.com/nodejs/node/pull/32242
-    description: This API is no longer considered experimental.
+    description: This API is no longer experimental.
 -->
 
 * {boolean}
@@ -1939,7 +1944,7 @@ changes:
      - v13.12.0
      - v12.17.0
     pr-url: https://github.com/nodejs/node/pull/32242
-    description: This API is no longer considered experimental.
+    description: This API is no longer experimental.
 -->
 
 * {boolean}
@@ -1958,7 +1963,7 @@ changes:
      - v13.12.0
      - v12.17.0
     pr-url: https://github.com/nodejs/node/pull/32242
-    description: This API is no longer considered experimental.
+    description: This API is no longer experimental.
 -->
 
 * {string}
@@ -1978,7 +1983,7 @@ changes:
      - v13.12.0
      - v12.17.0
     pr-url: https://github.com/nodejs/node/pull/32242
-    description: This API is no longer considered experimental.
+    description: This API is no longer experimental.
 -->
 
 * `filename` {string} Name of the file where the report is written. This
@@ -2279,21 +2284,7 @@ The `process.stdin` property returns a stream connected to
 stream) unless fd `0` refers to a file, in which case it is
 a [Readable][] stream.
 
-```js
-process.stdin.setEncoding('utf8');
-
-process.stdin.on('readable', () => {
-  let chunk;
-  // Use a loop to make sure we read all available data.
-  while ((chunk = process.stdin.read()) !== null) {
-    process.stdout.write(`data: ${chunk}`);
-  }
-});
-
-process.stdin.on('end', () => {
-  process.stdout.write('end');
-});
-```
+For details of how to read from `stdin` see [`readable.read()`][].
 
 As a [Duplex][] stream, `process.stdin` can also be used in "old" mode that
 is compatible with scripts written for Node.js prior to v0.10.
@@ -2435,6 +2426,10 @@ allowed for longer process title strings by also overwriting the `environ`
 memory but that was potentially insecure and confusing in some (rather obscure)
 cases.
 
+Assigning a value to `process.title` might not result in an accurate label
+within process manager applications such as macOS Activity Monitor or Windows
+Services Manager.
+
 ## `process.traceDeprecation`
 <!-- YAML
 added: v0.8.0
@@ -2506,11 +2501,15 @@ added: v0.1.3
 
 * {string}
 
-The `process.version` property returns the Node.js version string.
+The `process.version` property contains the Node.js version string.
 
 ```js
 console.log(`Version: ${process.version}`);
+// Version: v14.8.0
 ```
+
+To get the version string without the prepended _v_, use
+`process.versions.node`.
 
 ## `process.versions`
 <!-- YAML
@@ -2555,7 +2554,7 @@ Will generate an object similar to:
   unicode: '11.0' }
 ```
 
-## Exit Codes
+## Exit codes
 
 Node.js will normally exit with a `0` status code when no more async
 operations are pending. The following status codes are used in other
@@ -2594,6 +2593,8 @@ cases:
   and generally can only happen during development of Node.js itself.
 * `12` **Invalid Debug Argument**: The `--inspect` and/or `--inspect-brk`
   options were set, but the port number chosen was invalid or unavailable.
+* `13` **Unfinished Top-Level Await**: `await` was used outside of a function
+  in the top-level code, but the passed `Promise` never resolved.
 * `>128` **Signal Exits**: If Node.js receives a fatal signal such as
   `SIGKILL` or `SIGHUP`, then its exit code will be `128` plus the
   value of the signal code. This is a standard POSIX practice, since
@@ -2636,7 +2637,7 @@ cases:
 [`require.resolve()`]: modules.html#modules_require_resolve_request_options
 [`subprocess.kill()`]: child_process.html#child_process_subprocess_kill_signal
 [`v8.setFlagsFromString()`]: v8.html#v8_v8_setflagsfromstring_flags
-[Advanced Serialization for `child_process`]: child_process.html#child_process_advanced_serialization
+[Advanced serialization for `child_process`]: child_process.html#child_process_advanced_serialization
 [Android building]: https://github.com/nodejs/node/blob/master/BUILDING.md#androidandroid-based-devices-eg-firefox-os
 [Child Process]: child_process.html
 [Cluster]: cluster.html
@@ -2644,6 +2645,7 @@ cases:
 [Event Loop]: https://nodejs.org/en/docs/guides/event-loop-timers-and-nexttick/#process-nexttick
 [LTS]: https://github.com/nodejs/Release
 [Readable]: stream.html#stream_readable_streams
+[`readable.read()`]: stream.html#stream_readable_read_size
 [Signal Events]: #process_signal_events
 [Stream compatibility]: stream.html#stream_compatibility_with_older_node_js_versions
 [TTY]: tty.html#tty_tty
@@ -2655,6 +2657,6 @@ cases:
 [process_warning]: #process_event_warning
 [report documentation]: report.html
 [terminal raw mode]: tty.html#tty_readstream_setrawmode_mode
-[uv_rusage_t]: http://docs.libuv.org/en/v1.x/misc.html#c.uv_rusage_t
+[uv_rusage_t]: https://docs.libuv.org/en/v1.x/misc.html#c.uv_rusage_t
 [wikipedia_minor_fault]: https://en.wikipedia.org/wiki/Page_fault#Minor
 [wikipedia_major_fault]: https://en.wikipedia.org/wiki/Page_fault#Major

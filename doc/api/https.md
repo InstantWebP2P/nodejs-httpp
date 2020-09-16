@@ -4,6 +4,8 @@
 
 > Stability: 2 - Stable
 
+<!-- source_link=lib/https.js -->
+
 HTTPS is the HTTP protocol over TLS/SSL. In Node.js this is implemented as a
 separate module.
 
@@ -110,6 +112,15 @@ This method is identical to [`server.listen()`][] from [`net.Server`][].
 * {number} **Default:** `2000`
 
 See [`http.Server#maxHeadersCount`][].
+
+### `server.requestTimeout`
+<!-- YAML
+added: v14.11.0
+-->
+
+* {number} **Default:** `0`
+
+See [`http.Server#requestTimeout`][].
 
 ### `server.setTimeout([msecs][, callback])`
 <!-- YAML
@@ -449,6 +460,7 @@ headers: max-age=0; pin-sha256="WoiWRyIOVNa9ihaBciRSC7XHjliYS9VwUGOIud4PB18="; p
 [`http.Server#headersTimeout`]: http.html#http_server_headerstimeout
 [`http.Server#keepAliveTimeout`]: http.html#http_server_keepalivetimeout
 [`http.Server#maxHeadersCount`]: http.html#http_server_maxheaderscount
+[`http.Server#requestTimeout`]: http.html#http_server_requesttimeout
 [`http.Server#setTimeout()`]: http.html#http_server_settimeout_msecs_callback
 [`http.Server#timeout`]: http.html#http_server_timeout
 [`http.Server`]: http.html#http_class_http_server
@@ -459,7 +471,7 @@ headers: max-age=0; pin-sha256="WoiWRyIOVNa9ihaBciRSC7XHjliYS9VwUGOIud4PB18="; p
 [`https.Agent`]: #https_class_https_agent
 [`https.request()`]: #https_https_request_options_callback
 [`net.Server`]: net.html#net_class_net_server
-[`new URL()`]: url.html#url_constructor_new_url_input_base
+[`new URL()`]: url.html#url_new_url_input_base
 [`server.listen()`]: net.html#net_server_listen
 [`tls.connect()`]: tls.html#tls_tls_connect_options_callback
 [`tls.createSecureContext()`]: tls.html#tls_tls_createsecurecontext_options

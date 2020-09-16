@@ -201,6 +201,7 @@ void UDPWrap::Initialize(Local<Object> target,
 
   Local<Object> constants = Object::New(env->isolate());
   NODE_DEFINE_CONSTANT(constants, UV_UDP_IPV6ONLY);
+  NODE_DEFINE_CONSTANT(constants, UV_UDP_REUSEADDR);
   target->Set(context,
               env->constants_string(),
               constants).Check();
@@ -229,12 +230,12 @@ int sockaddr_for_family(int address_family,
                         const unsigned short port,
                         struct sockaddr_storage* addr) {
   switch (address_family) {
-  case AF_INET:
-    return uv_ip4_addr(address, port, reinterpret_cast<sockaddr_in*>(addr));
-  case AF_INET6:
-    return uv_ip6_addr(address, port, reinterpret_cast<sockaddr_in6*>(addr));
-  default:
-    CHECK(0 && "unexpected address family");
+    case AF_INET:
+      return uv_ip4_addr(address, port, reinterpret_cast<sockaddr_in*>(addr));
+    case AF_INET6:
+      return uv_ip6_addr(address, port, reinterpret_cast<sockaddr_in6*>(addr));
+    default:
+      CHECK(0 && "unexpected address family");
   }
 }
 

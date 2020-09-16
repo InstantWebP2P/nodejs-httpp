@@ -1,6 +1,12 @@
 name: misc
 
-on: [push, pull_request]
+on:
+  pull_request:
+  push:
+    branches:
+      - master
+      - v[0-9]+.x-staging
+      - v[0-9]+.x
 
 env:
   NODE_VERSION: 12.x
@@ -22,3 +28,5 @@ jobs:
         with:
           name: docs
           path: out/doc
+      - name: Check links
+        run: node tools/doc/checkLinks.js .

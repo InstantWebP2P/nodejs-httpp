@@ -1,7 +1,8 @@
 #include "node_binding.h"
-#include "node_errors.h"
 #include <atomic>
 #include "env-inl.h"
+#include "node_errors.h"
+#include "node_external_reference.h"
 #include "node_native_module_env.h"
 #include "util.h"
 
@@ -9,6 +10,12 @@
 #define NODE_BUILTIN_OPENSSL_MODULES(V) V(crypto) V(tls_wrap)
 #else
 #define NODE_BUILTIN_OPENSSL_MODULES(V)
+#endif
+
+#if defined(NODE_EXPERIMENTAL_QUIC) && NODE_EXPERIMENTAL_QUIC
+#define NODE_BUILTIN_QUIC_MODULES(V) V(quic)
+#else
+#define NODE_BUILTIN_QUIC_MODULES(V)
 #endif
 
 #if NODE_HAVE_I18N_SUPPORT
@@ -37,12 +44,12 @@
 // __attribute__((constructor)) like mechanism in GCC.
 #define NODE_BUILTIN_STANDARD_MODULES(V)                                       \
   V(async_wrap)                                                                \
+  V(block_list)                                                                \
   V(buffer)                                                                    \
   V(cares_wrap)                                                                \
   V(config)                                                                    \
   V(contextify)                                                                \
   V(credentials)                                                               \
-  V(domain)                                                                    \
   V(errors)                                                                    \
   V(fs)                                                                        \
   V(fs_dir)                                                                    \
@@ -52,6 +59,7 @@
   V(http_parser)                                                               \
   V(inspector)                                                                 \
   V(js_stream)                                                                 \
+  V(js_udp_wrap)                                                               \
   V(messaging)                                                                 \
   V(module_wrap)                                                               \
   V(native_module)                                                             \
@@ -88,6 +96,7 @@
 #define NODE_BUILTIN_MODULES(V)                                                \
   NODE_BUILTIN_STANDARD_MODULES(V)                                             \
   NODE_BUILTIN_OPENSSL_MODULES(V)                                              \
+  NODE_BUILTIN_QUIC_MODULES(V)                                                 \
   NODE_BUILTIN_ICU_MODULES(V)                                                  \
   NODE_BUILTIN_PROFILER_MODULES(V)                                             \
   NODE_BUILTIN_DTRACE_MODULES(V)
@@ -461,7 +470,7 @@ void DLOpen(const FunctionCallbackInfo<Value>& args) {
 
     if (mp != nullptr) {
       if (mp->nm_context_register_func == nullptr) {
-        if (env->options()->force_context_aware) {
+        if (env->force_context_aware()) {
           dlib->Close();
           THROW_ERR_NON_CONTEXT_AWARE_DISABLED(env);
           return false;
@@ -669,5 +678,13 @@ void RegisterBuiltinModules() {
 #undef V
 }
 
+void RegisterExternalReferences(ExternalReferenceRegistry* registry) {
+  registry->Register(GetLinkedBinding);
+  registry->Register(GetInternalBinding);
+}
+
 }  // namespace binding
 }  // namespace node
+
+NODE_MODULE_EXTERNAL_REFERENCE(binding,
+                               node::binding::RegisterExternalReferences)

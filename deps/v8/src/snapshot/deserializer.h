@@ -16,7 +16,7 @@
 #include "src/objects/map.h"
 #include "src/objects/string.h"
 #include "src/snapshot/deserializer-allocator.h"
-#include "src/snapshot/serializer-common.h"
+#include "src/snapshot/serializer-deserializer.h"
 #include "src/snapshot/snapshot-source-sink.h"
 
 namespace v8 {
@@ -131,6 +131,9 @@ class V8_EXPORT_PRIVATE Deserializer : public SerializerDeserializer {
 
   template <typename TSlot>
   inline TSlot WriteAddress(TSlot dest, Address value);
+
+  template <typename TSlot>
+  inline TSlot WriteExternalPointer(TSlot dest, Address value);
 
   // Fills in some heap data in an area from start to end (non-inclusive).  The
   // space id is used for the write barrier.  The object_address is the address

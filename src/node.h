@@ -328,7 +328,8 @@ class NODE_EXTERN MultiIsolatePlatform : public v8::Platform {
 
 enum IsolateSettingsFlags {
   MESSAGE_LISTENER_WITH_ERROR_LEVEL = 1 << 0,
-  DETAILED_SOURCE_POSITIONS_FOR_PROFILING = 1 << 1
+  DETAILED_SOURCE_POSITIONS_FOR_PROFILING = 1 << 1,
+  SHOULD_NOT_SET_PROMISE_REJECTION_CALLBACK = 1 << 2
 };
 
 struct IsolateSettings {
@@ -408,7 +409,14 @@ enum Flags : uint64_t {
   // Set if this Environment instance is associated with the global inspector
   // handling code (i.e. listening on SIGUSR1).
   // This is set when using kDefaultFlags.
-  kOwnsInspector = 1 << 2
+  kOwnsInspector = 1 << 2,
+  // Set if Node.js should not run its own esm loader. This is needed by some
+  // embedders, because it's possible for the Node.js esm loader to conflict
+  // with another one in an embedder environment, e.g. Blink's in Chromium.
+  kNoRegisterESMLoader = 1 << 3,
+  // Set this flag to make Node.js track "raw" file descriptors, i.e. managed
+  // by fs.open() and fs.close(), and close them during FreeEnvironment().
+  kTrackUnmanagedFds = 1 << 4
 };
 }  // namespace EnvironmentFlags
 
@@ -504,6 +512,15 @@ NODE_EXTERN MultiIsolatePlatform* CreatePlatform(
     int thread_pool_size,
     v8::TracingController* tracing_controller);
 NODE_EXTERN void FreePlatform(MultiIsolatePlatform* platform);
+
+// Get/set the currently active tracing controller. Using CreatePlatform()
+// will implicitly set this by default. This is global and should be initialized
+// along with the v8::Platform instance that is being used. `controller`
+// is allowed to be `nullptr`.
+// This is used for tracing events from Node.js itself. V8 uses the tracing
+// controller returned from the active `v8::Platform` instance.
+NODE_EXTERN v8::TracingController* GetTracingController();
+NODE_EXTERN void SetTracingController(v8::TracingController* controller);
 
 NODE_EXTERN void EmitBeforeExit(Environment* env);
 NODE_EXTERN int EmitExit(Environment* env);
@@ -849,6 +866,20 @@ NODE_EXTERN void AddEnvironmentCleanupHook(v8::Isolate* isolate,
 NODE_EXTERN void RemoveEnvironmentCleanupHook(v8::Isolate* isolate,
                                               void (*fun)(void* arg),
                                               void* arg);
+
+/* These are async equivalents of the above. After the cleanup hook is invoked,
+ * `cb(cbarg)` *must* be called, and attempting to remove the cleanup hook will
+ * have no effect. */
+struct ACHHandle;
+struct NODE_EXTERN DeleteACHHandle { void operator()(ACHHandle*) const; };
+typedef std::unique_ptr<ACHHandle, DeleteACHHandle> AsyncCleanupHookHandle;
+
+NODE_EXTERN AsyncCleanupHookHandle AddEnvironmentCleanupHook(
+    v8::Isolate* isolate,
+    void (*fun)(void* arg, void (*cb)(void*), void* cbarg),
+    void* arg);
+
+NODE_EXTERN void RemoveEnvironmentCleanupHook(AsyncCleanupHookHandle holder);
 
 /* Returns the id of the current execution context. If the return value is
  * zero then no execution has been set. This will happen if the user handles

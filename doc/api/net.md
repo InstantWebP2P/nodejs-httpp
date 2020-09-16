@@ -5,6 +5,8 @@
 
 > Stability: 2 - Stable
 
+<!-- source_link=lib/net.js -->
+
 The `net` module provides an asynchronous network API for creating stream-based
 TCP or [IPC][] servers ([`net.createServer()`][]) and clients
 ([`net.createConnection()`][]).
@@ -15,7 +17,7 @@ It can be accessed using:
 const net = require('net');
 ```
 
-## IPC Support
+## IPC support
 
 The `net` module supports IPC with named pipes on Windows, and Unix domain
 sockets on other operating systems.
@@ -52,6 +54,86 @@ escaping such as:
 net.createServer().listen(
   path.join('\\\\?\\pipe', process.cwd(), 'myctl'));
 ```
+
+## Class: `net.BlockList`
+<!-- YAML
+added: REPLACEME
+-->
+
+The `BlockList` object can be used with some network APIs to specify rules for
+disabling inbound or outbound access to specific IP addresses, IP ranges, or
+IP subnets.
+
+### `blockList.addAddress(address[, type])`
+<!-- YAML
+added: REPLACEME
+-->
+
+* `address` {string} An IPv4 or IPv6 address.
+* `type` {string} Either `'ipv4'` or `'ipv6'`. **Default**: `'ipv4'`.
+
+Adds a rule to block the given IP address.
+
+### `blockList.addRange(start, end[, type])`
+<!-- YAML
+added: REPLACEME
+-->
+
+* `start` {string} The starting IPv4 or IPv6 address in the range.
+* `end` {string} The ending IPv4 or IPv6 address in the range.
+* `type` {string} Either `'ipv4'` or `'ipv6'`. **Default**: `'ipv4'`.
+
+Adds a rule to block a range of IP addresses from `start` (inclusive) to
+`end` (inclusive).
+
+### `blockList.addSubnet(net, prefix[, type])`
+<!-- YAML
+added: REPLACEME
+-->
+
+* `net` {string} The network IPv4 or IPv6 address.
+* `prefix` {number} The number of CIDR prefix bits. For IPv4, this
+  must be a value between `0` and `32`. For IPv6, this must be between
+  `0` and `128`.
+* `type` {string} Either `'ipv4'` or `'ipv6'`. **Default**: `'ipv4'`.
+
+Adds a rule to block a range of IP addresses specified as a subnet mask.
+
+### `blockList.check(address[, type])`
+<!-- YAML
+added: REPLACEME
+-->
+
+* `address` {string} The IP address to check
+* `type` {string} Either `'ipv4'` or `'ipv6'`. **Default**: `'ipv4'`.
+* Returns: {boolean}
+
+Returns `true` if the given IP address matches any of the rules added to the
+`BlockList`.
+
+```js
+const blockList = new net.BlockList();
+blockList.addAddress('123.123.123.123');
+blockList.addRange('10.0.0.1', '10.0.0.10');
+blockList.addSubnet('8592:757c:efae:4e45::', 64, 'ipv6');
+
+console.log(blockList.check('123.123.123.123'));  // Prints: true
+console.log(blockList.check('10.0.0.3'));  // Prints: true
+console.log(blockList.check('222.111.111.222'));  // Prints: false
+
+// IPv6 notation for IPv4 addresses works:
+console.log(blockList.check('::ffff:7b7b:7b7b', 'ipv6')); // Prints: true
+console.log(blockList.check('::ffff:123.123.123.123', 'ipv6')); // Prints: true
+```
+
+### `blockList.rules`
+<!-- YAML
+added: REPLACEME
+-->
+
+* Type: {string[]}
+
+The list of rules added to the blocklist.
 
 ## Class: `net.Server`
 <!-- YAML
@@ -527,7 +609,11 @@ socket as reported by the operating system:
 ### `socket.bufferSize`
 <!-- YAML
 added: v0.3.8
+deprecated:
+  - v14.6.0
 -->
+
+> Stability: 0 - Deprecated: Use [`writable.writableLength`][] instead.
 
 * {integer}
 
@@ -705,7 +791,7 @@ added: v6.1.0
 If `true`,
 [`socket.connect(options[, connectListener])`][`socket.connect(options)`] was
 called and has not yet finished. It will stay `true` until the socket becomes
-connected, then it is set to `false` and the `'connect'` event is emitted.  Note
+connected, then it is set to `false` and the `'connect'` event is emitted. Note
 that the
 [`socket.connect(options[, connectListener])`][`socket.connect(options)`]
 callback is a listener for the `'connect'` event.
@@ -1105,6 +1191,14 @@ immediately initiates connection with
 [`socket.connect(port[, host][, connectListener])`][`socket.connect(port)`],
 then returns the `net.Socket` that starts the connection.
 
+## `net.createQuicSocket([options])`
+<!-- YAML
+added: REPLACEME
+-->
+
+Creates and returns a new `QuicSocket`. Please refer to the [QUIC documentation][]
+for details.
+
 ## `net.createServer([options][, connectionListener])`
 <!-- YAML
 added: v0.5.0
@@ -1213,6 +1307,7 @@ Returns `true` if input is a version 6 IP address, otherwise returns `false`.
 [IPC]: #net_ipc_support
 [Identifying paths for IPC connections]: #net_identifying_paths_for_ipc_connections
 [Readable Stream]: stream.html#stream_class_stream_readable
+[QUIC documentation]: quic.html
 [`'close'`]: #net_event_close
 [`'connect'`]: #net_event_connect
 [`'connection'`]: #net_event_connection
@@ -1244,7 +1339,7 @@ Returns `true` if input is a version 6 IP address, otherwise returns `false`.
 [`server.listen(handle)`]: #net_server_listen_handle_backlog_callback
 [`server.listen(options)`]: #net_server_listen_options_callback
 [`server.listen(path)`]: #net_server_listen_path_backlog_callback
-[`socket(7)`]: http://man7.org/linux/man-pages/man7/socket.7.html
+[`socket(7)`]: https://man7.org/linux/man-pages/man7/socket.7.html
 [`socket.connect()`]: #net_socket_connect
 [`socket.connect(options)`]: #net_socket_connect_options_connectlistener
 [`socket.connect(path)`]: #net_socket_connect_path_connectlistener
@@ -1257,6 +1352,7 @@ Returns `true` if input is a version 6 IP address, otherwise returns `false`.
 [`socket.setEncoding()`]: #net_socket_setencoding_encoding
 [`socket.setTimeout()`]: #net_socket_settimeout_timeout_callback
 [`socket.setTimeout(timeout)`]: #net_socket_settimeout_timeout_callback
+[`writable.writableLength`]: stream.html#stream_writable_writablelength
 [`writable.destroyed`]: stream.html#stream_writable_destroyed
 [`writable.destroy()`]: stream.html#stream_writable_destroy_error
 [`writable.end()`]: stream.html#stream_writable_end_chunk_encoding_callback

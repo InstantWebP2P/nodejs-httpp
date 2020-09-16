@@ -89,7 +89,7 @@ In most native Node.js objects, the first internal field is used to store a
 pointer to a [`BaseObject`][] subclass, which then contains all relevant
 information associated with the JavaScript object.
 
-The most typical way of working internal fields are:
+Typical ways of working with internal fields are:
 
 * `obj->InternalFieldCount()` to look up the number of internal fields for an
   object (`0` for regular JavaScript objects).
@@ -146,9 +146,7 @@ v8::Local<v8::Value> GetFoo(v8::Local<v8::Context> context,
   // The 'foo_string' handle cannot be returned from this function because
   // it is not “escaped” with `.Escape()`.
   v8::Local<v8::String> foo_string =
-      v8::String::NewFromUtf8(isolate,
-                              "foo",
-                              v8::NewStringType::kNormal).ToLocalChecked();
+      v8::String::NewFromUtf8(isolate, "foo").ToLocalChecked();
 
   v8::Local<v8::Value> return_value;
   if (obj->Get(context, foo_string).ToLocal(&return_value)) {
@@ -241,7 +239,7 @@ Node.js, and a sufficiently committed person could restructure Node.js to
 provide built-in modules inside of `vm.Context`s.
 
 Often, the `Context` is passed around for [exception handling][].
-Typical ways of accessing the current `Environment` in the Node.js code are:
+Typical ways of accessing the current `Context` in the Node.js code are:
 
 * Given an [`Isolate`][], using `isolate->GetCurrentContext()`.
 * Given an [`Environment`][], using `env->context()` to get the `Environment`’s
@@ -404,7 +402,7 @@ that state is through the use of `Environment::AddBindingData`, which gives
 binding functions access to an object for storing such state.
 That object is always a [`BaseObject`][].
 
-Its class needs to have a static `binding_data_name` field that based on a
+Its class needs to have a static `binding_data_name` field based on a
 constant string, in order to disambiguate it from other classes of this type,
 and which could e.g. match the binding’s name (in the example above, that would
 be `cares_wrap`).
@@ -910,7 +908,7 @@ Node.js provides a few macros that behave similar to `assert()`:
 The `OnScopeLeave()` function can be used to run a piece of code when leaving
 the current C++ scope.
 
-```c++
+```cpp
 static void GetUserInfo(const FunctionCallbackInfo<Value>& args) {
   Environment* env = Environment::GetCurrent(args);
   uv_passwd_t pwd;

@@ -4,6 +4,8 @@
 
 > Stability: 2 - Stable
 
+<!-- source_link=lib/assert.js -->
+
 The `assert` module provides a set of assertion functions for verifying
 invariants.
 
@@ -11,12 +13,15 @@ invariants.
 <!-- YAML
 added: v9.9.0
 changes:
+  - version: REPLACEME
+    pr-url: https://github.com/nodejs/node/pull/34001
+    description: Exposed as `require('assert/strict')`
   - version:
       - v13.9.0
       - v12.16.2
     description: Changed "strict mode" to "strict assertion mode" and "legacy
                  mode" to "legacy assertion mode" to avoid confusion with the
-                 more usual meaining of "strict mode".
+                 more usual meaning of "strict mode".
   - version: v9.9.0
     pr-url: https://github.com/nodejs/node/pull/17615
     description: Added error diffs to the strict assertion mode.
@@ -36,6 +41,9 @@ To use strict assertion mode:
 
 ```js
 const assert = require('assert').strict;
+```
+```js
+const assert = require('assert/strict');
 ```
 
 Example error diff:
@@ -1580,8 +1588,8 @@ argument.
 [`assert.strictEqual()`]: #assert_assert_strictequal_actual_expected_message
 [`assert.throws()`]: #assert_assert_throws_fn_error_message
 [`process.on('exit')`]: process.html#process_event_exit
-[`tracker.calls()`]: #assert_class_assert_CallTracker#tracker_calls
-[`tracker.verify()`]: #assert_class_assert_CallTracker#tracker_verify
+[`tracker.calls()`]: #assert_tracker_calls_fn_exact
+[`tracker.verify()`]: #assert_tracker_verify
 [strict assertion mode]: #assert_strict_assertion_mode
 [Abstract Equality Comparison]: https://tc39.github.io/ecma262/#sec-abstract-equality-comparison
 [Object wrappers]: https://developer.mozilla.org/en-US/docs/Glossary/Primitive#Primitive_wrapper_objects_in_JavaScript

@@ -4,6 +4,8 @@
 
 > Stability: 2 - Stable
 
+<!-- source_link=lib/crypto.js -->
+
 The `crypto` module provides cryptographic functionality that includes a set of
 wrappers for OpenSSL's hash, HMAC, cipher, decipher, sign, and verify functions.
 
@@ -104,9 +106,10 @@ console.log(Certificate.verifySpkac(Buffer.from(spkac)));
 
 ### Legacy API
 
-As a still supported legacy interface, it is possible (but not recommended) to
-create new instances of the `crypto.Certificate` class as illustrated in the
-examples below.
+> Stability: 0 - Deprecated
+
+As a legacy interface, it is possible to create new instances of
+the `crypto.Certificate` class as illustrated in the examples below.
 
 #### `new crypto.Certificate()`
 
@@ -785,7 +788,7 @@ assert.strictEqual(aliceSecret.toString('hex'), bobSecret.toString('hex'));
 // OK
 ```
 
-### Class Method: `ECDH.convertKey(key, curve[, inputEncoding[, outputEncoding[, format]]])`
+### Static method: `ECDH.convertKey(key, curve[, inputEncoding[, outputEncoding[, format]]])`
 <!-- YAML
 added: v10.0.0
 -->
@@ -866,7 +869,7 @@ If `outputEncoding` is given a string will be returned; otherwise a
 `ERR_CRYPTO_ECDH_INVALID_PUBLIC_KEY` error when `otherPublicKey`
 lies outside of the elliptic curve. Since `otherPublicKey` is
 usually supplied from a remote user over an insecure network,
-its recommended for developers to handle this exception accordingly.
+be sure to handle this exception accordingly.
 
 ### `ecdh.generateKeys([encoding[, format]])`
 <!-- YAML
@@ -1214,6 +1217,10 @@ This can be called many times with new data as it is streamed.
 <!-- YAML
 added: v11.6.0
 changes:
+  - version: v14.5.0
+    pr-url: https://github.com/nodejs/node/pull/33360
+    description: Instances of this class can now be passed to worker threads
+                 using `postMessage`.
   - version: v11.13.0
     pr-url: https://github.com/nodejs/node/pull/26438
     description: This class is now exported.
@@ -1228,6 +1235,10 @@ keyword.
 
 Most applications should consider using the new `KeyObject` API instead of
 passing keys as strings or `Buffer`s due to improved security features.
+
+`KeyObject` instances can be passed to other threads via [`postMessage()`][].
+The receiver obtains a cloned `KeyObject`, and the `KeyObject` does not need to
+be listed in the `transferList` argument.
 
 ### `keyObject.asymmetricKeyType`
 <!-- YAML
@@ -1579,7 +1590,7 @@ added: v6.3.0
 
 * Returns: {Object} An object containing commonly used constants for crypto and
   security related operations. The specific constants currently defined are
-  described in [Crypto Constants][].
+  described in [Crypto constants][].
 
 ### `crypto.DEFAULT_ENCODING`
 <!-- YAML
@@ -2066,7 +2077,7 @@ added: v0.1.92
 * `options` {Object} [`stream.Writable` options][]
 * Returns: {Sign}
 
-Creates and returns a `Sign` object that uses the given `algorithm`.  Use
+Creates and returns a `Sign` object that uses the given `algorithm`. Use
 [`crypto.getHashes()`][] to obtain the names of the available digest algorithms.
 Optional `options` argument controls the `stream.Writable` behavior.
 
@@ -2790,6 +2801,44 @@ threadpool request. To minimize threadpool task length variation, partition
 large `randomFill` requests when doing so as part of fulfilling a client
 request.
 
+### `crypto.randomInt([min, ]max[, callback])`
+<!-- YAML
+added: v14.10.0
+-->
+
+* `min` {integer} Start of random range (inclusive). **Default**: `0`.
+* `max` {integer} End of random range (exclusive).
+* `callback` {Function} `function(err, n) {}`.
+
+Return a random integer `n` such that `min <= n < max`.  This
+implementation avoids [modulo bias][].
+
+The range (`max - min`) must be less than 2<sup>48</sup>. `min` and `max` must
+be [safe integers][].
+
+If the `callback` function is not provided, the random integer is
+generated synchronously.
+
+```js
+// Asynchronous
+crypto.randomInt(3, (err, n) => {
+  if (err) throw err;
+  console.log(`Random number chosen from (0, 1, 2): ${n}`);
+});
+```
+
+```js
+// Synchronous
+const n = crypto.randomInt(3);
+console.log(`Random number chosen from (0, 1, 2): ${n}`);
+```
+
+```js
+// With `min` argument
+const n = crypto.randomInt(1, 7);
+console.log(`The dice rolled: ${n}`);
+```
+
 ### `crypto.scrypt(password, salt, keylen[, options], callback)`
 <!-- YAML
 added: v10.5.0
@@ -3045,7 +3094,7 @@ key may be passed for `key`.
 
 ## Notes
 
-### Legacy Streams API (pre Node.js v0.10)
+### Legacy streams API (prior to Node.js 0.10)
 
 The Crypto module was added to Node.js before there was the concept of a
 unified Stream API, and before there were [`Buffer`][] objects for handling
@@ -3056,7 +3105,7 @@ and returned `'latin1'` encoded strings by default rather than `Buffer`s. This
 default was changed after Node.js v0.8 to use [`Buffer`][] objects by default
 instead.
 
-### Recent ECDH Changes
+### Recent ECDH changes
 
 Usage of `ECDH` with non-dynamically generated key pairs has been simplified.
 Now, [`ecdh.setPrivateKey()`][] can be called with a preselected private key
@@ -3164,12 +3213,12 @@ try {
 console.log(receivedPlaintext);
 ```
 
-## Crypto Constants
+## Crypto constants
 
 The following constants exported by `crypto.constants` apply to various uses of
 the `crypto`, `tls`, and `https` modules and are generally specific to OpenSSL.
 
-### OpenSSL Options
+### OpenSSL options
 
 <table>
   <tr>
@@ -3181,6 +3230,11 @@ the `crypto`, `tls`, and `https` modules and are generally specific to OpenSSL.
     <td>Applies multiple bug workarounds within OpenSSL. See
     <a href="https://www.openssl.org/docs/man1.0.2/ssl/SSL_CTX_set_options.html">https://www.openssl.org/docs/man1.0.2/ssl/SSL_CTX_set_options.html</a>
     for detail.</td>
+  </tr>
+  <tr>
+    <td><code>SSL_OP_ALLOW_NO_DHE_KEX</code></td>
+    <td>Instructs OpenSSL to allow a non-[EC]DHE-based key exchange mode
+    for TLS v1.3</td>
   </tr>
   <tr>
     <td><code>SSL_OP_ALLOW_UNSAFE_LEGACY_RENEGOTIATION</code></td>
@@ -3255,8 +3309,16 @@ the `crypto`, `tls`, and `https` modules and are generally specific to OpenSSL.
     <td>Instructs OpenSSL to disable support for SSL/TLS compression.</td>
   </tr>
   <tr>
+    <td><code>SSL_OP_NO_ENCRYPT_THEN_MAC</code></td>
+    <td>Instructs OpenSSL to disable encrypt-then-MAC.</td>
+  </tr>
+  <tr>
     <td><code>SSL_OP_NO_QUERY_MTU</code></td>
     <td></td>
+  </tr>
+  <tr>
+    <td><code>SSL_OP_NO_RENEGOTIATION</code></td>
+    <td>Instructs OpenSSL to disable renegotiation.</td>
   </tr>
   <tr>
     <td><code>SSL_OP_NO_SESSION_RESUMPTION_ON_RENEGOTIATION</code></td>
@@ -3287,12 +3349,24 @@ the `crypto`, `tls`, and `https` modules and are generally specific to OpenSSL.
     <td><code>SSL_OP_NO_TLSv1_2</code></td>
     <td>Instructs OpenSSL to turn off TLS v1.2</td>
   </tr>
+  <tr>
+    <td><code>SSL_OP_NO_TLSv1_3</code></td>
+    <td>Instructs OpenSSL to turn off TLS v1.3</td>
+  </tr>
     <td><code>SSL_OP_PKCS1_CHECK_1</code></td>
     <td></td>
   </tr>
   <tr>
     <td><code>SSL_OP_PKCS1_CHECK_2</code></td>
     <td></td>
+  </tr>
+  <tr>
+    <td><code>SSL_OP_PRIORITIZE_CHACHA</code></td>
+    <td>Instructs OpenSSL server to prioritize ChaCha20Poly1305
+    when client does.
+    This option has no effect if
+    <code>SSL_OP_CIPHER_SERVER_PREFERENCE</code>
+    is not enabled.</td>
   </tr>
   <tr>
     <td><code>SSL_OP_SINGLE_DH_USE</code></td>
@@ -3325,7 +3399,7 @@ the `crypto`, `tls`, and `https` modules and are generally specific to OpenSSL.
   </tr>
 </table>
 
-### OpenSSL Engine Constants
+### OpenSSL engine constants
 
 <table>
   <tr>
@@ -3378,7 +3452,9 @@ the `crypto`, `tls`, and `https` modules and are generally specific to OpenSSL.
   </tr>
 </table>
 
-### Other OpenSSL Constants
+### Other OpenSSL constants
+
+See the [list of SSL OP Flags][] for details.
 
 <table>
   <tr>
@@ -3458,7 +3534,7 @@ the `crypto`, `tls`, and `https` modules and are generally specific to OpenSSL.
   </tr>
 </table>
 
-### Node.js Crypto Constants
+### Node.js crypto constants
 
 <table>
   <tr>
@@ -3518,9 +3594,10 @@ the `crypto`, `tls`, and `https` modules and are generally specific to OpenSSL.
 [`hmac.digest()`]: #crypto_hmac_digest_encoding
 [`hmac.update()`]: #crypto_hmac_update_data_inputencoding
 [`keyObject.export()`]: #crypto_keyobject_export_options
+[`postMessage()`]: worker_threads.html#worker_threads_port_postmessage_value_transferlist
 [`sign.sign()`]: #crypto_sign_sign_privatekey_outputencoding
 [`sign.update()`]: #crypto_sign_update_data_inputencoding
-[`stream.Writable` options]: stream.html#stream_constructor_new_stream_writable_options
+[`stream.Writable` options]: stream.html#stream_new_stream_writable_options
 [`stream.transform` options]: stream.html#stream_new_stream_transform_options
 [`util.promisify()`]: util.html#util_util_promisify_original
 [`verify.update()`]: #crypto_verify_update_data_inputencoding
@@ -3528,12 +3605,13 @@ the `crypto`, `tls`, and `https` modules and are generally specific to OpenSSL.
 [AEAD algorithms]: https://en.wikipedia.org/wiki/Authenticated_encryption
 [CCM mode]: #crypto_ccm_mode
 [Caveats]: #crypto_support_for_weak_or_compromised_algorithms
-[Crypto Constants]: #crypto_crypto_constants_1
+[Crypto constants]: #crypto_crypto_constants_1
 [HTML 5.2]: https://www.w3.org/TR/html52/changes.html#features-removed
 [HTML5's `keygen` element]: https://developer.mozilla.org/en-US/docs/Web/HTML/Element/keygen
 [NIST SP 800-131A]: https://nvlpubs.nist.gov/nistpubs/SpecialPublications/NIST.SP.800-131Ar1.pdf
 [NIST SP 800-132]: https://nvlpubs.nist.gov/nistpubs/Legacy/SP/nistspecialpublication800-132.pdf
 [NIST SP 800-38D]: https://nvlpubs.nist.gov/nistpubs/Legacy/SP/nistspecialpublication800-38d.pdf
+[modulo bias]: https://en.wikipedia.org/wiki/Fisher%E2%80%93Yates_shuffle#Modulo_bias
 [Nonce-Disrespecting Adversaries]: https://github.com/nonce-disrespect/nonce-disrespect
 [OpenSSL's SPKAC implementation]: https://www.openssl.org/docs/man1.1.0/apps/openssl-spkac.html
 [RFC 1421]: https://www.rfc-editor.org/rfc/rfc1421.txt
@@ -3544,6 +3622,8 @@ the `crypto`, `tls`, and `https` modules and are generally specific to OpenSSL.
 [RFC 5208]: https://www.rfc-editor.org/rfc/rfc5208.txt
 [encoding]: buffer.html#buffer_buffers_and_character_encodings
 [initialization vector]: https://en.wikipedia.org/wiki/Initialization_vector
+[list of SSL OP Flags]: wiki.openssl.org/index.php/List_of_SSL_OP_Flags#Table_of_Options
+[safe integers]: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Number/isSafeInteger
 [scrypt]: https://en.wikipedia.org/wiki/Scrypt
-[stream-writable-write]: stream.html#stream_writable_write_chunk_encoding_callback
 [stream]: stream.html
+[stream-writable-write]: stream.html#stream_writable_write_chunk_encoding_callback

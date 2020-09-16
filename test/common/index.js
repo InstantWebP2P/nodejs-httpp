@@ -27,7 +27,7 @@ const process = global.process;  // Some tests tamper with the process global.
 const assert = require('assert');
 const { exec, execSync, spawnSync } = require('child_process');
 const fs = require('fs');
-// Do not require 'os' until needed so that test-os-checked-fucnction can
+// Do not require 'os' until needed so that test-os-checked-function can
 // monkey patch it. If 'os' is required here, that test will fail.
 const path = require('path');
 const util = require('util');
@@ -50,6 +50,7 @@ const noop = () => {};
 
 const hasCrypto = Boolean(process.versions.openssl) &&
                   !process.env.NODE_SKIP_CRYPTO;
+const hasQuic = hasCrypto && Boolean(process.versions.ngtcp2);
 
 // Check for flags. Skip this for workers (both, the `cluster` module and
 // `worker_threads`) and child processes.
@@ -113,8 +114,6 @@ const isLinux = process.platform === 'linux';
 const isOSX = process.platform === 'darwin';
 
 const isDumbTerminal = process.env.TERM === 'dumb';
-
-const rootDir = isWindows ? 'c:\\' : '/';
 
 const buildType = process.config.target_defaults ?
   process.config.target_defaults.default_configuration :
@@ -256,6 +255,7 @@ function platformTimeout(ms) {
 }
 
 let knownGlobals = [
+  AbortController,
   clearImmediate,
   clearInterval,
   clearTimeout,
@@ -417,9 +417,12 @@ function getCallSite(top) {
 
 function mustNotCall(msg) {
   const callSite = getCallSite(mustNotCall);
-  return function mustNotCall() {
+  return function mustNotCall(...args) {
+    const argsInfo = args.length > 0 ?
+      `\ncalled with arguments: ${args.map(util.inspect).join(', ')}` : '';
     assert.fail(
-      `${msg || 'function should not have been called'} at ${callSite}`);
+      `${msg || 'function should not have been called'} at ${callSite}` +
+      argsInfo);
   };
 }
 
@@ -659,6 +662,30 @@ function skipIfDumbTerminal() {
   }
 }
 
+function gcUntil(name, condition) {
+  if (typeof name === 'function') {
+    condition = name;
+    name = undefined;
+  }
+  return new Promise((resolve, reject) => {
+    let count = 0;
+    function gcAndCheck() {
+      setImmediate(() => {
+        count++;
+        global.gc();
+        if (condition()) {
+          resolve();
+        } else if (count < 10) {
+          gcAndCheck();
+        } else {
+          reject(name === undefined ? undefined : 'Test ' + name + ' failed');
+        }
+      });
+    }
+    gcAndCheck();
+  });
+}
+
 const common = {
   allowGlobals,
   buildType,
@@ -668,12 +695,14 @@ const common = {
   disableCrashOnUnhandledRejection,
   expectsError,
   expectWarning,
+  gcUntil,
   getArrayBufferViews,
   getBufferSources,
   getCallSite,
   getTTYfd,
   hasIntl,
   hasCrypto,
+  hasQuic,
   hasMultiLocalhost,
   invalidArgTypeHelper,
   isAIX,
@@ -695,7 +724,6 @@ const common = {
   platformTimeout,
   printSkipMessage,
   pwdCommand,
-  rootDir,
   runWithInvalidFD,
   skip,
   skipIf32Bits,
@@ -769,8 +797,6 @@ const common = {
 
     return localhostIPv4;
   },
-
-  get localhostIPv6() { return '::1'; },
 
   // opensslCli defined lazily to reduce overhead of spawnSync
   get opensslCli() {

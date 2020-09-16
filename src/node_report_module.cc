@@ -32,22 +32,24 @@ void WriteReport(const FunctionCallbackInfo<Value>& info) {
   Isolate* isolate = env->isolate();
   HandleScope scope(isolate);
   std::string filename;
-  Local<String> stackstr;
+  Local<Object> error;
 
   CHECK_EQ(info.Length(), 4);
   String::Utf8Value message(isolate, info[0].As<String>());
   String::Utf8Value trigger(isolate, info[1].As<String>());
-  stackstr = info[3].As<String>();
 
   if (info[2]->IsString())
     filename = *String::Utf8Value(isolate, info[2]);
+  if (!info[3].IsEmpty() && info[3]->IsObject())
+    error = info[3].As<Object>();
+  else
+    error = Local<Object>();
 
   filename = TriggerNodeReport(
-      isolate, env, *message, *trigger, filename, stackstr);
+      isolate, env, *message, *trigger, filename, error);
   // Return value is the report filename
   info.GetReturnValue().Set(
-      String::NewFromUtf8(isolate, filename.c_str(), v8::NewStringType::kNormal)
-          .ToLocalChecked());
+      String::NewFromUtf8(isolate, filename.c_str()).ToLocalChecked());
 }
 
 // External JavaScript API for returning a report
@@ -55,16 +57,21 @@ void GetReport(const FunctionCallbackInfo<Value>& info) {
   Environment* env = Environment::GetCurrent(info);
   Isolate* isolate = env->isolate();
   HandleScope scope(isolate);
+  Local<Object> error;
   std::ostringstream out;
 
+  CHECK_EQ(info.Length(), 1);
+  if (!info[0].IsEmpty() && info[0]->IsObject())
+    error = info[0].As<Object>();
+  else
+    error = Local<Object>();
+
   GetNodeReport(
-      isolate, env, "JavaScript API", __func__, info[0].As<String>(), out);
+      isolate, env, "JavaScript API", __func__, error, out);
 
   // Return value is the contents of a report as a string.
-  info.GetReturnValue().Set(String::NewFromUtf8(isolate,
-                                                out.str().c_str(),
-                                                v8::NewStringType::kNormal)
-                                .ToLocalChecked());
+  info.GetReturnValue().Set(
+      String::NewFromUtf8(isolate, out.str().c_str()).ToLocalChecked());
 }
 
 static void GetCompact(const FunctionCallbackInfo<Value>& info) {
@@ -84,9 +91,7 @@ static void GetDirectory(const FunctionCallbackInfo<Value>& info) {
   node::Mutex::ScopedLock lock(node::per_process::cli_options_mutex);
   Environment* env = Environment::GetCurrent(info);
   std::string directory = node::per_process::cli_options->report_directory;
-  auto result = String::NewFromUtf8(env->isolate(),
-                                    directory.c_str(),
-                                    v8::NewStringType::kNormal);
+  auto result = String::NewFromUtf8(env->isolate(), directory.c_str());
   info.GetReturnValue().Set(result.ToLocalChecked());
 }
 
@@ -102,9 +107,7 @@ static void GetFilename(const FunctionCallbackInfo<Value>& info) {
   node::Mutex::ScopedLock lock(node::per_process::cli_options_mutex);
   Environment* env = Environment::GetCurrent(info);
   std::string filename = node::per_process::cli_options->report_filename;
-  auto result = String::NewFromUtf8(env->isolate(),
-                                    filename.c_str(),
-                                    v8::NewStringType::kNormal);
+  auto result = String::NewFromUtf8(env->isolate(), filename.c_str());
   info.GetReturnValue().Set(result.ToLocalChecked());
 }
 
@@ -119,9 +122,7 @@ static void SetFilename(const FunctionCallbackInfo<Value>& info) {
 static void GetSignal(const FunctionCallbackInfo<Value>& info) {
   Environment* env = Environment::GetCurrent(info);
   std::string signal = env->isolate_data()->options()->report_signal;
-  auto result = String::NewFromUtf8(env->isolate(),
-                                    signal.c_str(),
-                                    v8::NewStringType::kNormal);
+  auto result = String::NewFromUtf8(env->isolate(), signal.c_str());
   info.GetReturnValue().Set(result.ToLocalChecked());
 }
 

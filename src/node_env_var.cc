@@ -1,6 +1,7 @@
 #include "debug_utils-inl.h"
 #include "env-inl.h"
 #include "node_errors.h"
+#include "node_external_reference.h"
 #include "node_process.h"
 
 #include <time.h>  // tzset(), _tzset()
@@ -179,8 +180,7 @@ Local<Array> RealEnvStore::Enumerate(Isolate* isolate) const {
     // https://github.com/libuv/libuv/pull/2473 and can be removed later.
     if (items[i].name[0] == '=' || items[i].name[0] == '\0') continue;
 #endif
-    MaybeLocal<String> str = String::NewFromUtf8(
-        isolate, items[i].name, NewStringType::kNormal);
+    MaybeLocal<String> str = String::NewFromUtf8(isolate, items[i].name);
     if (str.IsEmpty()) {
       isolate->ThrowException(ERR_STRING_TOO_LONG(isolate));
       return Local<Array>();
@@ -385,4 +385,14 @@ MaybeLocal<Object> CreateEnvVarProxy(Local<Context> context, Isolate* isolate) {
       PropertyHandlerFlags::kHasNoSideEffect));
   return scope.EscapeMaybe(env_proxy_template->NewInstance(context));
 }
+
+void RegisterEnvVarExternalReferences(ExternalReferenceRegistry* registry) {
+  registry->Register(EnvGetter);
+  registry->Register(EnvSetter);
+  registry->Register(EnvQuery);
+  registry->Register(EnvDeleter);
+  registry->Register(EnvEnumerator);
+}
 }  // namespace node
+
+NODE_MODULE_EXTERNAL_REFERENCE(env_var, node::RegisterEnvVarExternalReferences)

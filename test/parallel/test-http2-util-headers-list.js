@@ -8,7 +8,12 @@ const common = require('../common');
 if (!common.hasCrypto)
   common.skip('missing crypto');
 const assert = require('assert');
-const { mapToHeaders, toHeaderObject } = require('internal/http2/util');
+const {
+  getAuthority,
+  mapToHeaders,
+  toHeaderObject
+} = require('internal/http2/util');
+const { sensitiveHeaders } = require('http2');
 const { internalBinding } = require('internal/test/binding');
 const {
   HTTP2_HEADER_STATUS,
@@ -33,6 +38,7 @@ const {
   HTTP2_HEADER_ETAG,
   HTTP2_HEADER_EXPIRES,
   HTTP2_HEADER_FROM,
+  HTTP2_HEADER_HOST,
   HTTP2_HEADER_IF_MATCH,
   HTTP2_HEADER_IF_MODIFIED_SINCE,
   HTTP2_HEADER_IF_NONE_MATCH,
@@ -85,7 +91,6 @@ const {
   HTTP2_HEADER_HTTP2_SETTINGS,
   HTTP2_HEADER_TE,
   HTTP2_HEADER_TRANSFER_ENCODING,
-  HTTP2_HEADER_HOST,
   HTTP2_HEADER_KEEP_ALIVE,
   HTTP2_HEADER_PROXY_CONNECTION
 } = internalBinding('http2').constants;
@@ -102,8 +107,9 @@ const {
 
   assert.deepStrictEqual(
     mapToHeaders(headers),
-    [ [ ':path', 'abc', ':status', '200', 'abc', '1', 'xyz', '1', 'xyz', '2',
-        'xyz', '3', 'xyz', '4', 'bar', '1', '' ].join('\0'), 8 ]
+    [ [ ':path', 'abc\0', ':status', '200\0', 'abc', '1\0', 'xyz', '1\0',
+        'xyz', '2\0', 'xyz', '3\0', 'xyz', '4\0', 'bar', '1\0', '' ].join('\0'),
+      8 ]
   );
 }
 
@@ -118,8 +124,8 @@ const {
 
   assert.deepStrictEqual(
     mapToHeaders(headers),
-    [ [ ':status', '200', ':path', 'abc', 'abc', '1', 'xyz', '1', 'xyz', '2',
-        'xyz', '3', 'xyz', '4', '' ].join('\0'), 7 ]
+    [ [ ':status', '200\0', ':path', 'abc\0', 'abc', '1\0', 'xyz', '1\0',
+        'xyz', '2\0', 'xyz', '3\0', 'xyz', '4\0', '' ].join('\0'), 7 ]
   );
 }
 
@@ -135,8 +141,8 @@ const {
 
   assert.deepStrictEqual(
     mapToHeaders(headers),
-    [ [ ':status', '200', ':path', 'abc', 'abc', '1', 'xyz', '1', 'xyz', '2',
-        'xyz', '3', 'xyz', '4', '' ].join('\0'), 7 ]
+    [ [ ':status', '200\0', ':path', 'abc\0', 'abc', '1\0', 'xyz', '1\0',
+        'xyz', '2\0', 'xyz', '3\0', 'xyz', '4\0', '' ].join('\0'), 7 ]
   );
 }
 
@@ -151,8 +157,8 @@ const {
 
   assert.deepStrictEqual(
     mapToHeaders(headers),
-    [ [ ':status', '200', ':path', 'abc', 'xyz', '1', 'xyz', '2', 'xyz', '3',
-        'xyz', '4', '' ].join('\0'), 6 ]
+    [ [ ':status', '200\0', ':path', 'abc\0', 'xyz', '1\0', 'xyz', '2\0',
+        'xyz', '3\0', 'xyz', '4\0', '' ].join('\0'), 6 ]
   );
 }
 
@@ -164,7 +170,7 @@ const {
   };
   assert.deepStrictEqual(
     mapToHeaders(headers),
-    [ [ 'set-cookie', 'foo=bar', '' ].join('\0'), 1 ]
+    [ [ 'set-cookie', 'foo=bar\0', '' ].join('\0'), 1 ]
   );
 }
 
@@ -180,6 +186,23 @@ const {
     name: 'TypeError',
     message: 'Header field ":status" must only have a single value'
   });
+}
+
+{
+  const headers = {
+    'abc': 1,
+    ':path': 'abc',
+    ':status': [200],
+    ':authority': [],
+    'xyz': [1, 2, 3, 4],
+    [sensitiveHeaders]: ['xyz']
+  };
+
+  assert.deepStrictEqual(
+    mapToHeaders(headers),
+    [ ':status\x00200\x00\x00:path\x00abc\x00\x00abc\x001\x00\x00' +
+      'xyz\x001\x00\x01xyz\x002\x00\x01xyz\x003\x00\x01xyz\x004\x00\x01', 7 ]
+  );
 }
 
 // The following are not allowed to have multiple values
@@ -206,6 +229,7 @@ const {
   HTTP2_HEADER_ETAG,
   HTTP2_HEADER_EXPIRES,
   HTTP2_HEADER_FROM,
+  HTTP2_HEADER_HOST,
   HTTP2_HEADER_IF_MATCH,
   HTTP2_HEADER_IF_MODIFIED_SINCE,
   HTTP2_HEADER_IF_NONE_MATCH,
@@ -270,7 +294,6 @@ const {
   HTTP2_HEADER_HTTP2_SETTINGS,
   HTTP2_HEADER_TE,
   HTTP2_HEADER_TRANSFER_ENCODING,
-  HTTP2_HEADER_HOST,
   HTTP2_HEADER_PROXY_CONNECTION,
   HTTP2_HEADER_KEEP_ALIVE,
   'Connection',
@@ -307,6 +330,17 @@ assert.throws(
 // These should not throw
 mapToHeaders({ te: 'trailers' });
 mapToHeaders({ te: ['trailers'] });
+
+// HTTP/2 encourages use of Host instead of :authority when converting
+// from HTTP/1 to HTTP/2, so we no longer disallow it.
+// Refs: https://github.com/nodejs/node/issues/29858
+mapToHeaders({ [HTTP2_HEADER_HOST]: 'abc' });
+
+// If both are present, the latter has priority
+assert.strictEqual(getAuthority({
+  [HTTP2_HEADER_AUTHORITY]: 'abc',
+  [HTTP2_HEADER_HOST]: 'def'
+}), 'abc');
 
 
 {

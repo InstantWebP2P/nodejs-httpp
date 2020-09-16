@@ -1,8 +1,10 @@
-# Worker Threads
+# Worker threads
 
 <!--introduced_in=v10.5.0-->
 
 > Stability: 2 - Stable
+
+<!-- source_link=lib/worker_threads.js -->
 
 The `worker_threads` module enables the use of threads that execute JavaScript
 in parallel. To access it:
@@ -79,6 +81,43 @@ if (isMainThread) {
   console.log(isMainThread);  // Prints 'false'.
 }
 ```
+
+## `worker.markAsUntransferable(object)`
+<!-- YAML
+added: v14.5.0
+-->
+
+Mark an object as not transferable. If `object` occurs in the transfer list of
+a [`port.postMessage()`][] call, it will be ignored.
+
+In particular, this makes sense for objects that can be cloned, rather than
+transferred, and which are used by other objects on the sending side.
+For example, Node.js marks the `ArrayBuffer`s it uses for its
+[`Buffer` pool][`Buffer.allocUnsafe()`] with this.
+
+This operation cannot be undone.
+
+```js
+const { MessageChannel, markAsUntransferable } = require('worker_threads');
+
+const pooledBuffer = new ArrayBuffer(8);
+const typedArray1 = new Uint8Array(pooledBuffer);
+const typedArray2 = new Float64Array(pooledBuffer);
+
+markAsUntransferable(pooledBuffer);
+
+const { port1 } = new MessageChannel();
+port1.postMessage(typedArray1, [ typedArray1.buffer ]);
+
+// The following line prints the contents of typedArray1 -- it still owns
+// its memory and has been cloned, not transferred. Without
+// `markAsUntransferable()`, this would print an empty Uint8Array.
+// typedArray2 is intact as well.
+console.log(typedArray1);
+console.log(typedArray2);
+```
+
+There is no equivalent to this API in browsers.
 
 ## `worker.moveMessagePortToContext(port, contextifiedSandbox)`
 <!-- YAML
@@ -303,6 +342,15 @@ input of [`port.postMessage()`][].
 Listeners on this event will receive a clone of the `value` parameter as passed
 to `postMessage()` and no further arguments.
 
+### Event: `'messageerror'`
+<!-- YAML
+added: v14.5.0
+-->
+
+* `error` {Error} An Error object
+
+The `'messageerror'` event is emitted when deserializing a message failed.
+
 ### `port.close()`
 <!-- YAML
 added: v10.5.0
@@ -318,6 +366,13 @@ are part of the channel.
 ### `port.postMessage(value[, transferList])`
 <!-- YAML
 added: v10.5.0
+changes:
+  - version: v14.5.0
+    pr-url: https://github.com/nodejs/node/pull/33360
+    description: Added `KeyObject` to the list of cloneable types.
+  - version: v14.5.0
+    pr-url: https://github.com/nodejs/node/pull/33772
+    description: Added `FileHandle` to the list of transferable types.
 -->
 
 * `value` {any}
@@ -335,7 +390,8 @@ In particular, the significant differences to `JSON` are:
 * `value` may contain typed arrays, both using `ArrayBuffer`s
    and `SharedArrayBuffer`s.
 * `value` may contain [`WebAssembly.Module`][] instances.
-* `value` may not contain native (C++-backed) objects other than `MessagePort`s.
+* `value` may not contain native (C++-backed) objects other than `MessagePort`s,
+  [`FileHandle`][]s, and [`KeyObject`][]s.
 
 ```js
 const { MessageChannel } = require('worker_threads');
@@ -349,7 +405,8 @@ circularData.foo = circularData;
 port2.postMessage(circularData);
 ```
 
-`transferList` may be a list of `ArrayBuffer` and `MessagePort` objects.
+`transferList` may be a list of [`ArrayBuffer`][], [`MessagePort`][] and
+[`FileHandle`][] objects.
 After transferring, they will not be usable on the sending side of the channel
 anymore (even if they are not contained in `value`). Unlike with
 [child processes][], transferring handles such as network sockets is currently
@@ -423,6 +480,9 @@ console.log(u2.length);  // prints 0
 For `Buffer` instances, specifically, whether the underlying
 `ArrayBuffer` can be transferred or cloned depends entirely on how
 instances were created, which often cannot be reliably determined.
+
+An `ArrayBuffer` can be marked with [`markAsUntransferable()`][] to indicate
+that it should always be cloned and never transferred.
 
 Depending on how a `Buffer` instance was created, it may or may
 not own its underlying `ArrayBuffer`. An `ArrayBuffer` must not
@@ -561,6 +621,17 @@ if (isMainThread) {
 <!-- YAML
 added: v10.5.0
 changes:
+  - version: v14.9.0
+    pr-url: https://github.com/nodejs/node/pull/34584
+    description: The `filename` parameter can be a WHATWG `URL` object using
+                 `data:` protocol.
+  - version: v14.9.0
+    pr-url: https://github.com/nodejs/node/pull/34394
+    description: The `trackUnmanagedFds` option was set to `true` by default.
+  - version:
+    - v14.6.0
+    pr-url: https://github.com/nodejs/node/pull/34303
+    description: The `trackUnmanagedFds` option was introduced.
   - version:
      - v13.13.0
      - v12.17.0
@@ -587,7 +658,9 @@ changes:
 * `filename` {string|URL} The path to the Worker’s main script or module. Must
   be either an absolute path or a relative path (i.e. relative to the
   current working directory) starting with `./` or `../`, or a WHATWG `URL`
-  object using `file:` protocol.
+  object using `file:` or `data:` protocol.
+  When using a [`data:` URL][], the data is interpreted based on MIME type using
+  the [ECMAScript module loader][].
   If `options.eval` is `true`, this is a string containing JavaScript code
   rather than a path.
 * `options` {Object}
@@ -620,6 +693,12 @@ changes:
     occur as described in the [HTML structured clone algorithm][], and an error
     will be thrown if the object cannot be cloned (e.g. because it contains
     `function`s).
+  * `trackUnmanagedFds` {boolean} If this is set to `true`, then the Worker will
+    track raw file descriptors managed through [`fs.open()`][] and
+    [`fs.close()`][], and close them when the Worker exits, similar to other
+    resources like network sockets or file descriptors managed through
+    the [`FileHandle`][] API. This option is automatically inherited by all
+    nested `Worker`s. **Default**: `true`.
   * `transferList` {Object[]} If one or more `MessagePort`-like objects
     are passed in `workerData`, a `transferList` is required for those
     items or [`ERR_MISSING_MESSAGE_PORT_IN_TRANSFER_LIST`][] will be thrown.
@@ -674,6 +753,15 @@ See the [`port.on('message')`][] event for more details.
 
 All messages sent from the worker thread will be emitted before the
 [`'exit'` event][] is emitted on the `Worker` object.
+
+### Event: `'messageerror'`
+<!-- YAML
+added: v14.5.0
+-->
+
+* `error` {Error} An Error object
+
+The `'messageerror'` event is emitted when deserializing a message failed.
 
 ### Event: `'online'`
 <!-- YAML
@@ -816,19 +904,26 @@ active handle in the event system. If the worker is already `unref()`ed calling
 
 [`'close'` event]: #worker_threads_event_close
 [`'exit'` event]: #worker_threads_event_exit
+[`ArrayBuffer`]: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/ArrayBuffer
 [`AsyncResource`]: async_hooks.html#async_hooks_class_asyncresource
 [`Buffer`]: buffer.html
-[`Buffer.allocUnsafe()`]: buffer.html#buffer_class_method_buffer_allocunsafe_size
+[`Buffer.allocUnsafe()`]: buffer.html#buffer_static_method_buffer_allocunsafe_size
+[ECMAScript module loader]: esm.html#esm_data_imports
 [`ERR_MISSING_MESSAGE_PORT_IN_TRANSFER_LIST`]: errors.html#errors_err_missing_message_port_in_transfer_list
 [`ERR_WORKER_NOT_RUNNING`]: errors.html#ERR_WORKER_NOT_RUNNING
 [`EventEmitter`]: events.html
 [`EventTarget`]: https://developer.mozilla.org/en-US/docs/Web/API/EventTarget
+[`FileHandle`]: fs.html#fs_class_filehandle
+[`KeyObject`]: crypto.html#crypto_class_keyobject
 [`MessagePort`]: #worker_threads_class_messageport
 [`SharedArrayBuffer`]: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/SharedArrayBuffer
 [`Uint8Array`]: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Uint8Array
 [`WebAssembly.Module`]: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/WebAssembly/Module
 [`Worker`]: #worker_threads_class_worker
 [`cluster` module]: cluster.html
+[`fs.open()`]: fs.html#fs_fs_open_path_flags_mode_callback
+[`fs.close()`]: fs.html#fs_fs_close_fd_callback
+[`markAsUntransferable()`]: #worker_threads_worker_markasuntransferable_object
 [`port.on('message')`]: #worker_threads_event_message
 [`port.onmessage()`]: https://developer.mozilla.org/en-US/docs/Web/API/MessagePort/onmessage
 [`port.postMessage()`]: #worker_threads_port_postmessage_value_transferlist
@@ -865,3 +960,4 @@ active handle in the event system. If the worker is already `unref()`ed calling
 [child processes]: child_process.html
 [contextified]: vm.html#vm_what_does_it_mean_to_contextify_an_object
 [v8.serdes]: v8.html#v8_serialization_api
+[`data:` URL]: https://developer.mozilla.org/en-US/docs/Web/HTTP/Basics_of_HTTP/Data_URIs

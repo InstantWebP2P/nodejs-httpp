@@ -134,10 +134,11 @@ function badSchedulingOptionTest() {
       scheduling: 'filo'
     });
   } catch (err) {
-    assert.strictEqual(err.code, 'ERR_INVALID_OPT_VALUE');
+    assert.strictEqual(err.code, 'ERR_INVALID_ARG_VALUE');
     assert.strictEqual(
       err.message,
-      'The value "filo" is invalid for option "scheduling"'
+      "The argument 'scheduling' must be one of: 'fifo', 'lifo'. " +
+        "Received 'filo'"
     );
   }
 }

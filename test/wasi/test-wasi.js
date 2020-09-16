@@ -30,7 +30,7 @@ if (process.argv[2] === 'wasi-child') {
     const { instance } = await WebAssembly.instantiate(buffer, importObject);
 
     wasi.start(instance);
-  })();
+  })().then(common.mustCall());
 } else {
   const assert = require('assert');
   const cp = require('child_process');
@@ -71,6 +71,7 @@ if (process.argv[2] === 'wasi-child') {
   runWASI({ test: 'exitcode', exitCode: 120 });
   runWASI({ test: 'fd_prestat_get_refresh' });
   runWASI({ test: 'freopen', stdout: `hello from input2.txt${EOL}` });
+  runWASI({ test: 'ftruncate' });
   runWASI({ test: 'getentropy' });
 
   // Tests that are currently unsupported on IBM i PASE.

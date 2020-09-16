@@ -373,9 +373,7 @@ Origins::Origins(
                               origin_string_len);
 
   // Make sure the start address is aligned appropriately for an nghttp2_nv*.
-  char* start = reinterpret_cast<char*>(
-      RoundUp(reinterpret_cast<uintptr_t>(buf_.data()),
-              alignof(nghttp2_origin_entry)));
+  char* start = AlignUp(buf_.data(), alignof(nghttp2_origin_entry));
   char* origin_contents = start + (count_ * sizeof(nghttp2_origin_entry));
   nghttp2_origin_entry* const nva =
       reinterpret_cast<nghttp2_origin_entry*>(start);
@@ -734,7 +732,7 @@ ssize_t Http2Session::OnMaxFrameSizePadding(size_t frameLen,
 // quite expensive. This is a potential performance optimization target later.
 ssize_t Http2Session::ConsumeHTTP2Data() {
   CHECK_NOT_NULL(stream_buf_.base);
-  CHECK_LT(stream_buf_offset_, stream_buf_.len);
+  CHECK_LE(stream_buf_offset_, stream_buf_.len);
   size_t read_len = stream_buf_.len - stream_buf_offset_;
 
   // multiple side effects.
@@ -755,11 +753,11 @@ ssize_t Http2Session::ConsumeHTTP2Data() {
     CHECK_GT(ret, 0);
     CHECK_LE(static_cast<size_t>(ret), read_len);
 
-    if (static_cast<size_t>(ret) < read_len) {
-      // Mark the remainder of the data as available for later consumption.
-      stream_buf_offset_ += ret;
-      return ret;
-    }
+    // Mark the remainder of the data as available for later consumption.
+    // Even if all bytes were received, a paused stream may delay the
+    // nghttp2_on_frame_recv_callback which may have an END_STREAM flag.
+    stream_buf_offset_ += ret;
+    return ret;
   }
 
   // We are done processing the current input chunk.
@@ -1095,6 +1093,7 @@ int Http2Session::OnDataChunkReceived(nghttp2_session* handle,
   if (session->is_write_in_progress()) {
     CHECK(session->is_reading_stopped());
     session->set_receive_paused();
+    Debug(session, "receive paused");
     return NGHTTP2_ERR_PAUSE;
   }
 
@@ -1215,22 +1214,29 @@ void Http2Session::HandleHeadersFrame(const nghttp2_frame* frame) {
   // this way for performance reasons (it's faster to generate and pass an
   // array than it is to generate and pass the object).
 
-  std::vector<Local<Value>> headers_v(stream->headers_count() * 2);
+  MaybeStackBuffer<Local<Value>, 64> headers_v(stream->headers_count() * 2);
+  MaybeStackBuffer<Local<Value>, 32> sensitive_v(stream->headers_count());
+  size_t sensitive_count = 0;
+
   stream->TransferHeaders([&](const Http2Header& header, size_t i) {
     headers_v[i * 2] = header.GetName(this).ToLocalChecked();
     headers_v[i * 2 + 1] = header.GetValue(this).ToLocalChecked();
+    if (header.flags() & NGHTTP2_NV_FLAG_NO_INDEX)
+      sensitive_v[sensitive_count++] = headers_v[i * 2];
   });
   CHECK_EQ(stream->headers_count(), 0);
 
   DecrementCurrentSessionMemory(stream->current_headers_length_);
   stream->current_headers_length_ = 0;
 
-  Local<Value> args[5] = {
-      stream->object(),
-      Integer::New(isolate, id),
-      Integer::New(isolate, stream->headers_category()),
-      Integer::New(isolate, frame->hd.flags),
-      Array::New(isolate, headers_v.data(), headers_v.size())};
+  Local<Value> args[] = {
+    stream->object(),
+    Integer::New(isolate, id),
+    Integer::New(isolate, stream->headers_category()),
+    Integer::New(isolate, frame->hd.flags),
+    Array::New(isolate, headers_v.out(), headers_v.length()),
+    Array::New(isolate, sensitive_v.out(), sensitive_count),
+  };
   MakeCallback(env()->http2session_on_headers_function(),
                arraysize(args), args);
 }
@@ -1512,7 +1518,7 @@ void Http2Session::ClearOutgoing(int status) {
 
   set_sending(false);
 
-  if (outgoing_buffers_.size() > 0) {
+  if (!outgoing_buffers_.empty()) {
     outgoing_storage_.clear();
     outgoing_length_ = 0;
 
@@ -1531,7 +1537,7 @@ void Http2Session::ClearOutgoing(int status) {
 
   // Now that we've finished sending queued data, if there are any pending
   // RstStreams we should try sending again and then flush them one by one.
-  if (pending_rst_streams_.size() > 0) {
+  if (!pending_rst_streams_.empty()) {
     std::vector<int32_t> current_pending_rst_streams;
     pending_rst_streams_.swap(current_pending_rst_streams);
 
@@ -1590,8 +1596,8 @@ uint8_t Http2Session::SendPendingData() {
   ssize_t src_length;
   const uint8_t* src;
 
-  CHECK_EQ(outgoing_buffers_.size(), 0);
-  CHECK_EQ(outgoing_storage_.size(), 0);
+  CHECK(outgoing_buffers_.empty());
+  CHECK(outgoing_storage_.empty());
 
   // Part One: Gather data from nghttp2
 
@@ -1759,7 +1765,6 @@ void Http2Session::OnStreamRead(ssize_t nread, const uv_buf_t& buf_) {
   if (LIKELY(stream_buf_offset_ == 0)) {
     // Shrink to the actual amount of used data.
     buf.Resize(nread);
-    IncrementCurrentSessionMemory(nread);
   } else {
     // This is a very unlikely case, and should only happen if the ReadStart()
     // call in OnStreamAfterWrite() immediately provides data. If that does
@@ -1771,19 +1776,17 @@ void Http2Session::OnStreamRead(ssize_t nread, const uv_buf_t& buf_) {
     memcpy(new_buf.data(), stream_buf_.base + stream_buf_offset_, pending_len);
     memcpy(new_buf.data() + pending_len, buf.data(), nread);
 
-    // The data in stream_buf_ is already accounted for, add nread received
-    // bytes to session memory but remove the already processed
-    // stream_buf_offset_ bytes.
-    // TODO(@jasnell): There are some cases where nread is < stream_buf_offset_
-    // here but things still work. Those need to be investigated.
-    // CHECK_GE(nread, stream_buf_offset_);
-    IncrementCurrentSessionMemory(nread - stream_buf_offset_);
-
     buf = std::move(new_buf);
     nread = buf.size();
     stream_buf_offset_ = 0;
     stream_buf_ab_.Reset();
+
+    // We have now fully processed the stream_buf_ input chunk (by moving the
+    // remaining part into buf, which will be accounted for below).
+    DecrementCurrentSessionMemory(stream_buf_.len);
   }
+
+  IncrementCurrentSessionMemory(nread);
 
   // Remember the current buffer, so that OnDataChunkReceived knows the
   // offset of a DATA frame's data into the socket read buffer.

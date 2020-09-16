@@ -131,6 +131,12 @@ void TLSWrap::InitSSL() {
   // - https://wiki.openssl.org/index.php/TLS1.3#Non-application_data_records
   SSL_set_mode(ssl_.get(), SSL_MODE_AUTO_RETRY);
 
+#ifdef OPENSSL_IS_BORINGSSL
+  // OpenSSL allows renegotiation by default, but BoringSSL disables it.
+  // Configure BoringSSL to match OpenSSL's behavior.
+  SSL_set_renegotiate_mode(ssl_.get(), ssl_renegotiate_freely);
+#endif
+
   SSL_set_app_data(ssl_.get(), this);
   // Using InfoCallback isn't how we are supposed to check handshake progress:
   //   https://github.com/openssl/openssl/issues/7199#issuecomment-420915993
@@ -1143,7 +1149,7 @@ unsigned int TLSWrap::PskServerCallback(SSL* s,
   HandleScope scope(isolate);
 
   MaybeLocal<String> maybe_identity_str =
-      v8::String::NewFromUtf8(isolate, identity, v8::NewStringType::kNormal);
+      String::NewFromUtf8(isolate, identity);
 
   v8::Local<v8::String> identity_str;
   if (!maybe_identity_str.ToLocal(&identity_str)) return 0;

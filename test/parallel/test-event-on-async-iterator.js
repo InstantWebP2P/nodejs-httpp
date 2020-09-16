@@ -1,8 +1,14 @@
+// Flags: --expose-internals --no-warnings
 'use strict';
 
 const common = require('../common');
 const assert = require('assert');
 const { on, EventEmitter } = require('events');
+const {
+  EventTarget,
+  NodeEventTarget,
+  Event
+} = require('internal/event_target');
 
 async function basic() {
   const ee = new EventEmitter();
@@ -204,6 +210,156 @@ async function iterableThrow() {
   assert.strictEqual(ee.listenerCount('error'), 0);
 }
 
+async function eventTarget() {
+  const et = new EventTarget();
+  const tick = () => et.dispatchEvent(new Event('tick'));
+  const interval = setInterval(tick, 0);
+  let count = 0;
+  for await (const [ event ] of on(et, 'tick')) {
+    count++;
+    assert.strictEqual(event.type, 'tick');
+    if (count >= 5) {
+      break;
+    }
+  }
+  assert.strictEqual(count, 5);
+  clearInterval(interval);
+}
+
+async function errorListenerCount() {
+  const et = new EventEmitter();
+  on(et, 'foo');
+  assert.strictEqual(et.listenerCount('error'), 1);
+}
+
+async function nodeEventTarget() {
+  const et = new NodeEventTarget();
+  const tick = () => et.dispatchEvent(new Event('tick'));
+  const interval = setInterval(tick, 0);
+  let count = 0;
+  for await (const [ event] of on(et, 'tick')) {
+    count++;
+    assert.strictEqual(event.type, 'tick');
+    if (count >= 5) {
+      break;
+    }
+  }
+  assert.strictEqual(count, 5);
+  clearInterval(interval);
+}
+
+async function abortableOnBefore() {
+  const ee = new EventEmitter();
+  const ac = new AbortController();
+  ac.abort();
+  [1, {}, null, false, 'hi'].forEach((signal) => {
+    assert.throws(() => on(ee, 'foo', { signal }), {
+      code: 'ERR_INVALID_ARG_TYPE'
+    });
+  });
+  assert.throws(() => on(ee, 'foo', { signal: ac.signal }), {
+    name: 'AbortError'
+  });
+}
+
+async function eventTargetAbortableOnBefore() {
+  const et = new EventTarget();
+  const ac = new AbortController();
+  ac.abort();
+  [1, {}, null, false, 'hi'].forEach((signal) => {
+    assert.throws(() => on(et, 'foo', { signal }), {
+      code: 'ERR_INVALID_ARG_TYPE'
+    });
+  });
+  assert.throws(() => on(et, 'foo', { signal: ac.signal }), {
+    name: 'AbortError'
+  });
+}
+
+async function abortableOnAfter() {
+  const ee = new EventEmitter();
+  const ac = new AbortController();
+
+  const i = setInterval(() => ee.emit('foo', 'foo'), 10);
+
+  async function foo() {
+    for await (const f of on(ee, 'foo', { signal: ac.signal })) {
+      assert.strictEqual(f, 'foo');
+    }
+  }
+
+  foo().catch(common.mustCall((error) => {
+    assert.strictEqual(error.name, 'AbortError');
+  })).finally(() => {
+    clearInterval(i);
+  });
+
+  process.nextTick(() => ac.abort());
+}
+
+async function eventTargetAbortableOnAfter() {
+  const et = new EventTarget();
+  const ac = new AbortController();
+
+  const i = setInterval(() => et.dispatchEvent(new Event('foo')), 10);
+
+  async function foo() {
+    for await (const f of on(et, 'foo', { signal: ac.signal })) {
+      assert(f);
+    }
+  }
+
+  foo().catch(common.mustCall((error) => {
+    assert.strictEqual(error.name, 'AbortError');
+  })).finally(() => {
+    clearInterval(i);
+  });
+
+  process.nextTick(() => ac.abort());
+}
+
+async function eventTargetAbortableOnAfter2() {
+  const et = new EventTarget();
+  const ac = new AbortController();
+
+  const i = setInterval(() => et.dispatchEvent(new Event('foo')), 10);
+
+  async function foo() {
+    for await (const f of on(et, 'foo', { signal: ac.signal })) {
+      assert(f);
+      // Cancel after a single event has been triggered.
+      ac.abort();
+    }
+  }
+
+  foo().catch(common.mustCall((error) => {
+    assert.strictEqual(error.name, 'AbortError');
+  })).finally(() => {
+    clearInterval(i);
+  });
+}
+
+async function abortableOnAfterDone() {
+  const ee = new EventEmitter();
+  const ac = new AbortController();
+
+  const i = setInterval(() => ee.emit('foo', 'foo'), 1);
+  let count = 0;
+
+  async function foo() {
+    for await (const f of on(ee, 'foo', { signal: ac.signal })) {
+      assert.strictEqual(f[0], 'foo');
+      if (++count === 5)
+        break;
+    }
+    ac.abort();  // No error will occur
+  }
+
+  foo().finally(() => {
+    clearInterval(i);
+  });
+}
+
 async function run() {
   const funcs = [
     basic,
@@ -212,7 +368,16 @@ async function run() {
     throwInLoop,
     next,
     nextError,
-    iterableThrow
+    iterableThrow,
+    eventTarget,
+    errorListenerCount,
+    nodeEventTarget,
+    abortableOnBefore,
+    abortableOnAfter,
+    eventTargetAbortableOnBefore,
+    eventTargetAbortableOnAfter,
+    eventTargetAbortableOnAfter2,
+    abortableOnAfterDone
   ];
 
   for (const fn of funcs) {

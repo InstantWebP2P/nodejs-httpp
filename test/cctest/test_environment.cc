@@ -32,6 +32,73 @@ class EnvironmentTest : public EnvironmentTestFixture {
   }
 };
 
+TEST_F(EnvironmentTest, EnvironmentWithESMLoader) {
+  const v8::HandleScope handle_scope(isolate_);
+  Argv argv;
+  Env env {handle_scope, argv};
+
+  node::Environment* envi = *env;
+  envi->options()->experimental_vm_modules = true;
+
+  SetProcessExitHandler(*env, [&](node::Environment* env_, int exit_code) {
+    EXPECT_EQ(*env, env_);
+    EXPECT_EQ(exit_code, 0);
+    node::Stop(*env);
+  });
+
+  node::LoadEnvironment(
+      *env,
+      "const { SourceTextModule } = require('vm');"
+      "(async () => {"
+        "const stmString = 'globalThis.importResult = import(\"\")';"
+        "const m = new SourceTextModule(stmString, {"
+          "importModuleDynamically: (async () => {"
+            "const m = new SourceTextModule('');"
+            "await m.link(() => 0);"
+            "await m.evaluate();"
+            "return m.namespace;"
+          "}),"
+        "});"
+        "await m.link(() => 0);"
+        "await m.evaluate();"
+        "delete globalThis.importResult;"
+        "process.exit(0);"
+      "})()");
+}
+
+TEST_F(EnvironmentTest, EnvironmentWithNoESMLoader) {
+  const v8::HandleScope handle_scope(isolate_);
+  Argv argv;
+  Env env {handle_scope, argv, node::EnvironmentFlags::kNoRegisterESMLoader};
+
+  node::Environment* envi = *env;
+  envi->options()->experimental_vm_modules = true;
+
+  SetProcessExitHandler(*env, [&](node::Environment* env_, int exit_code) {
+    EXPECT_EQ(*env, env_);
+    EXPECT_EQ(exit_code, 1);
+    node::Stop(*env);
+  });
+
+  node::LoadEnvironment(
+      *env,
+      "const { SourceTextModule } = require('vm');"
+      "(async () => {"
+        "const stmString = 'globalThis.importResult = import(\"\")';"
+        "const m = new SourceTextModule(stmString, {"
+          "importModuleDynamically: (async () => {"
+            "const m = new SourceTextModule('');"
+            "await m.link(() => 0);"
+            "await m.evaluate();"
+            "return m.namespace;"
+          "}),"
+        "});"
+        "await m.link(() => 0);"
+        "await m.evaluate();"
+        "delete globalThis.importResult;"
+      "})()");
+}
+
 TEST_F(EnvironmentTest, PreExecutionPreparation) {
   const v8::HandleScope handle_scope(isolate_);
   const Argv argv;
@@ -47,8 +114,8 @@ TEST_F(EnvironmentTest, PreExecutionPreparation) {
   v8::Local<v8::Script> script = v8::Script::Compile(
       context,
       v8::String::NewFromOneByte(isolate_,
-                                 reinterpret_cast<const uint8_t*>(run_script),
-                                 v8::NewStringType::kNormal).ToLocalChecked())
+                                 reinterpret_cast<const uint8_t*>(run_script))
+                                 .ToLocalChecked())
       .ToLocalChecked();
   v8::Local<v8::Value> result = script->Run(context).ToLocalChecked();
   CHECK(result->IsString());
@@ -73,8 +140,8 @@ TEST_F(EnvironmentTest, LoadEnvironmentWithCallback) {
         context,
         v8::String::NewFromOneByte(
             isolate_,
-            reinterpret_cast<const uint8_t*>("argv0"),
-            v8::NewStringType::kNormal).ToLocalChecked()).ToLocalChecked();
+            reinterpret_cast<const uint8_t*>("argv0"))
+            .ToLocalChecked()).ToLocalChecked();
     CHECK(argv0->IsString());
 
     return info.process_object;
@@ -98,15 +165,15 @@ TEST_F(EnvironmentTest, LoadEnvironmentWithSource) {
       context,
       v8::String::NewFromOneByte(
           isolate_,
-          reinterpret_cast<const uint8_t*>("process"),
-          v8::NewStringType::kNormal).ToLocalChecked())
+          reinterpret_cast<const uint8_t*>("process"))
+          .ToLocalChecked())
           .ToLocalChecked()->IsObject());
   CHECK(main_ret.As<v8::Object>()->Get(
       context,
       v8::String::NewFromOneByte(
           isolate_,
-          reinterpret_cast<const uint8_t*>("require"),
-          v8::NewStringType::kNormal).ToLocalChecked())
+          reinterpret_cast<const uint8_t*>("require"))
+          .ToLocalChecked())
           .ToLocalChecked()->IsFunction());
 }
 
@@ -442,8 +509,8 @@ TEST_F(EnvironmentTest, InspectorMultipleEmbeddedEnvironments) {
           context,
           v8::String::NewFromOneByte(
               isolate_,
-              reinterpret_cast<const uint8_t*>("messageFromWorker"),
-              v8::NewStringType::kNormal).ToLocalChecked())
+              reinterpret_cast<const uint8_t*>("messageFromWorker"))
+              .ToLocalChecked())
               .ToLocalChecked();
   CHECK_EQ(data.extracted_value, 42);
   CHECK_EQ(from_inspector->IntegerValue(context).FromJust(), 42);
@@ -465,4 +532,30 @@ TEST_F(EnvironmentTest, ExitHandlerTest) {
   });
   node::LoadEnvironment(*env, "process.exit(42)").ToLocalChecked();
   EXPECT_EQ(callback_calls, 1);
+}
+
+TEST_F(EnvironmentTest, SetImmediateMicrotasks) {
+  int called = 0;
+
+  {
+    const v8::HandleScope handle_scope(isolate_);
+    const Argv argv;
+    Env env {handle_scope, argv};
+
+    node::LoadEnvironment(*env,
+                          [&](const node::StartExecutionCallbackInfo& info)
+                              -> v8::MaybeLocal<v8::Value> {
+      return v8::Object::New(isolate_);
+    });
+
+    (*env)->SetImmediate([&](node::Environment* env_arg) {
+      EXPECT_EQ(env_arg, *env);
+      isolate_->EnqueueMicrotask([](void* arg) {
+        ++*static_cast<int*>(arg);
+      }, &called);
+    }, node::CallbackFlags::kRefed);
+    uv_run(&current_loop, UV_RUN_DEFAULT);
+  }
+
+  EXPECT_EQ(called, 1);
 }

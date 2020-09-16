@@ -53,8 +53,8 @@ class MicrotaskQueueBuiltinsAssembler : public CodeStubAssembler {
 TNode<RawPtrT> MicrotaskQueueBuiltinsAssembler::GetMicrotaskQueue(
     TNode<Context> native_context) {
   CSA_ASSERT(this, IsNativeContext(native_context));
-  return LoadObjectField<RawPtrT>(native_context,
-                                  NativeContext::kMicrotaskQueueOffset);
+  return DecodeExternalPointer(LoadObjectField<ExternalPointerT>(
+      native_context, NativeContext::kMicrotaskQueueOffset));
 }
 
 TNode<RawPtrT> MicrotaskQueueBuiltinsAssembler::GetMicrotaskRingBuffer(
@@ -198,11 +198,18 @@ void MicrotaskQueueBuiltinsAssembler::RunSingleMicrotask(
     const TNode<Object> thenable = LoadObjectField(
         microtask, PromiseResolveThenableJobTask::kThenableOffset);
 
+    RunPromiseHook(Runtime::kPromiseHookBefore, microtask_context,
+                   CAST(promise_to_resolve));
+
     {
       ScopedExceptionHandler handler(this, &if_exception, &var_exception);
       CallBuiltin(Builtins::kPromiseResolveThenableJob, native_context,
                   promise_to_resolve, thenable, then);
     }
+
+    RunPromiseHook(Runtime::kPromiseHookAfter, microtask_context,
+                   CAST(promise_to_resolve));
+
     RewindEnteredContext(saved_entered_context_count);
     SetCurrentContext(current_context);
     Goto(&done);
@@ -320,7 +327,7 @@ void MicrotaskQueueBuiltinsAssembler::RunSingleMicrotask(
   BIND(&if_exception);
   {
     // Report unhandled exceptions from microtasks.
-    CallRuntime(Runtime::kReportMessage, current_context,
+    CallRuntime(Runtime::kReportMessageFromMicrotask, current_context,
                 var_exception.value());
     RewindEnteredContext(saved_entered_context_count);
     SetCurrentContext(current_context);

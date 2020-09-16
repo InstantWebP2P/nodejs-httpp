@@ -4,6 +4,8 @@
 
 > Stability: 2 - Stable
 
+<!-- source_link=lib/http.js -->
+
 To use the HTTP server and client one must `require('http')`.
 
 The HTTP interfaces in Node.js are designed to support many features
@@ -111,7 +113,10 @@ http.get({
 <!-- YAML
 added: v0.3.4
 changes:
-  - version: REPLACEME
+  - version: v14.5.0
+    pr-url: https://github.com/nodejs/node/pull/33617
+    description: Add `maxTotalSockets` option to agent constructor.
+  - version: v14.5.0
     pr-url: https://github.com/nodejs/node/pull/33278
     description: Add `scheduling` option to specify the free socket
                  scheduling strategy.
@@ -133,6 +138,10 @@ changes:
     `keepAlive` option is `false` or `undefined`. **Default:** `1000`.
   * `maxSockets` {number} Maximum number of sockets to allow per
     host. Each request will use a new socket until the maximum is reached.
+    **Default:** `Infinity`.
+  * `maxTotalSockets` {number} Maximum number of sockets allowed for
+    all hosts in total. Each request will use a new socket
+    until the maximum is reached.
     **Default:** `Infinity`.
   * `maxFreeSockets` {number} Maximum number of sockets to leave open
     in a free state. Only relevant if `keepAlive` is set to `true`.
@@ -299,6 +308,16 @@ added: v0.3.6
 
 By default set to `Infinity`. Determines how many concurrent sockets the agent
 can have open per origin. Origin is the returned value of [`agent.getName()`][].
+
+### `agent.maxTotalSockets`
+<!-- YAML
+added: v14.5.0
+-->
+
+* {number}
+
+By default set to `Infinity`. Determines how many concurrent sockets the agent
+can have open. Unlike `maxSockets`, this parameter applies across all origins.
 
 ### `agent.requests`
 <!-- YAML
@@ -648,7 +667,7 @@ is finished.
 <!-- YAML
 added: v0.3.0
 changes:
-  - version: REPLACEME
+  - version: v14.5.0
     pr-url: https://github.com/nodejs/node/pull/32789
     description: The function returns `this` for consistency with other Readable
                  streams.
@@ -743,6 +762,27 @@ added: v0.4.0
 -->
 
 * {string} The request path.
+
+### `request.method`
+<!-- YAML
+added: v0.1.97
+-->
+
+* {string} The request method.
+
+### `request.host`
+<!-- YAML
+added: v14.5.0
+-->
+
+* {string} The request host.
+
+### `request.protocol`
+<!-- YAML
+added: v14.5.0
+-->
+
+* {string} The request protocol.
 
 ### `request.removeHeader(name)`
 <!-- YAML
@@ -1034,8 +1074,8 @@ type other than {net.Socket}.
 
 Default behavior is to try close the socket with a HTTP '400 Bad Request',
 or a HTTP '431 Request Header Fields Too Large' in the case of a
-[`HPE_HEADER_OVERFLOW`][] error. If the socket is not writable it is
-immediately destroyed.
+[`HPE_HEADER_OVERFLOW`][] error. If the socket is not writable or has already
+written data it is immediately destroyed.
 
 `socket` is the [`net.Socket`][] object that the error originated from.
 
@@ -1219,6 +1259,23 @@ added: v0.7.0
 
 Limits maximum incoming headers count. If set to 0, no limit will be applied.
 
+### `server.requestTimeout`
+<!-- YAML
+added: v14.11.0
+-->
+
+* {number} **Default:** `0`
+
+Sets the timeout value in milliseconds for receiving the entire request from
+the client.
+
+If the timeout expires, the server responds with status 408 without
+forwarding the request to the request listener and then closes the connection.
+
+It must be set to a non-zero value (e.g. 120 seconds) to proctect against
+potential Denial-of-Service attacks in case the server is deployed without a
+reverse proxy in front.
+
 ### `server.setTimeout([msecs][, callback])`
 <!-- YAML
 added: v0.9.12
@@ -1298,7 +1355,8 @@ passed as the second parameter to the [`'request'`][] event.
 added: v0.6.7
 -->
 
-Indicates that the underlying connection was terminated.
+Indicates that the the response is completed, or its underlying connection was
+terminated prematurely (before the response completion).
 
 ### Event: `'finish'`
 <!-- YAML
@@ -1884,7 +1942,7 @@ const req = http.request({
 <!-- YAML
 added: v0.3.0
 changes:
-  - version: REPLACEME
+  - version: v14.5.0
     pr-url: https://github.com/nodejs/node/pull/32789
     description: The function returns `this` for consistency with other Readable
                  streams.
@@ -2060,13 +2118,12 @@ added: v0.1.90
 
 **Only valid for request obtained from [`http.Server`][].**
 
-Request URL string. This contains only the URL that is
-present in the actual HTTP request. If the request is:
+Request URL string. This contains only the URL that is present in the actual
+HTTP request. Take the following request:
 
 ```http
-GET /status?name=ryan HTTP/1.1\r\n
-Accept: text/plain\r\n
-\r\n
+GET /status?name=ryan HTTP/1.1
+Accept: text/plain
 ```
 
 To parse the URL into its parts:
@@ -2197,6 +2254,8 @@ http.get('http://nodejs.org/dist/index.json', (res) => {
   const contentType = res.headers['content-type'];
 
   let error;
+  // Any 2xx status code signals a successful response but
+  // here we're only checking for 200.
   if (statusCode !== 200) {
     error = new Error('Request Failed.\n' +
                       `Status Code: ${statusCode}`);
@@ -2590,19 +2649,20 @@ try {
 [`--insecure-http-parser`]: cli.html#cli_insecure_http_parser
 [`--max-http-header-size`]: cli.html#cli_max_http_header_size_size
 [`'checkContinue'`]: #http_event_checkcontinue
+[`'finish'`]: #http_event_finish
 [`'request'`]: #http_event_request
 [`'response'`]: #http_event_response
 [`'upgrade'`]: #http_event_upgrade
 [`Agent`]: #http_class_http_agent
-[`Buffer.byteLength()`]: buffer.html#buffer_class_method_buffer_bytelength_string_encoding
+[`Buffer.byteLength()`]: buffer.html#buffer_static_method_buffer_bytelength_string_encoding
 [`Duplex`]: stream.html#stream_class_stream_duplex
+[`HPE_HEADER_OVERFLOW`]: errors.html#errors_hpe_header_overflow
 [`TypeError`]: errors.html#errors_class_typeerror
 [`URL`]: url.html#url_the_whatwg_url_api
 [`agent.createConnection()`]: #http_agent_createconnection_options_callback
 [`agent.getName()`]: #http_agent_getname_options
 [`destroy()`]: #http_agent_destroy
 [`dns.lookup()`]: dns.html#dns_dns_lookup_hostname_options_callback
-[`'finish'`]: #http_event_finish
 [`getHeader(name)`]: #http_request_getheader_name
 [`http.Agent`]: #http_class_http_agent
 [`http.ClientRequest`]: #http_class_http_clientrequest
@@ -2616,7 +2676,7 @@ try {
 [`net.Server`]: net.html#net_class_net_server
 [`net.Socket`]: net.html#net_class_net_socket
 [`net.createConnection()`]: net.html#net_net_createconnection_options_connectlistener
-[`new URL()`]: url.html#url_constructor_new_url_input_base
+[`new URL()`]: url.html#url_new_url_input_base
 [`removeHeader(name)`]: #http_request_removeheader_name
 [`request.end()`]: #http_request_end_data_encoding_callback
 [`request.destroy()`]: #http_request_destroy_error
@@ -2648,7 +2708,6 @@ try {
 [`socket.setTimeout()`]: net.html#net_socket_settimeout_timeout_callback
 [`socket.unref()`]: net.html#net_socket_unref
 [`url.parse()`]: url.html#url_url_parse_urlstring_parsequerystring_slashesdenotehost
-[`HPE_HEADER_OVERFLOW`]: errors.html#errors_hpe_header_overflow
 [`writable.destroy()`]: stream.html#stream_writable_destroy_error
 [`writable.destroyed`]: stream.html#stream_writable_destroyed
 [`writable.cork()`]: stream.html#stream_writable_cork

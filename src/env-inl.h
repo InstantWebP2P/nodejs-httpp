@@ -49,14 +49,6 @@ inline uv_loop_t* IsolateData::event_loop() const {
   return event_loop_;
 }
 
-inline bool IsolateData::uses_node_allocator() const {
-  return uses_node_allocator_;
-}
-
-inline v8::ArrayBuffer::Allocator* IsolateData::allocator() const {
-  return allocator_;
-}
-
 inline NodeArrayBufferAllocator* IsolateData::node_allocator() const {
   return node_allocator_;
 }
@@ -78,29 +70,6 @@ inline v8::Local<v8::String> IsolateData::async_wrap_provider(int index) const {
   return async_wrap_providers_[index].Get(isolate_);
 }
 
-inline AsyncHooks::AsyncHooks()
-    : async_ids_stack_(env()->isolate(), 16 * 2),
-      fields_(env()->isolate(), kFieldsCount),
-      async_id_fields_(env()->isolate(), kUidFieldsCount) {
-  clear_async_id_stack();
-
-  // Always perform async_hooks checks, not just when async_hooks is enabled.
-  // TODO(AndreasMadsen): Consider removing this for LTS releases.
-  // See discussion in https://github.com/nodejs/node/pull/15454
-  // When removing this, do it by reverting the commit. Otherwise the test
-  // and flag changes won't be included.
-  fields_[kCheck] = 1;
-
-  // kDefaultTriggerAsyncId should be -1, this indicates that there is no
-  // specified default value and it should fallback to the executionAsyncId.
-  // 0 is not used as the magic value, because that indicates a missing context
-  // which is different from a default context.
-  async_id_fields_[AsyncHooks::kDefaultTriggerAsyncId] = -1;
-
-  // kAsyncIdCounter should start at 1 because that'll be the id the execution
-  // context during bootstrap (code that runs before entering uv_run()).
-  async_id_fields_[AsyncHooks::kAsyncIdCounter] = 1;
-}
 inline AliasedUint32Array& AsyncHooks::fields() {
   return fields_;
 }
@@ -113,8 +82,17 @@ inline AliasedFloat64Array& AsyncHooks::async_ids_stack() {
   return async_ids_stack_;
 }
 
-inline v8::Local<v8::Array> AsyncHooks::execution_async_resources() {
-  return PersistentToLocal::Strong(execution_async_resources_);
+v8::Local<v8::Array> AsyncHooks::js_execution_async_resources() {
+  if (UNLIKELY(js_execution_async_resources_.IsEmpty())) {
+    js_execution_async_resources_.Reset(
+        env()->isolate(), v8::Array::New(env()->isolate()));
+  }
+  return PersistentToLocal::Strong(js_execution_async_resources_);
+}
+
+v8::Local<v8::Object> AsyncHooks::native_execution_async_resource(size_t i) {
+  if (i >= native_execution_async_resources_.size()) return {};
+  return PersistentToLocal::Strong(native_execution_async_resources_[i]);
 }
 
 inline v8::Local<v8::String> AsyncHooks::provider_string(int idx) {
@@ -132,9 +110,7 @@ inline Environment* AsyncHooks::env() {
 // Remember to keep this code aligned with pushAsyncContext() in JS.
 inline void AsyncHooks::push_async_context(double async_id,
                                            double trigger_async_id,
-                                           v8::Local<v8::Value> resource) {
-  v8::HandleScope handle_scope(env()->isolate());
-
+                                           v8::Local<v8::Object> resource) {
   // Since async_hooks is experimental, do only perform the check
   // when async_hooks is enabled.
   if (fields_[kCheck] > 0) {
@@ -151,8 +127,19 @@ inline void AsyncHooks::push_async_context(double async_id,
   async_id_fields_[kExecutionAsyncId] = async_id;
   async_id_fields_[kTriggerAsyncId] = trigger_async_id;
 
-  auto resources = execution_async_resources();
-  USE(resources->Set(env()->context(), offset, resource));
+#ifdef DEBUG
+  for (uint32_t i = offset; i < native_execution_async_resources_.size(); i++)
+    CHECK(native_execution_async_resources_[i].IsEmpty());
+#endif
+
+  // When this call comes from JS (as a way of increasing the stack size),
+  // `resource` will be empty, because JS caches these values anyway, and
+  // we should avoid creating strong global references that might keep
+  // these JS resource objects alive longer than necessary.
+  if (!resource.IsEmpty()) {
+    native_execution_async_resources_.resize(offset + 1);
+    native_execution_async_resources_[offset].Reset(env()->isolate(), resource);
+  }
 }
 
 // Remember to keep this code aligned with popAsyncContext() in JS.
@@ -185,17 +172,45 @@ inline bool AsyncHooks::pop_async_context(double async_id) {
   async_id_fields_[kTriggerAsyncId] = async_ids_stack_[2 * offset + 1];
   fields_[kStackLength] = offset;
 
-  auto resources = execution_async_resources();
-  USE(resources->Delete(env()->context(), offset));
+  if (LIKELY(offset < native_execution_async_resources_.size() &&
+             !native_execution_async_resources_[offset].IsEmpty())) {
+#ifdef DEBUG
+    for (uint32_t i = offset + 1;
+         i < native_execution_async_resources_.size();
+         i++) {
+      CHECK(native_execution_async_resources_[i].IsEmpty());
+    }
+#endif
+    native_execution_async_resources_.resize(offset);
+    if (native_execution_async_resources_.size() <
+            native_execution_async_resources_.capacity() / 2 &&
+        native_execution_async_resources_.size() > 16) {
+      native_execution_async_resources_.shrink_to_fit();
+    }
+  }
+
+  if (UNLIKELY(js_execution_async_resources()->Length() > offset)) {
+    v8::HandleScope handle_scope(env()->isolate());
+    USE(js_execution_async_resources()->Set(
+        env()->context(),
+        env()->length_string(),
+        v8::Integer::NewFromUnsigned(env()->isolate(), offset)));
+  }
 
   return fields_[kStackLength] > 0;
 }
 
-// Keep in sync with clearAsyncIdStack in lib/internal/async_hooks.js.
-inline void AsyncHooks::clear_async_id_stack() {
-  auto isolate = env()->isolate();
+void AsyncHooks::clear_async_id_stack() {
+  v8::Isolate* isolate = env()->isolate();
   v8::HandleScope handle_scope(isolate);
-  execution_async_resources_.Reset(isolate, v8::Array::New(isolate));
+  if (!js_execution_async_resources_.IsEmpty()) {
+    USE(PersistentToLocal::Strong(js_execution_async_resources_)->Set(
+        env()->context(),
+        env()->length_string(),
+        v8::Integer::NewFromUnsigned(isolate, 0)));
+  }
+  native_execution_async_resources_.clear();
+  native_execution_async_resources_.shrink_to_fit();
 
   async_id_fields_[kExecutionAsyncId] = 0;
   async_id_fields_[kTriggerAsyncId] = 0;
@@ -239,9 +254,6 @@ inline void Environment::PopAsyncCallbackScope() {
   async_callback_scope_depth_--;
 }
 
-inline ImmediateInfo::ImmediateInfo(v8::Isolate* isolate)
-    : fields_(isolate, kFieldsCount) {}
-
 inline AliasedUint32Array& ImmediateInfo::fields() {
   return fields_;
 }
@@ -265,9 +277,6 @@ inline void ImmediateInfo::ref_count_inc(uint32_t increment) {
 inline void ImmediateInfo::ref_count_dec(uint32_t decrement) {
   fields_[kRefCount] -= decrement;
 }
-
-inline TickInfo::TickInfo(v8::Isolate* isolate)
-    : fields_(isolate, kFieldsCount) {}
 
 inline AliasedUint8Array& TickInfo::fields() {
   return fields_;
@@ -376,10 +385,6 @@ inline T* Environment::AddBindingData(
 
 inline Environment* Environment::GetThreadLocalEnv() {
   return static_cast<Environment*>(uv_key_get(&thread_local_env));
-}
-
-inline bool Environment::profiler_idle_notifier_started() const {
-  return profiler_idle_notifier_started_;
 }
 
 inline v8::Isolate* Environment::isolate() const {
@@ -506,6 +511,14 @@ inline void Environment::set_trace_sync_io(bool value) {
 
 inline bool Environment::abort_on_uncaught_exception() const {
   return options_->abort_on_uncaught_exception;
+}
+
+inline void Environment::set_force_context_aware(bool value) {
+  options_->force_context_aware = value;
+}
+
+inline bool Environment::force_context_aware() const {
+  return options_->force_context_aware;
 }
 
 inline void Environment::set_abort_on_uncaught_exception(bool value) {
@@ -771,12 +784,20 @@ inline bool Environment::is_main_thread() const {
   return worker_context() == nullptr;
 }
 
+inline bool Environment::should_not_register_esm_loader() const {
+  return flags_ & EnvironmentFlags::kNoRegisterESMLoader;
+}
+
 inline bool Environment::owns_process_state() const {
   return flags_ & EnvironmentFlags::kOwnsProcessState;
 }
 
 inline bool Environment::owns_inspector() const {
   return flags_ & EnvironmentFlags::kOwnsInspector;
+}
+
+inline bool Environment::tracks_unmanaged_fds() const {
+  return flags_ & EnvironmentFlags::kTrackUnmanagedFds;
 }
 
 bool Environment::filehandle_close_warning() const {

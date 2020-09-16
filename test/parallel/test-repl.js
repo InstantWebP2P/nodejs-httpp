@@ -372,7 +372,7 @@ const errorTests = [
   {
     send: 'npm install foobar',
     expect: [
-      'npm should be run outside of the node repl, in your normal shell.',
+      'npm should be run outside of the Node.js REPL, in your normal shell.',
       '(Press Control-D to exit.)'
     ]
   },
@@ -453,7 +453,7 @@ const errorTests = [
       /\.load/,
       /\.save/,
       '',
-      'Press ^C to abort current expression, ^D to exit the repl',
+      'Press ^C to abort current expression, ^D to exit the REPL',
       /'thefourtheye'/
     ]
   },
@@ -805,6 +805,16 @@ const tcpTests = [
   {
     send: `require(${JSON.stringify(moduleFilename)}).number`,
     expect: '42'
+  },
+  {
+    send: 'import comeOn from \'fhqwhgads\'',
+    expect: [
+      kSource,
+      kArrow,
+      '',
+      'Uncaught:',
+      /^SyntaxError: .* dynamic import/
+    ]
   }
 ];
 
@@ -827,7 +837,7 @@ const tcpTests = [
     socket.end();
   }
   common.allowGlobals(...Object.values(global));
-})();
+})().then(common.mustCall());
 
 function startTCPRepl() {
   let resolveSocket, resolveReplServer;

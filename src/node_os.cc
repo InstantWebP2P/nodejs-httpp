@@ -71,8 +71,7 @@ static void GetHostname(const FunctionCallbackInfo<Value>& args) {
   }
 
   args.GetReturnValue().Set(
-      String::NewFromUtf8(env->isolate(), buf, NewStringType::kNormal)
-          .ToLocalChecked());
+      String::NewFromUtf8(env->isolate(), buf).ToLocalChecked());
 }
 
 static void GetOSInformation(const FunctionCallbackInfo<Value>& args) {
@@ -192,8 +191,7 @@ static void GetInterfaceAddresses(const FunctionCallbackInfo<Value>& args) {
     // to assume UTF8 as the default as well. It’s what people will expect if
     // they name the interface from any input that uses UTF-8, which should be
     // the most frequent case by far these days.)
-    name = String::NewFromUtf8(isolate, raw_name,
-        NewStringType::kNormal).ToLocalChecked();
+    name = String::NewFromUtf8(isolate, raw_name).ToLocalChecked();
 
     snprintf(mac.data(),
              mac.size(),
@@ -268,10 +266,10 @@ static void GetUserInfo(const FunctionCallbackInfo<Value>& args) {
     Local<Object> options = args[0].As<Object>();
     MaybeLocal<Value> maybe_encoding = options->Get(env->context(),
                                                     env->encoding_string());
-    if (maybe_encoding.IsEmpty())
-      return;
+    Local<Value> encoding_opt;
+    if (!maybe_encoding.ToLocal(&encoding_opt))
+        return;
 
-    Local<Value> encoding_opt = maybe_encoding.ToLocalChecked();
     encoding = ParseEncoding(env->isolate(), encoding_opt, UTF8);
   } else {
     encoding = UTF8;
