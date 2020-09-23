@@ -4,7 +4,7 @@
 ![test-macOS](https://github.com/InstantWebP2P/nodejs-httpp/workflows/test-macOS/badge.svg?branch=v12.x-httpp)
 ![build-windows](https://github.com/InstantWebP2P/nodejs-httpp/workflows/build-windows/badge.svg?branch=v12.x-httpp)
 
-* main js/modules: udt.js, httpp.js, udts.js and httpps.js, that's compatible to net.js,http.js,tls.js and https.js
+* main js modules: udt.js, httpp.js, udts.js and httpps.js, that's compatible to net.js,http.js,tls.js and https.js
 
 [Wiki page](https://github.com/InstantWebP2P/nodejs-httpp/wiki/An-introduction-to-run-http-over-udp-with-node.js)
 
