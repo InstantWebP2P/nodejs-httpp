@@ -30,7 +30,8 @@
 ### third-party source
 
 * [UDT4](http://udt.sourceforge.net)
-
+* [KCP](https://github.com/skywind3000/kcp)
+* [QUIC](https://quicwg.org/)
 
 ### Support us
 
