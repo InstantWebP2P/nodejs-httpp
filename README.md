@@ -40,7 +40,7 @@
 
 ### To checkout the sourcecode:
 
-    git clone https://github.com/InstantWebP2P/nodejs-httpp.git
+    git clone --recursive https://github.com/InstantWebP2P/nodejs-httpp.git
 
 
 ### Build on Linux with Docker
