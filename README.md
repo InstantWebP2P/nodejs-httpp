@@ -6,14 +6,14 @@
 
 * main js modules: udt.js, httpp.js, udts.js and httpps.js, that's compatible to net.js,http.js,tls.js and https.js
 
-[Wiki page](https://github.com/InstantWebP2P/nodejs-httpp/wiki/An-introduction-to-run-http-over-udp-with-node.js)
+* [HTTP over UDP Wiki page](https://github.com/InstantWebP2P/nodejs-httpp/wiki/An-introduction-to-run-http-over-udp-with-node.js)
 
 ### Features
 
 * Node.js v12.x API compatible
 * Support UDT(UDP-based transport) protocol
 * Run HTTP and HTTPS over UDT over UDP, taking UDP high performance
-* Support high-performance multi-process/thread UDP server by utilizing multi-cores' CPU
+* Support high-performance multi-process/multi-thread UDP server by utilizing multi-cores' CPU
 * Configurable Congestion Control
 * Per-Socket network performance monitor
 * Extend client/central server style web service transparently
