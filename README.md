@@ -16,7 +16,7 @@
 * Support high-performance multi-process/multi-thread UDP server by utilizing multi-cores' CPU
 * Configurable Congestion Control
 * Per-Socket network performance monitor
-* Extend client/central server style web service transparently
+* Extend client/server web service to peer-to-peert style transparently
 * Easy to use API, reuse existing http/web and node.js technology
 * Support Windows/Linux/OSx, RaspberryPi, Android
 
