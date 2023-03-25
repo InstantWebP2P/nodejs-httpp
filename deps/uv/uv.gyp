@@ -240,6 +240,7 @@
             '-Wextra',
             '-Wno-unused-parameter',
             '-Wstrict-prototypes',
+            '-fno-strict-aliasing',
           ],
         }],
         [ 'OS in "mac ios"', {
@@ -264,7 +265,6 @@
             'src/unix/procfs-exepath.c',
             'src/unix/random-getrandom.c',
             'src/unix/random-sysctl-linux.c',
-            'src/unix/sysinfo-loadavg.c',
           ],
           'link_settings': {
             'libraries': [ '-ldl', '-lrt' ],
@@ -281,7 +281,6 @@
             'src/unix/procfs-exepath.c',
             'src/unix/random-getrandom.c',
             'src/unix/random-sysctl-linux.c',
-            'src/unix/sysinfo-loadavg.c',
           ],
           'link_settings': {
             'libraries': [ '-ldl' ],

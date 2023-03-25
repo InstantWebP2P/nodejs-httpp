@@ -101,6 +101,13 @@ struct napi_env__ {
     }
   }
 
+  virtual void CallFinalizer(napi_finalize cb, void* data, void* hint) {
+    v8::HandleScope handle_scope(isolate);
+    CallIntoModule([&](napi_env env) {
+      cb(env, data, hint);
+    });
+  }
+
   v8impl::Persistent<v8::Value> last_exception;
 
   // We store references in two different lists, depending on whether they have
@@ -113,6 +120,37 @@ struct napi_env__ {
   int open_callback_scopes = 0;
   int refs = 1;
   void* instance_data = nullptr;
+};
+
+// This class is used to keep a napi_env live in a way that
+// is exception safe versus calling Ref/Unref directly
+class EnvRefHolder {
+ public:
+  explicit EnvRefHolder(napi_env env) : _env(env) {
+      _env->Ref();
+  }
+
+  explicit EnvRefHolder(const EnvRefHolder& other): _env(other.env()) {
+    _env->Ref();
+  }
+
+  EnvRefHolder(EnvRefHolder&& other) {
+    _env = other._env;
+    other._env = nullptr;
+  }
+
+  ~EnvRefHolder() {
+    if (_env != nullptr) {
+      _env->Unref();
+    }
+  }
+
+  napi_env env(void) const {
+    return _env;
+  }
+
+ private:
+  napi_env _env;
 };
 
 static inline napi_status napi_clear_last_error(napi_env env) {
@@ -141,6 +179,14 @@ napi_status napi_set_last_error(napi_env env, napi_status error_code,
     }                                                                   \
   } while (0)
 
+#define RETURN_STATUS_IF_FALSE_WITH_PREAMBLE(env, condition, status)           \
+  do {                                                                         \
+    if (!(condition)) {                                                        \
+      return napi_set_last_error(                                              \
+          (env), try_catch.HasCaught() ? napi_pending_exception : (status));   \
+    }                                                                          \
+  } while (0)
+
 #define CHECK_ENV(env)          \
   do {                          \
     if ((env) == nullptr) {     \
@@ -151,8 +197,16 @@ napi_status napi_set_last_error(napi_env env, napi_status error_code,
 #define CHECK_ARG(env, arg) \
   RETURN_STATUS_IF_FALSE((env), ((arg) != nullptr), napi_invalid_arg)
 
+#define CHECK_ARG_WITH_PREAMBLE(env, arg)                  \
+  RETURN_STATUS_IF_FALSE_WITH_PREAMBLE((env),              \
+                                       ((arg) != nullptr), \
+                                       napi_invalid_arg)
+
 #define CHECK_MAYBE_EMPTY(env, maybe, status) \
   RETURN_STATUS_IF_FALSE((env), !((maybe).IsEmpty()), (status))
+
+#define CHECK_MAYBE_EMPTY_WITH_PREAMBLE(env, maybe, status)                    \
+  RETURN_STATUS_IF_FALSE_WITH_PREAMBLE((env), !((maybe).IsEmpty()), (status))
 
 // NAPI_PREAMBLE is not wrapped in do..while: try_catch must have function scope
 #define NAPI_PREAMBLE(env)                                          \
@@ -171,6 +225,14 @@ napi_status napi_set_last_error(napi_env env, napi_status error_code,
     (result) = maybe.ToLocalChecked();                                        \
   } while (0)
 
+#define CHECK_TO_TYPE_WITH_PREAMBLE(env, type, context, result, src, status)  \
+  do {                                                                        \
+    CHECK_ARG_WITH_PREAMBLE((env), (src));                                    \
+    auto maybe = v8impl::V8LocalValueFromJsValue((src))->To##type((context)); \
+    CHECK_MAYBE_EMPTY_WITH_PREAMBLE((env), maybe, (status));                  \
+    (result) = maybe.ToLocalChecked();                                        \
+  } while (0)
+
 #define CHECK_TO_FUNCTION(env, result, src)                                 \
   do {                                                                      \
     CHECK_ARG((env), (src));                                                \
@@ -181,6 +243,14 @@ napi_status napi_set_last_error(napi_env env, napi_status error_code,
 
 #define CHECK_TO_OBJECT(env, context, result, src) \
   CHECK_TO_TYPE((env), Object, (context), (result), (src), napi_object_expected)
+
+#define CHECK_TO_OBJECT_WITH_PREAMBLE(env, context, result, src) \
+  CHECK_TO_TYPE_WITH_PREAMBLE((env),                             \
+                              Object,                            \
+                              (context),                         \
+                              (result),                          \
+                              (src),                             \
+                              napi_object_expected)
 
 #define CHECK_TO_STRING(env, context, result, src) \
   CHECK_TO_TYPE((env), String, (context), (result), (src), napi_string_expected)
@@ -294,6 +364,81 @@ class TryCatch : public v8::TryCatch {
 
  private:
   napi_env _env;
+};
+
+// Wrapper around v8impl::Persistent that implements reference counting.
+class RefBase : protected Finalizer, RefTracker {
+ protected:
+  RefBase(napi_env env,
+          uint32_t initial_refcount,
+          bool delete_self,
+          napi_finalize finalize_callback,
+          void* finalize_data,
+          void* finalize_hint);
+
+ public:
+  static RefBase* New(napi_env env,
+                      uint32_t initial_refcount,
+                      bool delete_self,
+                      napi_finalize finalize_callback,
+                      void* finalize_data,
+                      void* finalize_hint);
+
+  static inline void Delete(RefBase* reference);
+
+  virtual ~RefBase();
+  void* Data();
+  uint32_t Ref();
+  uint32_t Unref();
+  uint32_t RefCount();
+
+ protected:
+  void Finalize(bool is_env_teardown = false) override;
+
+ private:
+  uint32_t _refcount;
+  bool _delete_self;
+};
+
+class Reference : public RefBase {
+  using SecondPassCallParameterRef = Reference*;
+
+ protected:
+  template <typename... Args>
+  Reference(napi_env env, v8::Local<v8::Value> value, Args&&... args);
+
+ public:
+  static Reference* New(napi_env env,
+                        v8::Local<v8::Value> value,
+                        uint32_t initial_refcount,
+                        bool delete_self,
+                        napi_finalize finalize_callback = nullptr,
+                        void* finalize_data = nullptr,
+                        void* finalize_hint = nullptr);
+
+  virtual ~Reference();
+  uint32_t Ref();
+  uint32_t Unref();
+  v8::Local<v8::Value> Get();
+
+ protected:
+  void Finalize(bool is_env_teardown = false) override;
+
+ private:
+  void ClearWeak();
+  void SetWeak();
+
+  static void FinalizeCallback(
+      const v8::WeakCallbackInfo<SecondPassCallParameterRef>& data);
+  static void SecondPassCallback(
+      const v8::WeakCallbackInfo<SecondPassCallParameterRef>& data);
+
+  bool env_teardown_finalize_started_ = false;
+  v8impl::Persistent<v8::Value> _persistent;
+  SecondPassCallParameterRef* _secondPassParameter;
+  bool _secondPassScheduled;
+
+  FRIEND_TEST(JsNativeApiV8Test, Reference);
 };
 
 }  // end of namespace v8impl

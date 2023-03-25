@@ -65,7 +65,7 @@ our %config = (
   options => "enable-ssl-trace no-afalgeng no-asan no-asm no-buildtest-c++ no-comp no-crypto-mdebug no-crypto-mdebug-backtrace no-devcryptoeng no-dynamic-engine no-ec_nistp_64_gcc_128 no-egd no-external-tests no-fuzz-afl no-fuzz-libfuzzer no-heartbeats no-md2 no-msan no-rc5 no-sctp no-shared no-ssl3 no-ssl3-method no-ubsan no-unit-test no-weak-ssl-ciphers no-zlib no-zlib-dynamic",
   perl_archname => "x86_64-linux-gnu-thread-multi",
   perl_cmd => "/usr/bin/perl",
-  perl_version => "5.26.1",
+  perl_version => "5.30.0",
   perlargv => [ "no-comp", "no-shared", "no-afalgeng", "enable-ssl-trace", "no-asm", "VC-WIN32" ],
   perlenv => {
       "AR" => undef,
@@ -114,8 +114,8 @@ our %config = (
   sourcedir => ".",
   target => "VC-WIN32",
   tdirs => [ "ossl_shim" ],
-  version => "1.1.1g",
-  version_num => "0x1010107fL",
+  version => "1.1.1n",
+  version_num => "0x101010efL",
 );
 
 our %target = (
@@ -131,7 +131,7 @@ our %target = (
   LDFLAGS => "/nologo /debug",
   MT => "mt",
   MTFLAGS => "-nologo",
-  RANLIB => "CODE(0x55b7cbf3ba68)",
+  RANLIB => "CODE(0x555555be4400)",
   RC => "rc",
   _conf_fname_int => [ "Configurations/00-base-templates.conf", "Configurations/00-base-templates.conf", "Configurations/10-main.conf", "Configurations/10-main.conf", "Configurations/10-main.conf", "Configurations/shared-info.pl" ],
   aes_asm_src => "aes_core.c aes_cbc.c",
@@ -1199,6 +1199,11 @@ our %unified_info = (
                 [
                     "libcrypto",
                     "libssl",
+                    "test/libtestutil.a",
+                ],
+            "test/cmactest" =>
+                [
+                    "libcrypto.a",
                     "test/libtestutil.a",
                 ],
             "test/cmsapitest" =>
@@ -8957,6 +8962,10 @@ our %unified_info = (
                 [
                     "include",
                 ],
+            "test/cmactest.o" =>
+                [
+                    "include",
+                ],
             "test/cmsapitest.o" =>
                 [
                     "include",
@@ -9534,6 +9543,7 @@ our %unified_info = (
             "test/cipherlist_test",
             "test/ciphername_test",
             "test/clienthellotest",
+            "test/cmactest",
             "test/cmsapitest",
             "test/conf_include_test",
             "test/constant_time_test",
@@ -14167,6 +14177,14 @@ our %unified_info = (
                 [
                     "test/clienthellotest.c",
                 ],
+            "test/cmactest" =>
+                [
+                    "test/cmactest.o",
+                ],
+            "test/cmactest.o" =>
+                [
+                    "test/cmactest.c",
+                ],
             "test/cmsapitest" =>
                 [
                     "test/cmsapitest.o",
@@ -15140,19 +15158,22 @@ _____
         }
         print "\nEnabled features:\n\n";
         foreach my $what (@disablables) {
-            print "    $what\n" unless $disabled{$what};
+            print "    $what\n"
+                unless grep { $_ =~ /^${what}$/ } keys %disabled;
         }
         print "\nDisabled features:\n\n";
         foreach my $what (@disablables) {
-            if ($disabled{$what}) {
-                print "    $what", ' ' x ($longest - length($what) + 1),
-                    "[$disabled{$what}]", ' ' x ($longest2 - length($disabled{$what}) + 1);
-                print $disabled_info{$what}->{macro}
-                    if $disabled_info{$what}->{macro};
+            my @what2 = grep { $_ =~ /^${what}$/ } keys %disabled;
+            my $what3 = $what2[0];
+            if ($what3) {
+                print "    $what3", ' ' x ($longest - length($what3) + 1),
+                    "[$disabled{$what3}]", ' ' x ($longest2 - length($disabled{$what3}) + 1);
+                print $disabled_info{$what3}->{macro}
+                    if $disabled_info{$what3}->{macro};
                 print ' (skip ',
-                    join(', ', @{$disabled_info{$what}->{skipped}}),
+                    join(', ', @{$disabled_info{$what3}->{skipped}}),
                     ')'
-                    if $disabled_info{$what}->{skipped};
+                    if $disabled_info{$what3}->{skipped};
                 print "\n";
             }
         }

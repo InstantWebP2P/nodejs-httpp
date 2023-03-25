@@ -28,7 +28,26 @@ release.
 </tr>
 <tr>
     <td valign="top">
-<b><a href="doc/changelogs/CHANGELOG_V12.md#12.18.4">12.18.4</a></b><br/>
+<b><a href="doc/changelogs/CHANGELOG_V12.md#12.22.12">12.22.12</a></b><br/>
+<a href="doc/changelogs/CHANGELOG_V12.md#12.22.11">12.22.11</a><br/>
+<a href="doc/changelogs/CHANGELOG_V12.md#12.22.10">12.22.10</a><br/>
+<a href="doc/changelogs/CHANGELOG_V12.md#12.22.9">12.22.9</a><br/>
+<a href="doc/changelogs/CHANGELOG_V12.md#12.22.8">12.22.8</a><br/>
+<a href="doc/changelogs/CHANGELOG_V12.md#12.22.7">12.22.7</a><br/>
+<a href="doc/changelogs/CHANGELOG_V12.md#12.22.6">12.22.6</a><br/>
+<a href="doc/changelogs/CHANGELOG_V12.md#12.22.5">12.22.5</a><br/>
+<a href="doc/changelogs/CHANGELOG_V12.md#12.22.4">12.22.4</a><br/>
+<a href="doc/changelogs/CHANGELOG_V12.md#12.22.3">12.22.3</a><br/>
+<a href="doc/changelogs/CHANGELOG_V12.md#12.22.2">12.22.2</a><br/>
+<a href="doc/changelogs/CHANGELOG_V12.md#12.22.1">12.22.1</a><br/>
+<a href="doc/changelogs/CHANGELOG_V12.md#12.22.0">12.22.0</a><br/>
+<a href="doc/changelogs/CHANGELOG_V12.md#12.21.0">12.21.0</a><br/>
+<a href="doc/changelogs/CHANGELOG_V12.md#12.20.2">12.20.2</a><br/>
+<a href="doc/changelogs/CHANGELOG_V12.md#12.20.1">12.20.1</a><br/>
+<a href="doc/changelogs/CHANGELOG_V12.md#12.20.0">12.20.0</a><br/>
+<a href="doc/changelogs/CHANGELOG_V12.md#12.19.1">12.19.1</a><br/>
+<a href="doc/changelogs/CHANGELOG_V12.md#12.19.0">12.19.0</a><br/>
+<a href="doc/changelogs/CHANGELOG_V12.md#12.18.4">12.18.4</a><br/>
 <a href="doc/changelogs/CHANGELOG_V12.md#12.18.3">12.18.3</a><br/>
 <a href="doc/changelogs/CHANGELOG_V12.md#12.18.2">12.18.2</a><br/>
 <a href="doc/changelogs/CHANGELOG_V12.md#12.18.1">12.18.1</a><br/>
@@ -331,7 +350,7 @@ release.
 
 ## 2015-09-08, Version 4.0.0 (Stable), @rvagg
 
-<a href="doc/changelogs/CHANGELOG_V4.md#4.0.0>Moved to doc/changelogs/CHANGELOG_V6.md#6.0.0</a>.
+<a href="doc/changelogs/CHANGELOG_V4.md#4.0.0">Moved to doc/changelogs/CHANGELOG_V6.md#6.0.0</a>.
 
 ## 2015-09-02, Version 3.3.0, @rvagg
 

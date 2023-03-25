@@ -18,6 +18,7 @@ const expectedModules = new Set([
   'Internal Binding fs',
   'Internal Binding fs_dir',
   'Internal Binding inspector',
+  'Internal Binding messaging',
   'Internal Binding module_wrap',
   'Internal Binding native_module',
   'Internal Binding options',
@@ -81,6 +82,7 @@ const expectedModules = new Set([
   'NativeModule internal/util/types',
   'NativeModule internal/validators',
   'NativeModule internal/vm/module',
+  'NativeModule internal/worker/js_transferable',
   'NativeModule path',
   'NativeModule timers',
   'NativeModule url',
@@ -91,12 +93,13 @@ if (!common.isMainThread) {
   expectedModules.add('Internal Binding messaging');
   expectedModules.add('Internal Binding symbols');
   expectedModules.add('Internal Binding worker');
+  expectedModules.add('Internal Binding performance');
   expectedModules.add('NativeModule _stream_duplex');
   expectedModules.add('NativeModule _stream_passthrough');
   expectedModules.add('NativeModule _stream_readable');
   expectedModules.add('NativeModule _stream_transform');
   expectedModules.add('NativeModule _stream_writable');
-  expectedModules.add('NativeModule internal/error-serdes');
+  expectedModules.add('NativeModule internal/error_serdes');
   expectedModules.add('NativeModule internal/process/worker_thread_only');
   expectedModules.add('NativeModule internal/streams/buffer_list');
   expectedModules.add('NativeModule internal/streams/destroy');
