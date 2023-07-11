@@ -1,2 +1,2 @@
-httpp related js files modified from net/tls/http/https
-=====================================================
+HTTPP modules do compatible with net, tls, http and https
+=========================================================
