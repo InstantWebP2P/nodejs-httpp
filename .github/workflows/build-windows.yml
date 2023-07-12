@@ -7,7 +7,7 @@ on:
     branches: [ v12.x-httpp ]
 
 env:
-  PYTHON_VERSION: 2.7
+  PYTHON_VERSION: 3.7
   FLAKY_TESTS: dontcare
 
 jobs:
