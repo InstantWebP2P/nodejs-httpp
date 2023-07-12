@@ -6,19 +6,31 @@ on:
   pull_request:
     branches: [ v12.x-httpp ]
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
 env:
-  PYTHON_VERSION: 3.7
-  FLAKY_TESTS: dontcare
+  PYTHON_VERSION: '3.11'
+  FLAKY_TESTS: keep_retrying
+
+permissions:
+  contents: read
 
 jobs:
   build-windows:
-    runs-on: windows-2019
+    if: github.event.pull_request.draft == false
+    strategy:
+      matrix:
+        windows: [windows-2019, windows-2022]
+      fail-fast: false
+    runs-on: ${{ matrix.windows }}
     steps:
-      - uses: actions/checkout@v2
-      - name: Checkout submodules
-        run: git submodule update --init --recursive        
+      - uses: actions/checkout@v3
+        with:
+          persist-credentials: false
       - name: Set up Python ${{ env.PYTHON_VERSION }}
-        uses: actions/setup-python@v1
+        uses: actions/setup-python@v4
         with:
           python-version: ${{ env.PYTHON_VERSION }}
       - name: Install deps
