@@ -9,6 +9,6 @@
   "author": "tom zhou <appnet.link@gmail.com>",
   "license": "MIT",
   "dependencies": {
-    "rewire": "^6.0.0"
+    "rewire": "^9.0.1"
   }
 }
